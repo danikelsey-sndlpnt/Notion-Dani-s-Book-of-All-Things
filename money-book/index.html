@@ -1,0 +1,1111 @@
+<title>Dani's Money Book</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Public+Sans:wght@400;500;600;700&display=swap">
+<style>
+:root {
+  --bg: #F3F6F6;
+  --surface: #FFFFFF;
+  --surface-2: #EAF0F0;
+  --ink: #152226;
+  --ink-2: #44565B;
+  --muted: #6E8085;
+  --line: #D3DDDE;
+  --stitch: #B9C8CA;
+  --accent: #0B5E6E;
+  --accent-soft: #D7ECEF;
+  --on-accent: #FFFFFF;
+  --shop: #0080A0;
+  --pers: #C0622F;
+  --good: #2E7D4F;
+  --good-soft: #DDF1E4;
+  --warn: #9A6200;
+  --warn-soft: #FBEBC8;
+  --bad: #B3261E;
+  --bad-soft: #F9DEDC;
+  --shadow: 0 1px 2px rgba(21,34,38,.06), 0 4px 16px rgba(21,34,38,.05);
+  --display: "Bricolage Grotesque", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  --body: "Public Sans", "Segoe UI", system-ui, -apple-system, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #0F1416; --surface: #161B1E; --surface-2: #1D2529; --ink: #E6EDEE; --ink-2: #AFBDC0;
+    --muted: #85979B; --line: #2A3539; --stitch: #36464B; --accent: #5CC3CF; --accent-soft: #173A40;
+    --on-accent: #0B1A1D; --shop: #1FA0B5; --pers: #D0733C; --good: #62C28B; --good-soft: #173526;
+    --warn: #E5AA45; --warn-soft: #3A2C10; --bad: #F27B72; --bad-soft: #3E1A18;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 4px 16px rgba(0,0,0,.25);
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0F1416; --surface: #161B1E; --surface-2: #1D2529; --ink: #E6EDEE; --ink-2: #AFBDC0;
+  --muted: #85979B; --line: #2A3539; --stitch: #36464B; --accent: #5CC3CF; --accent-soft: #173A40;
+  --on-accent: #0B1A1D; --shop: #1FA0B5; --pers: #D0733C; --good: #62C28B; --good-soft: #173526;
+  --warn: #E5AA45; --warn-soft: #3A2C10; --bad: #F27B72; --bad-soft: #3E1A18;
+  --shadow: 0 1px 2px rgba(0,0,0,.3), 0 4px 16px rgba(0,0,0,.25);
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font: 15px/1.5 var(--body); padding-inline: 16px; padding-block: 0 48px; }
+.wrap { max-width: 1120px; margin: 0 auto; }
+h1, h2, h3 { font-family: var(--display); text-wrap: balance; margin: 0; letter-spacing: -.01em; }
+h1 { font-size: clamp(28px, 5vw, 40px); line-height: 1.05; }
+h2 { font-size: 20px; }
+h3 { font-size: 16px; }
+.num, td.num, .money { font-variant-numeric: tabular-nums; }
+button, input, select { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.muted { color: var(--muted); }
+.small { font-size: 13px; }
+.label { font-size: 11.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+
+/* Header: a patch of 13-mesh canvas behind the title */
+header.top { margin-inline: -16px; padding: 28px 16px 18px; border-bottom: 2px dashed var(--stitch);
+  background-image: linear-gradient(var(--line) 1px, transparent 1px), linear-gradient(90deg, var(--line) 1px, transparent 1px);
+  background-size: 13px 13px; background-position: -1px -1px; }
+header.top .wrap { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end; justify-content: space-between; }
+.titleblock { background: var(--bg); padding: 8px 12px 8px 0; display: grid; gap: 4px; }
+.titleblock p { margin: 0; color: var(--ink-2); }
+.controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; background: var(--bg); padding: 6px 0 6px 8px; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); padding: 3px; gap: 2px; }
+.seg button { border: 0; background: transparent; padding: 6px 12px; border-radius: 999px; cursor: pointer; font-weight: 600; font-size: 13.5px; color: var(--ink-2); }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); }
+.chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 600; padding: 3px 10px; border-radius: 999px; background: var(--surface-2); color: var(--ink-2); white-space: nowrap; }
+.dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; flex: none; }
+.dot.shop { background: var(--shop); } .dot.personal { background: var(--pers); }
+
+nav.tabs { display: flex; gap: 4px; overflow-x: auto; margin: 18px 0 20px; border-bottom: 1px solid var(--line); scrollbar-width: none; }
+nav.tabs button { border: 0; background: none; padding: 10px 14px; cursor: pointer; font-weight: 600; color: var(--muted); border-bottom: 3px solid transparent; margin-bottom: -1px; white-space: nowrap; }
+nav.tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
+
+.banner { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; padding: 14px 16px; border-radius: 12px; border: 2px dashed var(--accent); background: var(--accent-soft); margin-top: 18px; }
+.banner p { margin: 0; max-width: 68ch; }
+
+.grid { display: grid; gap: 16px; }
+.cols-2 { grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); }
+.cols-3 { grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 18px; box-shadow: var(--shadow); min-width: 0; }
+.card > * + * { margin-top: 12px; }
+.card-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.stitch-rule { border: 0; border-top: 2px dashed var(--stitch); margin: 14px 0; }
+
+.book-card .big { font-family: var(--display); font-size: 34px; line-height: 1; font-weight: 700; font-variant-numeric: tabular-nums; }
+.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.stats div { display: grid; gap: 2px; }
+.stats strong { font-variant-numeric: tabular-nums; font-size: 16px; }
+
+.pill { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 700; padding: 2px 9px; border-radius: 999px; white-space: nowrap; }
+.pill.good { background: var(--good-soft); color: var(--good); }
+.pill.warn { background: var(--warn-soft); color: var(--warn); }
+.pill.bad { background: var(--bad-soft); color: var(--bad); }
+.pill.info { background: var(--surface-2); color: var(--ink-2); }
+
+.moves { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
+.moves li { display: grid; grid-template-columns: auto 1fr; gap: 12px; align-items: start; padding: 12px 14px; border-radius: 10px; background: var(--surface-2); }
+.moves li p { margin: 2px 0 0; color: var(--ink-2); font-size: 14px; }
+.sev { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; font-size: 14px; }
+.sev.bad { background: var(--bad-soft); color: var(--bad); } .sev.warn { background: var(--warn-soft); color: var(--warn); } .sev.good { background: var(--good-soft); color: var(--good); } .sev.info { background: var(--accent-soft); color: var(--accent); }
+
+.chart { position: relative; }
+.chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.chart text { fill: var(--muted); font: 11px var(--body); font-variant-numeric: tabular-nums; }
+.tip { position: absolute; pointer-events: none; background: var(--ink); color: var(--bg); font-size: 12.5px; padding: 6px 9px; border-radius: 8px; white-space: nowrap; transform: translate(-50%, -110%); font-variant-numeric: tabular-nums; }
+
+.list { display: grid; }
+.row { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; padding: 10px 0; border-bottom: 1px dashed var(--line); align-items: center; }
+.row:last-child { border-bottom: 0; }
+.row .meta { font-size: 13px; color: var(--muted); display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.row .amt { font-weight: 700; font-variant-numeric: tabular-nums; text-align: right; }
+.amt.in { color: var(--good); }
+.row .acts { grid-column: 1 / -1; display: flex; gap: 8px; flex-wrap: wrap; }
+
+.bar { height: 8px; border-radius: 4px; background: var(--surface-2); overflow: hidden; }
+.bar span { display: block; height: 100%; border-radius: 4px; }
+
+form.inline { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr)); align-items: end; }
+.field { display: grid; gap: 4px; min-width: 0; }
+.field label, .field .label { font-size: 12.5px; font-weight: 600; color: var(--ink-2); text-transform: none; letter-spacing: 0; }
+input[type="text"], input[type="number"], input[type="date"], input[type="search"], select {
+  width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); min-height: 38px; }
+input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--accent); }
+.btn { border: 1px solid var(--line); background: var(--surface); padding: 8px 14px; border-radius: 8px; cursor: pointer; font-weight: 600; min-height: 38px; white-space: nowrap; }
+.btn:hover { border-color: var(--accent); }
+.btn.primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+.btn.small { padding: 4px 10px; min-height: 30px; font-size: 13px; }
+.btn.danger { color: var(--bad); }
+.btn.danger.armed { background: var(--bad); color: var(--surface); border-color: var(--bad); }
+.btn[disabled] { opacity: .5; cursor: not-allowed; }
+
+.table-wrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th { font-size: 12px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .06em; }
+td.num, th.num { text-align: right; }
+td.desc { white-space: normal; min-width: 180px; }
+
+.toolbar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; justify-content: space-between; }
+.toolbar .grp { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+details summary { cursor: pointer; font-weight: 600; color: var(--ink-2); font-size: 13.5px; }
+.toast { position: fixed; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 10px; font-weight: 600; box-shadow: var(--shadow); z-index: 10; max-width: calc(100% - 32px); }
+.empty { padding: 18px; text-align: center; color: var(--muted); border: 2px dashed var(--line); border-radius: 10px; }
+.kv { display: grid; grid-template-columns: 1fr auto; gap: 6px 16px; }
+.kv dt { color: var(--ink-2); } .kv dd { margin: 0; text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
+@media (max-width: 520px) { .stats { grid-template-columns: 1fr 1fr; } .book-card .big { font-size: 28px; } }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<header class="top">
+  <div class="wrap">
+    <div class="titleblock">
+      <span class="label">Shop &amp; home</span>
+      <h1>Dani's Money Book</h1>
+      <p>Where the money is, what's due, and what's coming, for the shop and for home.</p>
+    </div>
+    <div class="controls">
+      <div class="seg" role="group" aria-label="Which books to show" id="bookSeg">
+        <button type="button" data-book="both" aria-pressed="true">Both</button>
+        <button type="button" data-book="shop" aria-pressed="false"><span class="dot shop"></span> Shop</button>
+        <button type="button" data-book="personal" aria-pressed="false"><span class="dot personal"></span> Personal</button>
+      </div>
+      <span class="chip" id="saveChip">Loading…</span>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <div id="banner"></div>
+  <nav class="tabs" role="tablist" aria-label="Sections" id="tabs">
+    <button role="tab" data-tab="overview" aria-selected="true">Overview</button>
+    <button role="tab" data-tab="money" aria-selected="false">Money in &amp; out</button>
+    <button role="tab" data-tab="bills" aria-selected="false">Bills &amp; paydays</button>
+    <button role="tab" data-tab="budgets" aria-selected="false">Budgets</button>
+    <button role="tab" data-tab="goals" aria-selected="false">Goals</button>
+    <button role="tab" data-tab="setup" aria-selected="false">Setup</button>
+  </nav>
+  <section id="view"></section>
+</main>
+<div id="toast" class="toast" hidden></div>
+
+<script>
+(() => {
+'use strict';
+
+/* ---------- constants ---------- */
+const CATS = {
+  shop: {
+    in: ['Retail sales', 'Online sales', 'Classes & stitch-ins', 'Finishing services', 'Other income'],
+    out: ['Canvases & inventory', 'Threads & fibers', 'Finishing (outsourced)', 'Rent', 'Payroll', 'Card & platform fees',
+          'Shipping & packaging', 'Marketing', 'Software & subscriptions', 'Utilities', 'Insurance', 'Estimated taxes', "Owner's draw", 'Other']
+  },
+  personal: {
+    in: ["Owner's pay", 'Paycheck', 'Other income'],
+    out: ['Housing', 'Groceries', 'Utilities', 'Car & gas', 'Insurance', 'Health', 'Dining out', 'Subscriptions', 'Shopping',
+          'Debt payments', 'Savings', 'Estimated taxes', 'Other']
+  }
+};
+const BOOKS = ['shop', 'personal'];
+const BOOK_NAME = { shop: 'Shop', personal: 'Personal' };
+const FREQ = { weekly: 'Weekly', biweekly: 'Every 2 weeks', monthly: 'Monthly', quarterly: 'Quarterly', yearly: 'Yearly' };
+const COLLS = ['settings', 'ledger', 'bills', 'budgets', 'goals'];
+const LOCAL_KEY = 'dani-money-book-v1';
+const HORIZON = 90;
+// Not counted as business expenses when estimating profit for taxes
+const NOT_DEDUCTIBLE = new Set(["Owner's draw", 'Estimated taxes']);
+
+/* ---------- helpers ---------- */
+const $ = (s, el = document) => el.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const f0 = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
+const f2 = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const m0 = n => f0.format(Math.round(n || 0));
+const m2 = n => f2.format(n || 0);
+const pad = n => String(n).padStart(2, '0');
+const iso = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const parse = s => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); };
+const addDays = (s, n) => { const d = parse(s); d.setDate(d.getDate() + n); return iso(d); };
+const addMonths = (s, n, day) => {
+  const d = parse(s); const t = new Date(d.getFullYear(), d.getMonth() + n, 1);
+  const last = new Date(t.getFullYear(), t.getMonth() + 1, 0).getDate();
+  t.setDate(Math.min(day || d.getDate(), last)); return iso(t);
+};
+const daysBetween = (a, b) => Math.round((parse(b) - parse(a)) / 864e5);
+const TODAY = iso(new Date());
+const THIS_MONTH = TODAY.slice(0, 7);
+const uid = () => Math.random().toString(36).slice(2, 9) + Date.now().toString(36).slice(-5);
+const shortDate = s => parse(s).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+const monthName = ym => parse(ym + '-01').toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+const whenText = d => { const n = daysBetween(TODAY, d); return n === 0 ? 'today' : n === 1 ? 'tomorrow' : n < 0 ? `${-n} day${n === -1 ? '' : 's'} late` : `in ${n} days`; };
+const num = v => { const n = parseFloat(String(v).replace(/[$,\s]/g, '')); return isFinite(n) ? n : NaN; };
+
+let toastTimer;
+function toast(msg) {
+  const t = $('#toast'); t.textContent = msg; t.hidden = false;
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.hidden = true; }, 3200);
+}
+const prefs = {
+  get(k, d) { try { return localStorage.getItem('dmb-pref-' + k) ?? d; } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem('dmb-pref-' + k, v); } catch (e) {} }
+};
+
+/* ---------- example data (shown until Dani starts real books; never saved) ---------- */
+function makeDemo() {
+  let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const r = (a, b) => Math.round((a + rnd() * (b - a)) * 100) / 100;
+  const docs = {};
+  const asOf = addDays(TODAY, -60);
+  docs['settings/main'] = { started: false, asOf, balances: { shop: 20500, personal: 3200 }, taxRate: 25,
+    cushion: { shop: 4000, personal: 1500 },
+    expected: { shop: { in: 14500, out: 3200 }, personal: { in: 0, out: 1450 } } };
+  const items = [];
+  const add = (date, desc, amount, kind, book, cat, billId) => items.push({ id: uid(), date, desc, amount, kind, book, cat, ...(billId ? { billId } : {}) });
+  for (let i = 59; i >= 0; i--) {
+    const d = addDays(TODAY, -i); const wd = parse(d).getDay(); const day = parse(d).getDate();
+    if (wd !== 1) add(d, 'Shop register', r(wd === 6 ? 380 : 140, wd === 6 ? 820 : 520), 'in', 'shop', 'Retail sales');
+    if (wd === 2 || wd === 4) add(d, 'Website orders', r(120, 420), 'in', 'shop', 'Online sales');
+    if (wd === 3) add(d, 'Wednesday stitch-in', r(160, 260), 'in', 'shop', 'Classes & stitch-ins');
+    if (wd === 5) add(d, 'Card processing fees', r(95, 150), 'out', 'shop', 'Card & platform fees');
+    if (i % 11 === 3) add(d, 'Canvas order', r(600, 1400), 'out', 'shop', 'Canvases & inventory');
+    if (i % 13 === 5) add(d, 'Thread restock', r(180, 420), 'out', 'shop', 'Threads & fibers');
+    if (i % 17 === 2) add(d, 'Finisher invoice', r(220, 480), 'out', 'shop', 'Finishing (outsourced)');
+    if (i % 9 === 4) add(d, 'Shipping supplies', r(40, 110), 'out', 'shop', 'Shipping & packaging');
+    if (day === 1) { add(d, 'Shop rent', 2400, 'out', 'shop', 'Rent'); add(d, 'Mortgage', 1650, 'out', 'personal', 'Housing'); }
+    if (day === 5) add(d, 'Electric & water', r(230, 290), 'out', 'shop', 'Utilities');
+    if (day === 15) add(d, 'Car payment', 412, 'out', 'personal', 'Debt payments');
+    if (day === 20) { add(d, 'Phone', 145, 'out', 'personal', 'Utilities'); add(d, 'Home electric', r(150, 210), 'out', 'personal', 'Utilities'); }
+    if (wd === 0) add(d, 'Groceries', r(140, 210), 'out', 'personal', 'Groceries');
+    if (wd === 3) add(d, 'Gas', r(45, 70), 'out', 'personal', 'Car & gas');
+    if (wd === 5 || wd === 6) add(d, 'Dinner out', r(35, 95), 'out', 'personal', 'Dining out');
+    if (i % 14 === 6) { add(d, 'Payroll', 1850, 'out', 'shop', 'Payroll'); add(d, "Owner's draw", 2000, 'out', 'shop', "Owner's draw"); add(d, 'Pay from shop', 2000, 'in', 'personal', "Owner's pay"); }
+  }
+  const sep15 = TODAY.slice(0, 4) + '-09-15';
+  if (sep15 <= TODAY && sep15 > asOf) add(sep15, 'IRS estimated payment', 2600, 'out', 'shop', 'Estimated taxes');
+  for (const it of items) { const p = 'ledger/' + it.date.slice(0, 7); (docs[p] = docs[p] || { items: [] }).items.push(it); }
+  // Year-to-date history from before the 60-day window, so the tax estimate has something to work with
+  const jan = TODAY.slice(0, 4) + '-01-15';
+  if (jan < asOf) {
+    const months = parse(asOf).getMonth();
+    const p = 'ledger/' + jan.slice(0, 7);
+    (docs[p] = docs[p] || { items: [] }).items.push(
+      { id: uid(), date: jan, desc: 'Earlier this year: sales (summary)', amount: 11200 * months, kind: 'in', book: 'shop', cat: 'Retail sales', history: true },
+      { id: uid(), date: jan, desc: 'Earlier this year: expenses (summary)', amount: 8300 * months, kind: 'out', book: 'shop', cat: 'Other', history: true },
+      { id: uid(), date: jan, desc: 'Earlier this year: estimated taxes', amount: 5200, kind: 'out', book: 'shop', cat: 'Estimated taxes', history: true });
+  }
+  const nextDay = (day) => { let d = TODAY.slice(0, 8) + pad(day); if (d < TODAY) d = addMonths(d, 1, day); return d; };
+  const payday = (() => { let d = addDays(TODAY, -59 + 6); while (d < TODAY) d = addDays(d, 14); return d; })();
+  const bills = [
+    ['Shop rent', 2400, 'out', 'shop', 'Rent', 'monthly', nextDay(1), false],
+    ['Payroll', 1850, 'out', 'shop', 'Payroll', 'biweekly', payday, true],
+    ["Owner's draw", 2000, 'out', 'shop', "Owner's draw", 'biweekly', payday, false],
+    ['Shop electric & water', 260, 'out', 'shop', 'Utilities', 'monthly', nextDay(5), true],
+    ['Website plan', 105, 'out', 'shop', 'Software & subscriptions', 'monthly', nextDay(12), true],
+    ['Business insurance', 1260, 'out', 'shop', 'Insurance', 'quarterly', nextDay(28), false],
+    ['Holiday canvas pre-order', 3800, 'out', 'shop', 'Canvases & inventory', 'yearly', addDays(TODAY, 34), false],
+    ['Pay from shop', 2000, 'in', 'personal', "Owner's pay", 'biweekly', payday, false],
+    ['Mortgage', 1650, 'out', 'personal', 'Housing', 'monthly', nextDay(1), true],
+    ['Car payment', 412, 'out', 'personal', 'Debt payments', 'monthly', nextDay(15), true],
+    ['Phone', 145, 'out', 'personal', 'Utilities', 'monthly', nextDay(20), true],
+    ['Health insurance', 520, 'out', 'personal', 'Insurance', 'monthly', nextDay(3), true],
+    ['Streaming', 38, 'out', 'personal', 'Subscriptions', 'monthly', nextDay(9), true]
+  ];
+  for (const [name, amount, kind, book, cat, freq, nextDue, autopay] of bills) {
+    const id = uid(); docs['bills/' + id] = { name, amount, kind, book, cat, freq, nextDue, day: parse(nextDue).getDate(), autopay };
+  }
+  docs['budgets/shop'] = { limits: { 'Canvases & inventory': 3500, 'Threads & fibers': 900, 'Marketing': 300, 'Shipping & packaging': 250, 'Finishing (outsourced)': 700 } };
+  docs['budgets/personal'] = { limits: { 'Groceries': 750, 'Dining out': 250, 'Car & gas': 280, 'Shopping': 200, 'Subscriptions': 60 } };
+  const g1 = uid(), g2 = uid(), g3 = uid();
+  docs['goals/' + g1] = { name: 'Holiday inventory fund', book: 'shop', target: 6000, saved: 3100, by: addDays(TODAY, 40) };
+  docs['goals/' + g2] = { name: 'Three months of shop expenses', book: 'shop', target: 30000, saved: 11500, by: addMonths(TODAY, 14) };
+  docs['goals/' + g3] = { name: 'Home emergency fund', book: 'personal', target: 10000, saved: 4200, by: addMonths(TODAY, 12) };
+  return docs;
+}
+
+/* ---------- storage: artifact db when available, otherwise this browser ---------- */
+const Store = {
+  mode: 'loading', real: {}, demo: null, db: null, ready: false, queue: {}, warned: false,
+  isDemo() { return !(this.real['settings/main'] && this.real['settings/main'].started); },
+  active() { return this.isDemo() ? this.demo : this.real; },
+  async init() {
+    this.demo = makeDemo();
+    render();
+    let db = null;
+    try { if (window.claude && typeof window.claude.use === 'function') db = await window.claude.use('db'); } catch (e) { db = null; }
+    if (db) {
+      this.db = db; this.mode = 'db';
+      const waiting = new Set(COLLS);
+      for (const c of COLLS) {
+        db.collection(c).onSnapshot(snap => {
+          for (const k of Object.keys(this.real)) if (k.startsWith(c + '/')) delete this.real[k];
+          for (const d of snap.docs) if (d.exists) this.real[c + '/' + d.id] = JSON.parse(JSON.stringify(d.data()));
+          waiting.delete(c); this.ready = waiting.size === 0; render();
+        }, () => { toast("Lost the connection to your saved books. Reload the page to reconnect."); });
+      }
+    } else {
+      this.mode = 'local';
+      try { this.real = JSON.parse(localStorage.getItem(LOCAL_KEY) || '{}') || {}; } catch (e) { this.real = {}; }
+      this.ready = true; render();
+    }
+  },
+  set(path, data, opts = {}) {
+    if (!this.ready) { toast('Still loading your books. Try again in a moment.'); return false; }
+    if (this.isDemo() && !opts.real) {
+      if (data === null) delete this.demo[path]; else this.demo[path] = data;
+      if (!this.warned) { toast('Example mode: changes show here but are not saved.'); this.warned = true; }
+      render(); return true;
+    }
+    if (data === null) delete this.real[path]; else this.real[path] = data;
+    this.persist(path); render(); return true;
+  },
+  persist(path) {
+    if (this.mode === 'local') {
+      try { localStorage.setItem(LOCAL_KEY, JSON.stringify(this.real)); }
+      catch (e) { toast("This browser wouldn't save the change. Export a backup from Setup."); }
+      return;
+    }
+    if (this.mode !== 'db') return;
+    const run = () => { const v = this.real[path]; const ref = this.db.doc(path); return v ? ref.set(v) : ref.delete(); };
+    this.queue[path] = (this.queue[path] || Promise.resolve()).then(run).catch(e => {
+      toast(e && e.code === 'quota_exceeded' ? 'Storage is full. Delete old goals or bills to make room.' : "Couldn't save that change. Check your connection and try again.");
+    });
+  }
+};
+
+/* ---------- model ---------- */
+function model() {
+  const docs = Store.active();
+  const s = docs['settings/main'] || {};
+  const settings = {
+    asOf: s.asOf || TODAY, balances: { shop: 0, personal: 0, ...(s.balances || {}) }, taxRate: s.taxRate ?? 25,
+    cushion: { shop: 0, personal: 0, ...(s.cushion || {}) },
+    expected: { shop: { in: 0, out: 0, ...((s.expected || {}).shop || {}) }, personal: { in: 0, out: 0, ...((s.expected || {}).personal || {}) } },
+    started: !!s.started
+  };
+  const txns = [], bills = [], goals = [], budgets = { shop: {}, personal: {} };
+  for (const [p, v] of Object.entries(docs)) {
+    if (p.startsWith('ledger/')) for (const t of (v.items || [])) txns.push(t);
+    else if (p.startsWith('bills/')) bills.push({ ...v, id: p.slice(6) });
+    else if (p.startsWith('goals/')) goals.push({ ...v, id: p.slice(6) });
+    else if (p.startsWith('budgets/')) budgets[p.slice(8)] = { ...(v.limits || {}) };
+  }
+  txns.sort((a, b) => b.date.localeCompare(a.date));
+  bills.sort((a, b) => a.nextDue.localeCompare(b.nextDue));
+  return { settings, txns, bills, goals, budgets };
+}
+const signed = t => t.kind === 'in' ? t.amount : -t.amount;
+
+function balanceNow(M, book) {
+  let b = M.settings.balances[book] || 0;
+  for (const t of M.txns) if (t.book === book && t.date > M.settings.asOf && t.date <= TODAY) b += signed(t);
+  return b;
+}
+function monthTotals(M, book, ym = THIS_MONTH) {
+  let inc = 0, out = 0;
+  for (const t of M.txns) if (t.book === book && t.date.startsWith(ym)) t.kind === 'in' ? inc += t.amount : out += t.amount;
+  return { inc, out, net: inc - out };
+}
+function stepBill(b, d) {
+  switch (b.freq) {
+    case 'weekly': return addDays(d, 7);
+    case 'biweekly': return addDays(d, 14);
+    case 'quarterly': return addMonths(d, 3, b.day);
+    case 'yearly': return addMonths(d, 12, b.day);
+    default: return addMonths(d, 1, b.day);
+  }
+}
+function forecast(M, book) {
+  const start = balanceNow(M, book);
+  const end = addDays(TODAY, HORIZON);
+  const delta = new Array(HORIZON + 1).fill(0);
+  for (const b of M.bills) {
+    if (b.book !== book) continue;
+    let d = b.nextDue, guard = 0;
+    while (d <= end && guard++ < 400) {
+      const i = Math.max(0, daysBetween(TODAY, d));
+      delta[i] += b.kind === 'in' ? b.amount : -b.amount;
+      d = stepBill(b, d);
+    }
+  }
+  const ex = M.settings.expected[book];
+  const daily = ((ex.in || 0) - (ex.out || 0)) * 12 / 365;
+  const pts = []; let bal = start;
+  for (let i = 0; i <= HORIZON; i++) { if (i > 0) bal += daily; bal += delta[i]; pts.push({ date: addDays(TODAY, i), bal }); }
+  let low = pts[0]; for (const p of pts) if (p.bal < low.bal) low = p;
+  const firstBelow = pts.find(p => p.bal < (M.settings.cushion[book] || 0));
+  return { start, pts, low, firstBelow, end: pts[pts.length - 1] };
+}
+function taxPicture(M) {
+  const year = TODAY.slice(0, 4);
+  let inc = 0, exp = 0, paid = 0;
+  for (const t of M.txns) {
+    if (!t.date.startsWith(year) || t.date > TODAY) continue;
+    if (t.cat === 'Estimated taxes' && t.kind === 'out') { paid += t.amount; continue; }
+    if (t.book !== 'shop') continue;
+    if (t.kind === 'in') inc += t.amount; else if (!NOT_DEDUCTIBLE.has(t.cat)) exp += t.amount;
+  }
+  const profit = inc - exp;
+  const owedSoFar = Math.max(0, profit * (M.settings.taxRate || 0) / 100);
+  const y = +year;
+  const dues = [`${y}-04-15`, `${y}-06-15`, `${y}-09-15`, `${y + 1}-01-15`];
+  const next = dues.find(d => d >= TODAY) || `${y + 1}-04-15`;
+  return { profit, owedSoFar, paid, gap: owedSoFar - paid, next, inc, exp };
+}
+function budgetRows(M, book) {
+  const limits = M.budgets[book] || {};
+  const spent = {};
+  for (const t of M.txns) if (t.book === book && t.kind === 'out' && t.date.startsWith(THIS_MONTH)) spent[t.cat] = (spent[t.cat] || 0) + t.amount;
+  const d = parse(TODAY); const daysIn = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+  const pace = d.getDate() / daysIn;
+  return Object.entries(limits).map(([cat, limit]) => {
+    const s = spent[cat] || 0; const pct = limit ? s / limit : 0;
+    const status = pct > 1 ? 'bad' : pct > Math.min(1, pace + 0.12) ? 'warn' : 'good';
+    return { cat, limit, spent: s, left: limit - s, pct, status, book };
+  }).sort((a, b) => b.pct - a.pct);
+}
+
+/* ---------- next moves: the "get ahead" list ---------- */
+function nextMoves(M, books) {
+  const out = [];
+  for (const book of books) {
+    const f = forecast(M, book); const cushion = M.settings.cushion[book] || 0;
+    if (f.low.bal < 0) out.push({ sev: 'bad', rank: 0, title: `${BOOK_NAME[book]} account could go negative ${shortDate(f.low.date)}`,
+      body: `Projected low is ${m0(f.low.bal)}. Move money in, push a big purchase later, or line up extra sales before then.` });
+    else if (f.firstBelow) out.push({ sev: 'warn', rank: 1, title: `${BOOK_NAME[book]} dips under your ${m0(cushion)} cushion around ${shortDate(f.firstBelow.date)}`,
+      body: `Lowest point is ${m0(f.low.bal)} on ${shortDate(f.low.date)}. You'd need about ${m0(cushion - f.low.bal)} more to stay above it.` });
+    else out.push({ sev: 'good', rank: 5, title: `${BOOK_NAME[book]} stays above your cushion for the next ${HORIZON} days`,
+      body: `Lowest point is ${m0(f.low.bal)} on ${shortDate(f.low.date)}. Anything above ${m0(cushion)} is room to save or invest.` });
+    const late = M.bills.filter(b => b.book === book && b.nextDue < TODAY && !b.autopay);
+    if (late.length) out.push({ sev: 'bad', rank: 0, title: `${late.length} ${BOOK_NAME[book].toLowerCase()} bill${late.length > 1 ? 's' : ''} past due`,
+      body: late.map(b => `${b.name} (${m0(b.amount)}, ${whenText(b.nextDue)})`).join(', ') + '. Mark them paid on the Bills tab once they go out.' });
+    const soon = M.bills.filter(b => b.book === book && b.kind === 'out' && b.nextDue >= TODAY && daysBetween(TODAY, b.nextDue) <= 7);
+    if (soon.length) out.push({ sev: 'info', rank: 3, title: `${m0(soon.reduce((a, b) => a + b.amount, 0))} in ${BOOK_NAME[book].toLowerCase()} bills this week`,
+      body: soon.map(b => `${b.name} ${shortDate(b.nextDue)}${b.autopay ? ' (autopay)' : ''}`).join(', ') });
+    for (const r of budgetRows(M, book)) {
+      if (r.status === 'bad') out.push({ sev: 'warn', rank: 2, title: `${r.cat} is over budget by ${m0(-r.left)}`, body: `${m0(r.spent)} spent of ${m0(r.limit)} this month (${BOOK_NAME[book]}).` });
+      else if (r.status === 'warn') out.push({ sev: 'info', rank: 4, title: `${r.cat} is running ahead of the month`, body: `${Math.round(r.pct * 100)}% of the ${m0(r.limit)} budget used; ${m0(r.left)} left.` });
+    }
+  }
+  if (books.includes('shop')) {
+    const tx = taxPicture(M); const days = daysBetween(TODAY, tx.next);
+    if (tx.gap > 50) out.push({ sev: days <= 30 ? 'warn' : 'info', rank: days <= 30 ? 1 : 3, title: `Set aside ${m0(tx.gap)} for taxes before ${shortDate(tx.next)}`,
+      body: `At ${M.settings.taxRate}% of ${m0(tx.profit)} shop profit so far this year, you'd owe about ${m0(tx.owedSoFar)}; ${m0(tx.paid)} is paid. Next estimated payment is due ${whenText(tx.next)}.` });
+    else out.push({ sev: 'good', rank: 5, title: 'Estimated taxes are caught up', body: `${m0(tx.paid)} paid against about ${m0(tx.owedSoFar)} owed so far this year.` });
+  }
+  for (const g of M.goals.filter(g => books.includes(g.book))) {
+    const left = g.target - g.saved; if (left <= 0) continue;
+    const months = Math.max(1, daysBetween(TODAY, g.by || addMonths(TODAY, 12)) / 30.4);
+    out.push({ sev: 'info', rank: 4, title: `Put ${m0(left / months)} a month toward "${g.name}"`, body: `${m0(g.saved)} of ${m0(g.target)} saved; that pace finishes it by ${shortDate(g.by)}.` });
+  }
+  return out.sort((a, b) => a.rank - b.rank);
+}
+
+/* ---------- chart ---------- */
+function chartSVG(f, cushion, book, width) {
+  const W = Math.max(280, width), H = 190, L = 54, R = 12, T = 14, B = 26;
+  const vals = f.pts.map(p => p.bal).concat([cushion, 0]);
+  let lo = Math.min(...vals), hi = Math.max(...vals);
+  const span = hi - lo || 1; lo = lo >= 0 ? Math.max(0, lo - span * 0.08) : lo - span * 0.08; hi += span * 0.08;
+  const stepRaw = (hi - lo) / 4; const mag = Math.pow(10, Math.floor(Math.log10(stepRaw)));
+  const step = [1, 2, 2.5, 5, 10].map(k => k * mag).find(s => s >= stepRaw);
+  const tickLo = Math.floor(lo / step) * step, tickHi = Math.ceil(hi / step) * step;
+  lo = tickLo; hi = tickHi;
+  const x = i => L + (W - L - R) * i / (f.pts.length - 1);
+  const y = v => T + (H - T - B) * (1 - (v - lo) / (hi - lo));
+  const color = book === 'shop' ? 'var(--shop)' : 'var(--pers)';
+  let grid = '';
+  for (let v = tickLo; v <= tickHi + 1e-6; v += step) {
+    const yy = y(v).toFixed(1);
+    grid += `<line x1="${L}" x2="${W - R}" y1="${yy}" y2="${yy}" stroke="var(--line)" stroke-width="1"/>`;
+    grid += `<text x="${L - 8}" y="${+yy + 4}" text-anchor="end">${Math.abs(v) >= 1000 ? (v < 0 ? '-' : '') + '$' + (Math.abs(v) / 1000).toFixed(Math.abs(v) % 1000 ? 1 : 0) + 'k' : m0(v)}</text>`;
+  }
+  let xt = '';
+  for (let i = 0; i <= HORIZON; i += 30) xt += `<text x="${x(i)}" y="${H - 6}" text-anchor="${i === 0 ? 'start' : i === HORIZON ? 'end' : 'middle'}">${i === 0 ? 'Today' : shortDate(f.pts[i].date)}</text>`;
+  const line = f.pts.map((p, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(p.bal).toFixed(1)}`).join('');
+  const base = y(Math.max(lo, Math.min(hi, 0)));
+  const area = `${line}L${x(f.pts.length - 1).toFixed(1)},${base.toFixed(1)}L${x(0).toFixed(1)},${base.toFixed(1)}Z`;
+  const li = f.pts.indexOf(f.low); const lx = x(li), ly = y(f.low.bal);
+  const cy = y(cushion);
+  const gid = 'g-' + book;
+  const lowAnchor = lx > W - 110 ? 'end' : lx < L + 60 ? 'start' : 'middle';
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${BOOK_NAME[book]} balance forecast for the next ${HORIZON} days. Lowest point ${m0(f.low.bal)} on ${shortDate(f.low.date)}.">
+    <defs><linearGradient id="${gid}" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="${color}" stop-opacity=".22"/><stop offset="1" stop-color="${color}" stop-opacity="0"/></linearGradient></defs>
+    ${grid}
+    ${lo < 0 ? `<line x1="${L}" x2="${W - R}" y1="${y(0)}" y2="${y(0)}" stroke="var(--bad)" stroke-width="1.5"/>` : ''}
+    ${cushion ? `<line x1="${L}" x2="${W - R}" y1="${cy}" y2="${cy}" stroke="var(--warn)" stroke-width="1.5" stroke-dasharray="5 4"/><text x="${L + 6}" y="${cy - 5}" text-anchor="start" style="fill:var(--warn)">cushion ${m0(cushion)}</text>` : ''}
+    <path d="${area}" fill="url(#${gid})"/>
+    <path d="${line}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round"/>
+    <circle cx="${lx}" cy="${ly}" r="5" fill="${color}" stroke="var(--surface)" stroke-width="2"/>
+    <text x="${lx}" y="${Math.min(H - B - 4, ly + 18)}" text-anchor="${lowAnchor}" style="fill:var(--ink-2);font-weight:600">low ${m0(f.low.bal)}</text>
+    ${xt}
+    <line class="xh" x1="0" x2="0" y1="${T}" y2="${H - B}" stroke="var(--ink-2)" stroke-width="1" visibility="hidden"/>
+    <circle class="xhd" r="4.5" fill="${color}" stroke="var(--surface)" stroke-width="2" visibility="hidden"/>
+    <rect class="hit" x="${L}" y="0" width="${W - L - R}" height="${H}" fill="transparent"/>
+  </svg>`;
+}
+function wireChart(el, f, book) {
+  const svg = el.querySelector('svg'); if (!svg) return;
+  const vb = svg.viewBox.baseVal; const W = vb.width, L = 54, R = 12; const tip = el.querySelector('.tip');
+  const xh = svg.querySelector('.xh'), dot = svg.querySelector('.xhd');
+  const pathEl = svg.querySelectorAll('path')[1];
+  const move = ev => {
+    const r = svg.getBoundingClientRect(); const px = (ev.clientX - r.left) * vb.width / r.width;
+    const i = Math.max(0, Math.min(f.pts.length - 1, Math.round((px - L) / (W - L - R) * (f.pts.length - 1))));
+    const X = L + (W - L - R) * i / (f.pts.length - 1);
+    const seg = pathEl.getAttribute('d').split(/[ML]/).filter(Boolean)[i].split(',');
+    xh.setAttribute('x1', X); xh.setAttribute('x2', X); xh.setAttribute('visibility', 'visible');
+    dot.setAttribute('cx', seg[0]); dot.setAttribute('cy', seg[1]); dot.setAttribute('visibility', 'visible');
+    tip.hidden = false; tip.textContent = `${shortDate(f.pts[i].date)} · ${m0(f.pts[i].bal)}`;
+    tip.style.left = (X * r.width / vb.width) + 'px'; tip.style.top = (seg[1] * r.height / vb.height) + 'px';
+  };
+  const leave = () => { tip.hidden = true; xh.setAttribute('visibility', 'hidden'); dot.setAttribute('visibility', 'hidden'); };
+  svg.addEventListener('pointermove', move); svg.addEventListener('pointerleave', leave);
+}
+
+/* ---------- UI state ---------- */
+const UI = {
+  tab: 'overview', book: prefs.get('book', 'both'), month: THIS_MONTH, search: '', armed: null,
+  txKind: 'out', billKind: 'out', csv: null
+};
+const booksShown = () => UI.book === 'both' ? BOOKS : [UI.book];
+const bookOpts = sel => BOOKS.map(b => `<option value="${b}" ${b === sel ? 'selected' : ''}>${BOOK_NAME[b]}</option>`).join('');
+const catOpts = (book, kind, sel) => CATS[book][kind].map(c => `<option ${c === sel ? 'selected' : ''}>${esc(c)}</option>`).join('');
+const defaultBook = () => UI.book === 'both' ? 'shop' : UI.book;
+
+/* ---------- views ---------- */
+function viewOverview(M) {
+  const books = booksShown();
+  const moves = nextMoves(M, books).slice(0, 7);
+  const cards = books.map(book => {
+    const f = forecast(M, book); const mt = monthTotals(M, book); const cushion = M.settings.cushion[book] || 0;
+    const st = f.low.bal < 0 ? ['bad', 'Short'] : f.firstBelow ? ['warn', 'Tight'] : ['good', 'On track'];
+    const weekly = f.pts.filter((_, i) => i % 7 === 0);
+    return `<article class="card book-card">
+      <div class="card-head"><h2><span class="dot ${book}"></span> ${BOOK_NAME[book]}</h2><span class="pill ${st[0]}">${st[1]}</span></div>
+      <div><div class="label">Balance today</div><div class="big">${m0(f.start)}</div></div>
+      <div class="stats">
+        <div><span class="label">In this month</span><strong>${m0(mt.inc)}</strong></div>
+        <div><span class="label">Out this month</span><strong>${m0(mt.out)}</strong></div>
+        <div><span class="label">Net</span><strong style="color:${mt.net < 0 ? 'var(--bad)' : 'var(--good)'}">${mt.net < 0 ? '−' : '+'}${m0(Math.abs(mt.net))}</strong></div>
+      </div>
+      <hr class="stitch-rule">
+      <div class="card-head"><h3>Next ${HORIZON} days</h3><span class="muted small">bills + expected everyday money</span></div>
+      <div class="chart" data-chart="${book}"><div class="tip" hidden></div></div>
+      <details><summary>Show as table</summary><div class="table-wrap"><table><thead><tr><th>Week of</th><th class="num">Projected balance</th></tr></thead><tbody>
+        ${weekly.map(p => `<tr><td>${shortDate(p.date)}</td><td class="num" style="${p.bal < cushion ? 'color:var(--warn)' : ''}">${m0(p.bal)}</td></tr>`).join('')}
+      </tbody></table></div></details>
+    </article>`;
+  }).join('');
+  const upcoming = M.bills.filter(b => books.includes(b.book) && daysBetween(TODAY, b.nextDue) <= 14).slice(0, 6);
+  const tx = taxPicture(M);
+  const budgetsList = books.flatMap(b => budgetRows(M, b)).sort((a, b) => b.pct - a.pct).slice(0, 5);
+  return `
+    <div class="grid" style="gap:20px">
+      <article class="card">
+        <div class="card-head"><h2>Next moves</h2><span class="muted small">What to handle now to stay ahead</span></div>
+        <ul class="moves">${moves.map(mv => `<li><span class="sev ${mv.sev}" aria-hidden="true">${{ bad: '!', warn: '!', good: '✓', info: '→' }[mv.sev]}</span><div><strong>${esc(mv.title)}</strong><p>${esc(mv.body)}</p></div></li>`).join('')}</ul>
+      </article>
+      <div class="grid cols-2">${cards}</div>
+      <div class="grid cols-3">
+        <article class="card">
+          <div class="card-head"><h2>Coming up</h2><span class="muted small">next 14 days</span></div>
+          ${upcoming.length ? `<div class="list">${upcoming.map(billRow).join('')}</div>` : '<div class="empty">Nothing due in the next two weeks.</div>'}
+        </article>
+        ${books.includes('shop') ? `<article class="card">
+          <div class="card-head"><h2>Tax set-aside</h2><span class="pill ${tx.gap > 50 ? (daysBetween(TODAY, tx.next) <= 30 ? 'warn' : 'info') : 'good'}">Due ${shortDate(tx.next)}</span></div>
+          <dl class="kv">
+            <dt>Shop profit so far in ${TODAY.slice(0, 4)}</dt><dd>${m0(tx.profit)}</dd>
+            <dt>Estimated tax at ${M.settings.taxRate}%</dt><dd>${m0(tx.owedSoFar)}</dd>
+            <dt>Estimated taxes paid</dt><dd>${m0(tx.paid)}</dd>
+          </dl>
+          <hr class="stitch-rule">
+          <dl class="kv"><dt><strong>${tx.gap > 0 ? 'Still to set aside' : 'Ahead by'}</strong></dt><dd style="font-size:20px">${m0(Math.abs(tx.gap))}</dd></dl>
+          <p class="muted small">Profit leaves out owner's draws and tax payments. Rate is set on the Setup tab; check it with your tax preparer.</p>
+        </article>` : ''}
+        <article class="card">
+          <div class="card-head"><h2>Budgets to watch</h2><span class="muted small">${monthName(THIS_MONTH)}</span></div>
+          ${budgetsList.length ? budgetsList.map(budgetRow).join('') : '<div class="empty">No budgets yet. Add some on the Budgets tab.</div>'}
+        </article>
+      </div>
+    </div>`;
+}
+function billRow(b) {
+  const n = daysBetween(TODAY, b.nextDue);
+  const pill = n < 0 ? (b.autopay ? ['info', 'Autopay, confirm'] : ['bad', 'Late']) : n <= 3 ? ['warn', whenText(b.nextDue)] : ['info', whenText(b.nextDue)];
+  return `<div class="row">
+    <div><strong>${esc(b.name)}</strong><div class="meta"><span class="dot ${b.book}"></span>${BOOK_NAME[b.book]} · ${shortDate(b.nextDue)} <span class="pill ${pill[0]}">${pill[1]}</span>${b.autopay ? '<span class="pill info">Autopay</span>' : ''}</div></div>
+    <div class="amt ${b.kind === 'in' ? 'in' : ''}">${b.kind === 'in' ? '+' : ''}${m2(b.amount)}</div>
+    <div class="acts"><button class="btn small" data-act="bill-paid" data-id="${b.id}">${b.kind === 'in' ? 'Received' : 'Paid'}</button><button class="btn small" data-act="bill-skip" data-id="${b.id}">Skip this one</button></div>
+  </div>`;
+}
+function budgetRow(r) {
+  const col = r.status === 'bad' ? 'var(--bad)' : r.status === 'warn' ? 'var(--warn)' : (r.book === 'shop' ? 'var(--shop)' : 'var(--pers)');
+  return `<div style="display:grid;gap:5px;margin-top:12px">
+    <div class="card-head"><span><span class="dot ${r.book}"></span> ${esc(r.cat)}</span><span class="small num"><strong>${m0(r.spent)}</strong> <span class="muted">of ${m0(r.limit)}</span></span></div>
+    <div class="bar" role="img" aria-label="${Math.round(r.pct * 100)} percent used"><span style="width:${Math.min(100, r.pct * 100)}%;background:${col}"></span></div>
+    <div class="small ${r.left < 0 ? '' : 'muted'}" style="${r.left < 0 ? 'color:var(--bad);font-weight:600' : ''}">${r.left < 0 ? `${m0(-r.left)} over` : `${m0(r.left)} left`}</div>
+  </div>`;
+}
+
+function viewMoney(M) {
+  const books = booksShown(); const q = UI.search.toLowerCase();
+  const rows = M.txns.filter(t => books.includes(t.book) && t.date.startsWith(UI.month) && (!q || (t.desc + ' ' + t.cat).toLowerCase().includes(q)));
+  const inc = rows.filter(t => t.kind === 'in').reduce((a, t) => a + t.amount, 0);
+  const out = rows.filter(t => t.kind === 'out').reduce((a, t) => a + t.amount, 0);
+  const bk = defaultBook(); const kind = UI.txKind;
+  const byCat = {};
+  for (const t of rows) if (t.kind === 'out') byCat[t.cat] = (byCat[t.cat] || 0) + t.amount;
+  const topCats = Object.entries(byCat).sort((a, b) => b[1] - a[1]).slice(0, 6);
+  const max = topCats.length ? topCats[0][1] : 1;
+  return `<div class="grid" style="gap:20px">
+    <div class="grid cols-2">
+      <article class="card">
+        <h2>Add money in or out</h2>
+        <form class="inline" id="txForm">
+          <div class="field"><span class="label">Type</span><div class="seg" role="group" aria-label="Money in or out">
+            <button type="button" data-kind="out" aria-pressed="${kind === 'out'}">Out</button><button type="button" data-kind="in" aria-pressed="${kind === 'in'}">In</button></div></div>
+          <div class="field"><label for="txDate">Date</label><input type="date" id="txDate" value="${TODAY}" required></div>
+          <div class="field"><label for="txAmt">Amount</label><input type="number" id="txAmt" step="0.01" min="0.01" inputmode="decimal" placeholder="0.00" required></div>
+          <div class="field"><label for="txBook">Book</label><select id="txBook">${bookOpts(bk)}</select></div>
+          <div class="field"><label for="txCat">Category</label><select id="txCat">${catOpts(bk, kind)}</select></div>
+          <div class="field" style="grid-column:1/-1"><label for="txDesc">What was it?</label><input type="text" id="txDesc" placeholder="${kind === 'in' ? 'Saturday register' : 'Canvas order from designer'}" maxlength="120"></div>
+          <button class="btn primary" type="submit">Add</button>
+        </form>
+      </article>
+      <article class="card">
+        <h2>Pay myself</h2>
+        <p class="muted small" style="margin-top:4px">Logs an owner's draw out of the shop and the same amount into personal, in one step.</p>
+        <form class="inline" id="payForm">
+          <div class="field"><label for="payAmt">Amount</label><input type="number" id="payAmt" step="0.01" min="0.01" inputmode="decimal" required></div>
+          <div class="field"><label for="payDate">Date</label><input type="date" id="payDate" value="${TODAY}" required></div>
+          <button class="btn primary" type="submit">Pay myself</button>
+        </form>
+        <hr class="stitch-rule">
+        <h3>Import from your bank</h3>
+        <p class="muted small" style="margin-top:4px">Download a CSV from your bank or card, then pick it here. You'll review everything before it's added.</p>
+        <div class="inline" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end">
+          <div class="field"><label for="csvBook">Which account?</label><select id="csvBook">${bookOpts(bk)}</select></div>
+          <div class="field"><label for="csvFile">CSV file</label><input type="file" id="csvFile" accept=".csv,text/csv"></div>
+        </div>
+      </article>
+    </div>
+    ${UI.csv ? csvReview() : ''}
+    <article class="card">
+      <div class="toolbar">
+        <div class="grp"><button class="btn small" data-act="month" data-d="-1" aria-label="Previous month">←</button><h2 style="min-width:10ch;text-align:center">${monthName(UI.month)}</h2><button class="btn small" data-act="month" data-d="1" aria-label="Next month">→</button></div>
+        <div class="grp"><input type="search" id="txSearch" placeholder="Search" value="${esc(UI.search)}" style="width:180px" aria-label="Search transactions">
+          <span class="chip">In ${m0(inc)}</span><span class="chip">Out ${m0(out)}</span><span class="chip" style="color:${inc - out < 0 ? 'var(--bad)' : 'var(--good)'}">Net ${m0(inc - out)}</span></div>
+      </div>
+      ${topCats.length ? `<details style="margin-top:12px"><summary>Where the money went</summary><div style="display:grid;gap:8px;margin-top:10px">${topCats.map(([c, v]) => `<div style="display:grid;grid-template-columns:minmax(0,180px) 1fr auto;gap:10px;align-items:center" class="small"><span>${esc(c)}</span><div class="bar"><span style="width:${v / max * 100}%;background:var(--accent)"></span></div><span class="num">${m0(v)}</span></div>`).join('')}</div></details>` : ''}
+      <div class="table-wrap" style="margin-top:8px">${rows.length ? `<table><thead><tr><th>Date</th><th>Description</th><th>Category</th><th>Book</th><th class="num">Amount</th><th></th></tr></thead><tbody>
+        ${rows.map(t => `<tr><td>${shortDate(t.date)}</td><td class="desc">${esc(t.desc || '—')}${t.billId ? ' <span class="pill info">bill</span>' : ''}</td><td>${esc(t.cat)}</td><td><span class="dot ${t.book}"></span> ${BOOK_NAME[t.book]}</td>
+        <td class="num" style="font-weight:600;${t.kind === 'in' ? 'color:var(--good)' : ''}">${t.kind === 'in' ? '+' : '−'}${m2(t.amount)}</td>
+        <td><button class="btn small danger ${UI.armed === t.id ? 'armed' : ''}" data-act="tx-del" data-id="${t.id}" data-date="${t.date}">${UI.armed === t.id ? 'Confirm' : 'Delete'}</button></td></tr>`).join('')}
+      </tbody></table>` : '<div class="empty">Nothing recorded for this month yet.</div>'}</div>
+    </article>
+  </div>`;
+}
+
+/* CSV import */
+const RULES = [
+  [/rent|lease/i, { shop: 'Rent', personal: 'Housing' }], [/mortgage/i, { personal: 'Housing' }],
+  [/payroll|gusto|adp/i, { shop: 'Payroll' }], [/shopify|square|stripe|paypal fee|processing/i, { shop: 'Card & platform fees' }],
+  [/usps|ups|fedex|pirate ?ship|uline/i, { shop: 'Shipping & packaging' }], [/dmc|kreinik|rainbow gallery|silk|thread|fiber/i, { shop: 'Threads & fibers' }],
+  [/canvas|designs/i, { shop: 'Canvases & inventory' }], [/finish/i, { shop: 'Finishing (outsourced)' }],
+  [/facebook|meta ads|instagram|google ads|mailchimp|klaviyo/i, { shop: 'Marketing' }],
+  [/irs|eftps|estimated tax|state tax/i, { shop: 'Estimated taxes', personal: 'Estimated taxes' }],
+  [/kroger|publix|trader|whole foods|safeway|heb|aldi|grocery|costco/i, { personal: 'Groceries' }],
+  [/shell|exxon|chevron|bp |gas|fuel/i, { personal: 'Car & gas' }], [/netflix|spotify|hulu|disney|apple\.com|prime/i, { personal: 'Subscriptions', shop: 'Software & subscriptions' }],
+  [/electric|water|power|energy|verizon|at&t|t-mobile|comcast|xfinity/i, { personal: 'Utilities', shop: 'Utilities' }],
+  [/insurance|geico|state farm|allstate/i, { personal: 'Insurance', shop: 'Insurance' }], [/restaurant|cafe|coffee|doordash|grubhub|uber eats/i, { personal: 'Dining out' }],
+  [/amazon|target|walmart/i, { personal: 'Shopping' }]
+];
+function guessCat(desc, book, kind) {
+  if (kind === 'in') return book === 'shop' ? (/shopify|online|web/i.test(desc) ? 'Online sales' : 'Retail sales') : (/transfer|shop|draw/i.test(desc) ? "Owner's pay" : 'Other income');
+  for (const [re, m] of RULES) if (re.test(desc) && m[book]) return m[book];
+  return 'Other';
+}
+function parseCSV(text) {
+  const rows = []; let row = [], cell = '', q = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (q) { if (c === '"') { if (text[i + 1] === '"') { cell += '"'; i++; } else q = false; } else cell += c; }
+    else if (c === '"') q = true;
+    else if (c === ',') { row.push(cell); cell = ''; }
+    else if (c === '\n' || c === '\r') { if (c === '\r' && text[i + 1] === '\n') i++; row.push(cell); rows.push(row); row = []; cell = ''; }
+    else cell += c;
+  }
+  if (cell || row.length) { row.push(cell); rows.push(row); }
+  return rows.filter(r => r.some(c => c.trim()));
+}
+function toISODate(s) {
+  s = s.trim(); let m;
+  if ((m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/))) return `${m[1]}-${pad(m[2])}-${pad(m[3])}`;
+  if ((m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})/))) { const y = m[3].length === 2 ? '20' + m[3] : m[3]; return `${y}-${pad(m[1])}-${pad(m[2])}`; }
+  const d = new Date(s); return isNaN(d) ? null : iso(d);
+}
+function readCSV(text, book) {
+  const rows = parseCSV(text); if (rows.length < 2) return { error: "That file didn't have any rows to import." };
+  const head = rows[0].map(h => h.toLowerCase().trim());
+  const find = (...names) => head.findIndex(h => names.some(n => h === n || h.includes(n)));
+  const di = find('date', 'posted', 'transaction date');
+  const dsi = find('description', 'payee', 'memo', 'name', 'merchant', 'details');
+  const ai = find('amount');
+  const dbi = find('debit', 'withdrawal'); const cri = find('credit', 'deposit');
+  if (di < 0 || (ai < 0 && dbi < 0 && cri < 0)) return { error: "Couldn't find Date and Amount columns. Check that the first row of the file has column names." };
+  const items = [];
+  for (const r of rows.slice(1)) {
+    const date = toISODate(r[di] || ''); if (!date) continue;
+    let amt;
+    if (ai >= 0 && String(r[ai] || '').trim() !== '') { const raw = String(r[ai]); amt = num(raw); if (/^\(.*\)$/.test(raw.trim())) amt = -Math.abs(amt); }
+    else { const d = num(r[dbi] || ''); const c = num(r[cri] || ''); amt = isFinite(c) && c ? Math.abs(c) : isFinite(d) ? -Math.abs(d) : NaN; }
+    if (!isFinite(amt) || amt === 0) continue;
+    const kind = amt > 0 ? 'in' : 'out'; const desc = (dsi >= 0 ? r[dsi] : '').trim().slice(0, 120);
+    items.push({ id: uid(), date, desc, amount: Math.round(Math.abs(amt) * 100) / 100, kind, book, cat: guessCat(desc, book, kind), keep: true });
+  }
+  if (!items.length) return { error: 'No usable rows found in that file.' };
+  // flag rows that look like ones already recorded
+  const M = model();
+  const seen = new Set(M.txns.map(t => `${t.book}|${t.date}|${t.amount}|${t.kind}`));
+  for (const it of items) if (seen.has(`${it.book}|${it.date}|${it.amount}|${it.kind}`)) { it.dupe = true; it.keep = false; }
+  return { items, book };
+}
+function csvReview() {
+  const c = UI.csv; const kept = c.items.filter(i => i.keep).length;
+  return `<article class="card">
+    <div class="card-head"><h2>Review ${c.items.length} rows from your bank</h2><div class="grp" style="display:flex;gap:8px"><button class="btn" data-act="csv-cancel">Cancel</button><button class="btn primary" data-act="csv-add" ${kept ? '' : 'disabled'}>Add ${kept} to ${BOOK_NAME[c.book]}</button></div></div>
+    <p class="muted small">Categories are a best guess. Rows that match something already recorded are unticked. Money moving between your own accounts is usually best left out.</p>
+    <div class="table-wrap"><table><thead><tr><th>Add</th><th>Date</th><th>Description</th><th class="num">Amount</th><th>Category</th></tr></thead><tbody>
+    ${c.items.map((it, i) => `<tr><td><input type="checkbox" id="csvk-${i}" data-csv-keep="${i}" ${it.keep ? 'checked' : ''} aria-label="Add this row"></td><td>${shortDate(it.date)}</td><td class="desc">${esc(it.desc)}${it.dupe ? ' <span class="pill warn">already recorded?</span>' : ''}</td>
+      <td class="num" style="${it.kind === 'in' ? 'color:var(--good)' : ''}">${it.kind === 'in' ? '+' : '−'}${m2(it.amount)}</td>
+      <td><select id="csvc-${i}" data-csv-cat="${i}" aria-label="Category">${catOpts(c.book, it.kind, it.cat)}</select></td></tr>`).join('')}
+    </tbody></table></div></article>`;
+}
+
+function viewBills(M) {
+  const books = booksShown(); const bk = defaultBook(); const kind = UI.billKind;
+  const list = M.bills.filter(b => books.includes(b.book));
+  const monthly = b => b.amount * ({ weekly: 52, biweekly: 26, monthly: 12, quarterly: 4, yearly: 1 }[b.freq] || 12) / 12;
+  return `<div class="grid" style="gap:20px">
+    <article class="card">
+      <h2>Add a bill or payday</h2>
+      <form class="inline" id="billForm">
+        <div class="field"><span class="label">Type</span><div class="seg" role="group" aria-label="Bill or payday">
+          <button type="button" data-bkind="out" aria-pressed="${kind === 'out'}">Bill</button><button type="button" data-bkind="in" aria-pressed="${kind === 'in'}">Money coming in</button></div></div>
+        <div class="field"><label for="bName">Name</label><input type="text" id="bName" required maxlength="80" placeholder="${kind === 'in' ? 'Pay from shop' : 'Shop rent'}"></div>
+        <div class="field"><label for="bAmt">Amount</label><input type="number" id="bAmt" step="0.01" min="0.01" inputmode="decimal" required></div>
+        <div class="field"><label for="bBook">Book</label><select id="bBook">${bookOpts(bk)}</select></div>
+        <div class="field"><label for="bCat">Category</label><select id="bCat">${catOpts(bk, kind)}</select></div>
+        <div class="field"><label for="bFreq">How often</label><select id="bFreq">${Object.entries(FREQ).map(([k, v]) => `<option value="${k}" ${k === 'monthly' ? 'selected' : ''}>${v}</option>`).join('')}</select></div>
+        <div class="field"><label for="bDue">Next due</label><input type="date" id="bDue" value="${TODAY}" required></div>
+        <div class="field" style="grid-auto-flow:column;justify-content:start;align-items:center;gap:8px"><input type="checkbox" id="bAuto"><label for="bAuto">Autopay</label></div>
+        <button class="btn primary" type="submit">Add</button>
+      </form>
+    </article>
+    <div class="grid cols-2">${books.map(book => {
+      const bl = list.filter(b => b.book === book);
+      const outM = bl.filter(b => b.kind === 'out').reduce((a, b) => a + monthly(b), 0);
+      const inM = bl.filter(b => b.kind === 'in').reduce((a, b) => a + monthly(b), 0);
+      return `<article class="card">
+        <div class="card-head"><h2><span class="dot ${book}"></span> ${BOOK_NAME[book]}</h2><span class="muted small num">about ${m0(outM)}/mo out${inM ? ` · ${m0(inM)}/mo in` : ''}</span></div>
+        ${bl.length ? `<div class="list">${bl.map(b => `<div class="row">
+          <div><strong>${esc(b.name)}</strong><div class="meta">${FREQ[b.freq] || b.freq} · ${esc(b.cat)} · next ${shortDate(b.nextDue)} (${whenText(b.nextDue)})${b.autopay ? ' <span class="pill info">Autopay</span>' : ''}</div></div>
+          <div class="amt ${b.kind === 'in' ? 'in' : ''}">${b.kind === 'in' ? '+' : ''}${m2(b.amount)}</div>
+          <div class="acts"><button class="btn small" data-act="bill-paid" data-id="${b.id}">${b.kind === 'in' ? 'Received' : 'Paid'}</button><button class="btn small" data-act="bill-skip" data-id="${b.id}">Skip this one</button><button class="btn small danger ${UI.armed === b.id ? 'armed' : ''}" data-act="bill-del" data-id="${b.id}">${UI.armed === b.id ? 'Confirm delete' : 'Delete'}</button></div>
+        </div>`).join('')}</div>` : '<div class="empty">No bills here yet.</div>'}
+      </article>`;
+    }).join('')}</div>
+    <p class="muted small">"Paid" records the payment in Money in &amp; out and moves the bill to its next date. "Skip this one" moves the date without recording anything.</p>
+  </div>`;
+}
+
+function viewBudgets(M) {
+  const books = booksShown(); const bk = defaultBook();
+  return `<div class="grid" style="gap:20px">
+    <article class="card">
+      <h2>Set a monthly budget</h2>
+      <form class="inline" id="budForm">
+        <div class="field"><label for="budBook">Book</label><select id="budBook">${bookOpts(bk)}</select></div>
+        <div class="field"><label for="budCat">Category</label><select id="budCat">${catOpts(bk, 'out')}</select></div>
+        <div class="field"><label for="budAmt">Monthly limit</label><input type="number" id="budAmt" step="1" min="0" inputmode="decimal" required></div>
+        <button class="btn primary" type="submit">Save</button>
+      </form>
+      <p class="muted small">A category turns amber when spending runs ahead of how far through the month we are, and red when it's over.</p>
+    </article>
+    <div class="grid cols-2">${books.map(book => {
+      const rows = budgetRows(M, book);
+      const tot = rows.reduce((a, r) => ({ l: a.l + r.limit, s: a.s + r.spent }), { l: 0, s: 0 });
+      return `<article class="card"><div class="card-head"><h2><span class="dot ${book}"></span> ${BOOK_NAME[book]}</h2><span class="muted small num">${m0(tot.s)} of ${m0(tot.l)}</span></div>
+        ${rows.length ? rows.map(r => budgetRow(r) + `<div style="text-align:right"><button class="btn small danger ${UI.armed === 'bud:' + book + ':' + r.cat ? 'armed' : ''}" data-act="bud-del" data-book="${book}" data-cat="${esc(r.cat)}">${UI.armed === 'bud:' + book + ':' + r.cat ? 'Confirm remove' : 'Remove'}</button></div>`).join('') : '<div class="empty">No budgets yet.</div>'}
+      </article>`;
+    }).join('')}</div>
+  </div>`;
+}
+
+function viewGoals(M) {
+  const books = booksShown(); const goals = M.goals.filter(g => books.includes(g.book));
+  return `<div class="grid" style="gap:20px">
+    <article class="card">
+      <h2>Add a savings goal</h2>
+      <form class="inline" id="goalForm">
+        <div class="field"><label for="gName">Goal</label><input type="text" id="gName" required maxlength="80" placeholder="Holiday inventory fund"></div>
+        <div class="field"><label for="gBook">Book</label><select id="gBook">${bookOpts(defaultBook())}</select></div>
+        <div class="field"><label for="gTarget">Target</label><input type="number" id="gTarget" step="1" min="1" required></div>
+        <div class="field"><label for="gSaved">Saved so far</label><input type="number" id="gSaved" step="1" min="0" value="0"></div>
+        <div class="field"><label for="gBy">By</label><input type="date" id="gBy" value="${addMonths(TODAY, 6)}" required></div>
+        <button class="btn primary" type="submit">Add goal</button>
+      </form>
+    </article>
+    <div class="grid cols-3">${goals.length ? goals.map(g => {
+      const pct = Math.min(1, g.saved / g.target); const left = Math.max(0, g.target - g.saved);
+      const months = Math.max(1, daysBetween(TODAY, g.by) / 30.4);
+      return `<article class="card">
+        <div class="card-head"><h3><span class="dot ${g.book}"></span> ${esc(g.name)}</h3>${left <= 0 ? '<span class="pill good">Done</span>' : `<span class="pill info">by ${shortDate(g.by)}</span>`}</div>
+        <div class="card-head"><span class="big" style="font-family:var(--display);font-size:26px;font-weight:700">${m0(g.saved)}</span><span class="muted num">of ${m0(g.target)}</span></div>
+        <div class="bar"><span style="width:${pct * 100}%;background:${g.book === 'shop' ? 'var(--shop)' : 'var(--pers)'}"></span></div>
+        ${left > 0 ? `<p class="small" style="margin:8px 0 0">Save <strong>${m0(left / months)}</strong> a month to finish on time.</p>` : ''}
+        <form class="inline" data-goal="${g.id}" style="grid-template-columns:1fr auto"><div class="field"><label for="ga-${g.id}">Add to it</label><input type="number" id="ga-${g.id}" step="1" inputmode="decimal" placeholder="100"></div><button class="btn" type="submit">Add</button></form>
+        <div style="text-align:right"><button class="btn small danger ${UI.armed === g.id ? 'armed' : ''}" data-act="goal-del" data-id="${g.id}">${UI.armed === g.id ? 'Confirm delete' : 'Delete goal'}</button></div>
+      </article>`;
+    }).join('') : '<div class="empty">No goals yet. A holiday inventory fund or a few months of shop expenses are good ones to start with.</div>'}</div>
+  </div>`;
+}
+
+function viewSetup(M) {
+  const s = M.settings; const demo = Store.isDemo();
+  const avg = averages(M);
+  return `<div class="grid" style="gap:20px">
+    ${demo ? `<article class="card" style="border:2px dashed var(--accent)"><h2>Start your own books</h2>
+      <p style="max-width:68ch">Everything you see right now is example data. Enter today's real balances below and press <strong>Start my books</strong>. The examples go away and everything you add from then on is saved${Store.mode === 'db' ? ' to this page, so it is there on any device you open it from' : ' in this browser'}.</p></article>` : ''}
+    <article class="card">
+      <h2>${demo ? 'Your starting point' : 'Balances & settings'}</h2>
+      <form class="inline" id="setForm">
+        <div class="field"><label for="sShop">Shop checking balance</label><input type="number" id="sShop" step="0.01" value="${demo ? '' : s.balances.shop}" required></div>
+        <div class="field"><label for="sPers">Personal checking balance</label><input type="number" id="sPers" step="0.01" value="${demo ? '' : s.balances.personal}" required></div>
+        <div class="field"><label for="sAsOf">As of</label><input type="date" id="sAsOf" value="${demo ? TODAY : s.asOf}" required></div>
+        <div class="field"><label for="sTax">Tax set-aside rate (%)</label><input type="number" id="sTax" step="0.5" min="0" max="60" value="${s.taxRate}"></div>
+        <div class="field"><label for="sCushShop">Shop cushion (never go below)</label><input type="number" id="sCushShop" step="50" min="0" value="${s.cushion.shop}"></div>
+        <div class="field"><label for="sCushPers">Personal cushion</label><input type="number" id="sCushPers" step="50" min="0" value="${s.cushion.personal}"></div>
+        <button class="btn primary" type="submit">${demo ? 'Start my books' : 'Save'}</button>
+      </form>
+      <p class="muted small">Balances are what the bank shows on the "as of" date. Anything you record after that date moves the balance. If the numbers drift from the bank, update them here with today's date.</p>
+    </article>
+    <article class="card">
+      <h2>Everyday money for the forecast</h2>
+      <p class="muted small" style="max-width:70ch">Bills and paydays are already in the forecast. These cover the rest: typical monthly sales, and spending that isn't a fixed bill (inventory, groceries, gas).</p>
+      <form class="inline" id="expForm">
+        <div class="field"><label for="eShopIn">Shop sales per month</label><input type="number" id="eShopIn" step="50" min="0" value="${s.expected.shop.in}"></div>
+        <div class="field"><label for="eShopOut">Shop other spending per month</label><input type="number" id="eShopOut" step="50" min="0" value="${s.expected.shop.out}"></div>
+        <div class="field"><label for="ePersIn">Personal other income per month</label><input type="number" id="ePersIn" step="50" min="0" value="${s.expected.personal.in}"></div>
+        <div class="field"><label for="ePersOut">Personal other spending per month</label><input type="number" id="ePersOut" step="50" min="0" value="${s.expected.personal.out}"></div>
+        <button class="btn primary" type="submit">Save</button>
+      </form>
+      ${avg ? `<p class="small">Your last 90 days, leaving out bills: shop ${m0(avg.shop.in)} in / ${m0(avg.shop.out)} out, personal ${m0(avg.personal.in)} in / ${m0(avg.personal.out)} out per month. <button class="btn small" data-act="use-avg">Use these</button></p>` : ''}
+    </article>
+    <article class="card">
+      <h2>Backup</h2>
+      <p class="muted small">Save a copy of everything, or a spreadsheet of transactions for your bookkeeper.</p>
+      <div style="display:flex;gap:10px;flex-wrap:wrap"><button class="btn" data-act="export-csv">Transactions (.csv)</button><button class="btn" data-act="export-json">Full backup (.json)</button>
+        <label class="btn" for="restoreFile" style="display:inline-flex;align-items:center">Restore a backup…</label><input type="file" id="restoreFile" accept=".json,application/json" hidden></div>
+    </article>
+  </div>`;
+}
+function averages(M) {
+  const from = addDays(TODAY, -90); const res = { shop: { in: 0, out: 0 }, personal: { in: 0, out: 0 } }; let any = false;
+  for (const t of M.txns) if (t.date > from && t.date <= TODAY && !t.billId && !t.history) {
+    if (t.cat === "Owner's draw" || t.cat === "Owner's pay" || t.cat === 'Estimated taxes') continue;
+    res[t.book][t.kind] += t.amount; any = true;
+  }
+  if (!any) return null;
+  for (const b of BOOKS) for (const k of ['in', 'out']) res[b][k] = Math.round(res[b][k] / 3 / 10) * 10;
+  return res;
+}
+
+/* ---------- render ---------- */
+function render() {
+  if (!Store.demo) return;
+  const M = model();
+  const chip = $('#saveChip');
+  chip.textContent = !Store.ready ? 'Loading…' : Store.isDemo() ? 'Example data' : Store.mode === 'db' ? 'Saved to this page' : 'Saved in this browser';
+  $('#banner').innerHTML = Store.ready && Store.isDemo() ? `<div class="banner"><p><strong>You're looking at example numbers.</strong> Poke around, then go to Setup and enter your real balances to start your own books.</p><button class="btn primary" data-act="go-setup">Start my books</button></div>` : '';
+  document.querySelectorAll('#bookSeg button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.book === UI.book)));
+  document.querySelectorAll('#tabs button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.tab === UI.tab)));
+  const active = document.activeElement; const focusId = active && active.id; const selStart = active && active.selectionStart;
+  const view = $('#view');
+  // keep what's typed in open forms across re-renders
+  const saved = {}; view.querySelectorAll('input[id]:not([type=file]), select[id]').forEach(el => { saved[el.id] = el.type === 'checkbox' ? el.checked : el.value; });
+  const fn = { overview: viewOverview, money: viewMoney, bills: viewBills, budgets: viewBudgets, goals: viewGoals, setup: viewSetup }[UI.tab];
+  view.innerHTML = fn(M);
+  for (const [id, v] of Object.entries(saved)) {
+    const el = document.getElementById(id); if (!el || id.startsWith('csvk-') || id.startsWith('csvc-')) continue;
+    if (el.type === 'checkbox') el.checked = v; else if (el.tagName === 'SELECT') { if ([...el.options].some(o => o.value === v)) el.value = v; } else el.value = v;
+  }
+  if (focusId) { const el = document.getElementById(focusId); if (el) { el.focus(); try { if (selStart != null) el.setSelectionRange(selStart, selStart); } catch (e) {} } }
+  view.querySelectorAll('[data-chart]').forEach(el => {
+    const book = el.dataset.chart; const f = forecast(M, book);
+    el.insertAdjacentHTML('beforeend', chartSVG(f, M.settings.cushion[book] || 0, book, el.clientWidth || 480));
+    wireChart(el, f, book);
+  });
+}
+let lastW = window.innerWidth;
+window.addEventListener('resize', () => { if (Math.abs(window.innerWidth - lastW) > 40) { lastW = window.innerWidth; render(); } });
+
+/* ---------- actions ---------- */
+function addTxn(t) {
+  const p = 'ledger/' + t.date.slice(0, 7); const docs = Store.active();
+  const items = [...((docs[p] && docs[p].items) || []), t];
+  return Store.set(p, { items });
+}
+function addTxns(list) {
+  const groups = {}; for (const t of list) (groups[t.date.slice(0, 7)] = groups[t.date.slice(0, 7)] || []).push(t);
+  const docs = Store.active();
+  for (const [ym, ts] of Object.entries(groups)) { const p = 'ledger/' + ym; Store.set(p, { items: [...((docs[p] && docs[p].items) || []), ...ts] }); }
+}
+function saveSettings(patch) {
+  const M = model(); const s = { ...M.settings, ...patch };
+  const wasDemo = Store.isDemo();
+  if (wasDemo) {
+    // Starting real books: none of the example forecast numbers carry over
+    s.expected = patch.expected || { shop: { in: 0, out: 0 }, personal: { in: 0, out: 0 } };
+  }
+  s.started = true;
+  Store.set('settings/main', s, { real: true });
+  if (wasDemo) { toast('Your books are started. Add bills and paydays next.'); UI.tab = 'bills'; render(); }
+  else toast('Saved');
+}
+async function offerFile(filename, data, type) {
+  try {
+    const dl = window.claude && window.claude.use ? await window.claude.use('downloads') : null;
+    if (dl) { await dl.save({ filename, data }); return; }
+  } catch (e) { if (e && e.code === 'declined') return; if (e && e.code !== 'unavailable') { toast("Couldn't save the file here."); return; } }
+  try { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([data], { type })); a.download = filename; document.body.appendChild(a); a.click(); a.remove(); }
+  catch (e) { toast("This view can't save files."); }
+}
+
+document.addEventListener('click', e => {
+  const t = e.target.closest('button, [data-act]'); if (!t) return;
+  if (t.dataset.book && t.closest('#bookSeg')) { UI.book = t.dataset.book; prefs.set('book', UI.book); render(); return; }
+  if (t.dataset.tab) { UI.tab = t.dataset.tab; UI.armed = null; try { history.replaceState(null, '', '#' + UI.tab); } catch (err) {} render(); window.scrollTo({ top: 0 }); return; }
+  if (t.dataset.kind) { UI.txKind = t.dataset.kind; render(); const bk = $('#txBook').value; $('#txCat').innerHTML = catOpts(bk, UI.txKind); return; }
+  if (t.dataset.bkind) { UI.billKind = t.dataset.bkind; render(); const bk = $('#bBook').value; $('#bCat').innerHTML = catOpts(bk, UI.billKind); return; }
+  const act = t.dataset.act; if (!act) return;
+  const M = model();
+  const arm = key => { if (UI.armed !== key) { UI.armed = key; render(); return false; } UI.armed = null; return true; };
+  switch (act) {
+    case 'go-setup': UI.tab = 'setup'; render(); break;
+    case 'month': { const d = parse(UI.month + '-01'); d.setMonth(d.getMonth() + +t.dataset.d); UI.month = iso(d).slice(0, 7); render(); break; }
+    case 'tx-del': {
+      if (!arm(t.dataset.id)) break;
+      const p = 'ledger/' + t.dataset.date.slice(0, 7); const doc = Store.active()[p];
+      if (doc) { const items = doc.items.filter(i => i.id !== t.dataset.id); Store.set(p, items.length ? { items } : null); }
+      break;
+    }
+    case 'bill-paid': case 'bill-skip': {
+      const b = M.bills.find(x => x.id === t.dataset.id); if (!b) break;
+      if (act === 'bill-paid') {
+        const date = b.nextDue > TODAY ? TODAY : b.nextDue;
+        addTxn({ id: uid(), date, desc: b.name, amount: b.amount, kind: b.kind, book: b.book, cat: b.cat, billId: b.id });
+      }
+      const { id, ...rest } = b; Store.set('bills/' + id, { ...rest, nextDue: stepBill(b, b.nextDue) });
+      toast(act === 'bill-paid' ? `${b.name} recorded. Next one ${shortDate(stepBill(b, b.nextDue))}.` : `Skipped. Next ${b.name} is ${shortDate(stepBill(b, b.nextDue))}.`);
+      break;
+    }
+    case 'bill-del': if (arm(t.dataset.id)) Store.set('bills/' + t.dataset.id, null); break;
+    case 'goal-del': if (arm(t.dataset.id)) Store.set('goals/' + t.dataset.id, null); break;
+    case 'bud-del': {
+      const key = 'bud:' + t.dataset.book + ':' + t.dataset.cat; if (!arm(key)) break;
+      const limits = { ...M.budgets[t.dataset.book] }; delete limits[t.dataset.cat];
+      Store.set('budgets/' + t.dataset.book, { limits }); break;
+    }
+    case 'use-avg': {
+      const a = averages(M); if (!a) break;
+      $('#eShopIn').value = a.shop.in; $('#eShopOut').value = a.shop.out; $('#ePersIn').value = a.personal.in; $('#ePersOut').value = a.personal.out;
+      toast('Filled in. Press Save to use them.'); break;
+    }
+    case 'csv-cancel': UI.csv = null; render(); break;
+    case 'csv-add': {
+      const keep = UI.csv.items.filter(i => i.keep).map(({ keep, dupe, ...r }) => r);
+      addTxns(keep); toast(`Added ${keep.length} transactions to ${BOOK_NAME[UI.csv.book]}.`); UI.csv = null; render(); break;
+    }
+    case 'export-csv': {
+      const rows = [['Date', 'Book', 'In/Out', 'Category', 'Description', 'Amount']].concat(M.txns.slice().reverse().map(x => [x.date, BOOK_NAME[x.book], x.kind === 'in' ? 'In' : 'Out', x.cat, x.desc || '', (x.kind === 'in' ? '' : '-') + x.amount.toFixed(2)]));
+      offerFile(`money-book-transactions-${TODAY}.csv`, rows.map(r => r.map(c => /[",\n]/.test(c) ? `"${String(c).replace(/"/g, '""')}"` : c).join(',')).join('\n'), 'text/csv'); break;
+    }
+    case 'export-json': offerFile(`money-book-backup-${TODAY}.json`, JSON.stringify({ app: 'dani-money-book', version: 1, exported: TODAY, docs: Store.active() }, null, 1), 'application/json'); break;
+  }
+});
+
+document.addEventListener('change', e => {
+  const t = e.target;
+  if (t.id === 'txBook') $('#txCat').innerHTML = catOpts(t.value, UI.txKind);
+  if (t.id === 'bBook') $('#bCat').innerHTML = catOpts(t.value, UI.billKind);
+  if (t.id === 'budBook') $('#budCat').innerHTML = catOpts(t.value, 'out');
+  if (t.dataset.csvKeep != null) { UI.csv.items[+t.dataset.csvKeep].keep = t.checked; render(); }
+  if (t.dataset.csvCat != null) UI.csv.items[+t.dataset.csvCat].cat = t.value;
+  if (t.id === 'csvFile' && t.files[0]) {
+    const book = $('#csvBook').value; const r = new FileReader();
+    r.onload = () => { const res = readCSV(String(r.result), book); if (res.error) toast(res.error); else { UI.csv = res; render(); } };
+    r.readAsText(t.files[0]);
+  }
+  if (t.id === 'restoreFile' && t.files[0]) {
+    const r = new FileReader();
+    r.onload = () => {
+      try {
+        const data = JSON.parse(String(r.result)); if (!data || data.app !== 'dani-money-book' || !data.docs) throw new Error();
+        const docs = data.docs; if (docs['settings/main']) docs['settings/main'].started = true;
+        Store.set('settings/main', docs['settings/main'] || { started: true, asOf: TODAY }, { real: true });
+        for (const [p, v] of Object.entries(docs)) if (p !== 'settings/main' && COLLS.includes(p.split('/')[0])) Store.set(p, v, { real: true });
+        toast('Backup restored.');
+      } catch (err) { toast("That file isn't a Money Book backup."); }
+    };
+    r.readAsText(t.files[0]);
+  }
+});
+document.addEventListener('input', e => { if (e.target.id === 'txSearch') { UI.search = e.target.value; render(); } });
+
+document.addEventListener('submit', e => {
+  e.preventDefault(); const f = e.target; const v = id => $('#' + id).value;
+  if (f.id === 'txForm') {
+    const amount = num(v('txAmt')); if (!(amount > 0)) { toast('Enter an amount above zero.'); return; }
+    if (addTxn({ id: uid(), date: v('txDate'), desc: v('txDesc').trim(), amount, kind: UI.txKind, book: v('txBook'), cat: v('txCat') })) {
+      $('#txAmt').value = ''; $('#txDesc').value = ''; UI.month = v('txDate').slice(0, 7); toast('Added'); render();
+    }
+  } else if (f.id === 'payForm') {
+    const amount = num(v('payAmt')); const date = v('payDate'); if (!(amount > 0)) { toast('Enter an amount above zero.'); return; }
+    addTxns([{ id: uid(), date, desc: "Owner's draw", amount, kind: 'out', book: 'shop', cat: "Owner's draw" },
+             { id: uid(), date, desc: 'Pay from shop', amount, kind: 'in', book: 'personal', cat: "Owner's pay" }]);
+    $('#payAmt').value = ''; toast(`Paid yourself ${m2(amount)}.`);
+  } else if (f.id === 'billForm') {
+    const amount = num(v('bAmt')); if (!(amount > 0) || !v('bName').trim()) { toast('Add a name and an amount.'); return; }
+    const nextDue = v('bDue');
+    if (Store.set('bills/' + uid(), { name: v('bName').trim(), amount, kind: UI.billKind, book: v('bBook'), cat: v('bCat'), freq: v('bFreq'), nextDue, day: parse(nextDue).getDate(), autopay: $('#bAuto').checked })) {
+      $('#bName').value = ''; $('#bAmt').value = ''; toast('Added'); render();
+    }
+  } else if (f.id === 'budForm') {
+    const amt = num(v('budAmt')); if (!(amt >= 0)) { toast('Enter a monthly limit.'); return; }
+    const book = v('budBook'); const limits = { ...model().budgets[book], [v('budCat')]: amt };
+    if (Store.set('budgets/' + book, { limits })) { $('#budAmt').value = ''; toast('Budget saved'); render(); }
+  } else if (f.id === 'goalForm') {
+    const target = num(v('gTarget')); if (!(target > 0) || !v('gName').trim()) { toast('Add a goal name and a target.'); return; }
+    if (Store.set('goals/' + uid(), { name: v('gName').trim(), book: v('gBook'), target, saved: num(v('gSaved')) || 0, by: v('gBy') })) {
+      $('#gName').value = ''; $('#gTarget').value = ''; $('#gSaved').value = '0'; render();
+    }
+  } else if (f.dataset.goal) {
+    const g = model().goals.find(x => x.id === f.dataset.goal); const inp = f.querySelector('input'); const add = num(inp.value);
+    if (!g || !isFinite(add) || !add) return;
+    const { id, ...rest } = g; if (Store.set('goals/' + id, { ...rest, saved: Math.max(0, g.saved + add) })) { inp.value = ''; toast(`${m0(add)} added to ${g.name}`); render(); }
+  } else if (f.id === 'setForm') {
+    const shop = num(v('sShop')), personal = num(v('sPers'));
+    if (!isFinite(shop) || !isFinite(personal)) { toast('Enter both balances (0 is fine).'); return; }
+    const M = model();
+    saveSettings({ balances: { shop, personal }, asOf: v('sAsOf'), taxRate: num(v('sTax')) || 0,
+      cushion: { shop: num(v('sCushShop')) || 0, personal: num(v('sCushPers')) || 0 },
+      ...(Store.isDemo() ? {} : { expected: M.settings.expected }) });
+  } else if (f.id === 'expForm') {
+    if (Store.isDemo()) { toast('Start your books first (the Save button above).'); return; }
+    saveSettings({ expected: { shop: { in: num(v('eShopIn')) || 0, out: num(v('eShopOut')) || 0 }, personal: { in: num(v('ePersIn')) || 0, out: num(v('ePersOut')) || 0 } } });
+  }
+});
+
+const h = (location.hash || '').slice(1);
+if (['overview', 'money', 'bills', 'budgets', 'goals', 'setup'].includes(h)) UI.tab = h;
+Store.init();
+})();
+</script>
