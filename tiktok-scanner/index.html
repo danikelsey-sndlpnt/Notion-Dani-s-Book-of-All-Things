@@ -1,0 +1,559 @@
+<title>TikTok Supply Scanner</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Public+Sans:wght@400;500;600;700&display=swap">
+<style>
+:root {
+  --bg: #F3F6F6;
+  --surface: #FFFFFF;
+  --surface-2: #EAF0F0;
+  --ink: #152226;
+  --ink-2: #44565B;
+  --muted: #6E8085;
+  --line: #D3DDDE;
+  --stitch: #B9C8CA;
+  --accent: #0B5E6E;
+  --accent-soft: #D7ECEF;
+  --on-accent: #FFFFFF;
+  --good: #2E7D4F;
+  --good-soft: #DDF1E4;
+  --warn: #9A6200;
+  --warn-soft: #FBEBC8;
+  --bad: #B3261E;
+  --bad-soft: #F9DEDC;
+  --shadow: 0 1px 2px rgba(21,34,38,.06), 0 4px 16px rgba(21,34,38,.05);
+  --display: "Bricolage Grotesque", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  --body: "Public Sans", "Segoe UI", system-ui, -apple-system, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #0F1416; --surface: #161B1E; --surface-2: #1D2529; --ink: #E6EDEE; --ink-2: #AFBDC0;
+    --muted: #85979B; --line: #2A3539; --stitch: #36464B; --accent: #5CC3CF; --accent-soft: #173A40;
+    --on-accent: #0B1A1D; --good: #62C28B; --good-soft: #173526;
+    --warn: #E5AA45; --warn-soft: #3A2C10; --bad: #F27B72; --bad-soft: #3E1A18;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 4px 16px rgba(0,0,0,.25);
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0F1416; --surface: #161B1E; --surface-2: #1D2529; --ink: #E6EDEE; --ink-2: #AFBDC0;
+  --muted: #85979B; --line: #2A3539; --stitch: #36464B; --accent: #5CC3CF; --accent-soft: #173A40;
+  --on-accent: #0B1A1D; --good: #62C28B; --good-soft: #173526;
+  --warn: #E5AA45; --warn-soft: #3A2C10; --bad: #F27B72; --bad-soft: #3E1A18;
+  --shadow: 0 1px 2px rgba(0,0,0,.3), 0 4px 16px rgba(0,0,0,.25);
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font: 15px/1.5 var(--body); padding-inline: 16px; padding-block: 0 48px; margin: 0; }
+.wrap { max-width: 980px; margin: 0 auto; }
+h1, h2, h3 { font-family: var(--display); text-wrap: balance; margin: 0; letter-spacing: -.01em; }
+h1 { font-size: clamp(28px, 5vw, 40px); line-height: 1.05; }
+h2 { font-size: 20px; }
+h3 { font-size: 16px; }
+button, input, select, textarea { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.muted { color: var(--muted); }
+.small { font-size: 13px; }
+.label { font-size: 11.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+[hidden] { display: none !important; }
+
+/* Header: a patch of 13-mesh canvas behind the title */
+header.top { margin-inline: -16px; padding: 28px 16px 18px; border-bottom: 2px dashed var(--stitch);
+  background-image: linear-gradient(var(--line) 1px, transparent 1px), linear-gradient(90deg, var(--line) 1px, transparent 1px);
+  background-size: 13px 13px; background-position: -1px -1px; }
+.titleblock { background: var(--bg); padding: 8px 12px 8px 0; display: inline-grid; gap: 4px; max-width: 100%; }
+.titleblock p { margin: 0; color: var(--ink-2); }
+
+main { display: grid; gap: 18px; margin-top: 20px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 18px; box-shadow: var(--shadow); min-width: 0; }
+.card > * + * { margin-top: 14px; }
+.card-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+
+.field { display: grid; gap: 5px; min-width: 0; }
+.field label { font-size: 13px; font-weight: 600; color: var(--ink-2); }
+.field .hint { font-size: 12.5px; color: var(--muted); margin: 0; }
+input[type="url"], input[type="text"], textarea {
+  width: 100%; padding: 9px 11px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); min-height: 40px; }
+textarea { min-height: 110px; resize: vertical; line-height: 1.45; }
+input[type="checkbox"] { width: 20px; height: 20px; accent-color: var(--accent); flex: none; margin: 1px 0 0; cursor: pointer; }
+.field.bad input { border-color: var(--bad); }
+.err { color: var(--bad); font-size: 13px; margin: 0; }
+
+.btn { border: 1px solid var(--line); background: var(--surface); padding: 8px 14px; border-radius: 8px; cursor: pointer; font-weight: 600; min-height: 40px; white-space: nowrap; }
+.btn:hover { border-color: var(--accent); }
+.btn.primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+.btn.small { padding: 4px 10px; min-height: 32px; font-size: 13px; }
+.btn.danger { color: var(--bad); }
+.btn.danger.armed { background: var(--bad); color: var(--surface); border-color: var(--bad); }
+.btn[disabled] { opacity: .5; cursor: not-allowed; }
+.actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+
+.drop { border: 2px dashed var(--stitch); border-radius: 12px; padding: 14px; background: var(--surface-2); display: grid; gap: 10px; }
+.drop.over { border-color: var(--accent); background: var(--accent-soft); }
+.thumbs { display: flex; gap: 8px; flex-wrap: wrap; }
+.thumb { position: relative; width: 76px; height: 108px; border-radius: 8px; overflow: hidden; border: 1px solid var(--line); background: var(--surface); }
+.thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.thumb button { position: absolute; top: 4px; right: 4px; width: 24px; height: 24px; border-radius: 50%; border: 0; background: rgba(0,0,0,.6); color: #fff; cursor: pointer; font-size: 14px; line-height: 1; }
+
+.banner { padding: 12px 14px; border-radius: 10px; font-size: 14px; }
+.banner.info { background: var(--accent-soft); color: var(--ink); }
+.banner.warn { background: var(--warn-soft); color: var(--ink); }
+.banner.bad { background: var(--bad-soft); color: var(--ink); }
+.banner p { margin: 0; }
+
+.thinking { display: flex; gap: 10px; align-items: center; color: var(--ink-2); }
+.needle { width: 18px; height: 18px; border-radius: 50%; border: 3px solid var(--accent-soft); border-top-color: var(--accent); animation: spin 1s linear infinite; flex: none; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .needle { animation: none; } }
+
+.pill { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 700; padding: 2px 9px; border-radius: 999px; white-space: nowrap; background: var(--surface-2); color: var(--ink-2); }
+.pill.good { background: var(--good-soft); color: var(--good); }
+.pill.accent { background: var(--accent-soft); color: var(--accent); }
+
+.scan-meta { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 13px; color: var(--muted); }
+.scan-meta a { color: var(--accent); overflow-wrap: anywhere; }
+.summary { color: var(--ink-2); margin: 0; }
+.group + .group { margin-top: 16px; }
+.group h3 { font-size: 13px; font-family: var(--body); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); padding-bottom: 6px; border-bottom: 2px dashed var(--stitch); }
+ul.items { list-style: none; margin: 0; padding: 0; }
+ul.items li { display: flex; gap: 12px; align-items: flex-start; padding: 10px 0; border-bottom: 1px dashed var(--line); }
+ul.items li:last-child { border-bottom: 0; }
+ul.items label { display: grid; gap: 2px; cursor: pointer; flex: 1; min-width: 0; }
+.iname { font-weight: 600; }
+.iname .qty { font-weight: 500; color: var(--ink-2); }
+.idetail { font-size: 13.5px; color: var(--ink-2); }
+.isrc { font-size: 12px; color: var(--muted); }
+li.have .iname { text-decoration: line-through; color: var(--muted); }
+li.have .idetail { color: var(--muted); }
+.progress { height: 8px; border-radius: 4px; background: var(--surface-2); overflow: hidden; }
+.progress span { display: block; height: 100%; background: var(--good); border-radius: 4px; transition: width .2s; }
+.tips { margin: 0; padding-left: 18px; color: var(--ink-2); font-size: 14px; }
+
+.saved { display: grid; gap: 8px; }
+.saved-row { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; align-items: center; padding: 10px 12px; border-radius: 10px; background: var(--surface-2); border: 1px solid transparent; cursor: pointer; text-align: left; width: 100%; }
+.saved-row:hover, .saved-row[aria-current="true"] { border-color: var(--accent); }
+.saved-row strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.saved-row .scan-meta { grid-column: 1 / -1; }
+.empty { color: var(--muted); font-size: 14px; margin: 0; }
+.copy-box { width: 100%; min-height: 160px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
+</style>
+
+<header class="top">
+  <div class="wrap">
+    <div class="titleblock">
+      <span class="label">Dani's Book of All Things</span>
+      <h1>TikTok Supply Scanner</h1>
+      <p>Paste a TikTok and get a checklist of everything you'd need to make it.</p>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+<main>
+  <section class="card" aria-labelledby="scan-h">
+    <div class="card-head"><h2 id="scan-h">Scan a TikTok</h2></div>
+
+    <div class="banner warn" id="no-claude" hidden>
+      <p>Claude isn't available in this view, so scanning is off. Open this page on claude.ai to scan. Saved lists still show below.</p>
+    </div>
+
+    <div class="field" id="url-field">
+      <label for="url">TikTok link</label>
+      <input type="url" id="url" inputmode="url" placeholder="https://www.tiktok.com/@maker/video/…" autocomplete="off">
+      <p class="err" id="url-err" hidden></p>
+    </div>
+
+    <div class="field">
+      <label for="caption">Caption, supply list, or what they say</label>
+      <textarea id="caption" placeholder="Open the TikTok, tap the caption to expand it, then copy and paste it here. Pinned comments with the supply list are worth pasting too."></textarea>
+      <p class="hint">This page can't open TikTok itself, so paste whatever text you can get from the post.</p>
+    </div>
+
+    <div class="field" id="shots-field">
+      <label for="shots">Screenshots <span class="muted">(optional, but they help a lot)</span></label>
+      <div class="drop" id="drop">
+        <div class="actions">
+          <label class="btn small" for="shots" style="display:inline-flex;align-items:center">Add screenshots</label>
+          <span class="small muted" id="shots-hint">Pause on the supplies, product labels or on-screen text and screenshot them.</span>
+        </div>
+        <input type="file" id="shots" accept="image/*" multiple hidden>
+        <div class="thumbs" id="thumbs"></div>
+      </div>
+    </div>
+
+    <div class="actions">
+      <button class="btn primary" id="go">Find what I need</button>
+      <button class="btn" id="stop" hidden>Stop</button>
+      <span class="small muted" id="go-hint"></span>
+    </div>
+    <div class="thinking" id="thinking" hidden><span class="needle" aria-hidden="true"></span><span id="thinking-text">Reading the post…</span></div>
+    <div class="banner bad" id="scan-err" hidden><p></p></div>
+  </section>
+
+  <section class="card" id="result" aria-labelledby="result-h" hidden>
+    <div class="card-head">
+      <h2 id="result-h"></h2>
+      <span class="pill accent" id="result-kind"></span>
+    </div>
+    <div class="scan-meta" id="result-meta"></div>
+    <p class="summary" id="result-summary"></p>
+    <div>
+      <div class="scan-meta" style="justify-content:space-between"><span id="have-count"></span></div>
+      <div class="progress" style="margin-top:6px"><span id="have-bar" style="width:0"></span></div>
+    </div>
+    <div id="groups"></div>
+    <div id="tips-wrap" hidden>
+      <h3 style="margin-bottom:6px">Good to know</h3>
+      <ul class="tips" id="tips"></ul>
+    </div>
+    <div class="actions">
+      <button class="btn" id="copy">Copy what I still need</button>
+      <button class="btn danger" id="del">Delete this list</button>
+      <span class="small muted" id="copy-msg" aria-live="polite"></span>
+    </div>
+    <textarea class="copy-box" id="copy-box" readonly hidden aria-label="Shopping list text"></textarea>
+  </section>
+
+  <section class="card" aria-labelledby="saved-h">
+    <div class="card-head">
+      <h2 id="saved-h">Saved lists</h2>
+      <span class="small muted" id="saved-where"></span>
+    </div>
+    <div class="saved" id="saved"><p class="empty">Nothing scanned yet.</p></div>
+  </section>
+</main>
+</div>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const LS_KEY = "tiktok-scanner-lists";
+  const state = { sample: null, db: null, imgLimits: null, images: [], lists: [], currentId: null, ctl: null };
+
+  // ---------- storage: db when available, else this browser only ----------
+  function lsRead() { try { return JSON.parse(localStorage.getItem(LS_KEY) || "[]"); } catch { return []; } }
+  function lsWrite(lists) { try { localStorage.setItem(LS_KEY, JSON.stringify(lists)); } catch {} }
+
+  async function saveList(list) {
+    if (state.db) {
+      const { id, ...body } = list;
+      await state.db.collection("scans").doc(id).set(body);
+    } else {
+      const all = lsRead().filter((l) => l.id !== list.id);
+      all.unshift(list);
+      lsWrite(all);
+      state.lists = all;
+      renderSaved();
+    }
+  }
+  async function removeList(id) {
+    if (state.db) await state.db.collection("scans").doc(id).delete();
+    else { state.lists = lsRead().filter((l) => l.id !== id); lsWrite(state.lists); renderSaved(); }
+  }
+  function newId() { return "s" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+
+  // ---------- link check ----------
+  function cleanUrl(raw) {
+    const s = raw.trim();
+    if (!s) return { ok: true, url: "" };
+    let u;
+    try { u = new URL(/^https?:\/\//i.test(s) ? s : "https://" + s); } catch { return { ok: false }; }
+    if (!/(^|\.)tiktok\.com$/i.test(u.hostname)) return { ok: false };
+    u.search = ""; u.hash = "";
+    return { ok: true, url: u.toString() };
+  }
+
+  // ---------- screenshots ----------
+  function addImages(files) {
+    const max = state.imgLimits?.maxCount ?? 5;
+    const types = state.imgLimits?.mediaTypes ?? ["image/jpeg", "image/png", "image/webp", "image/gif"];
+    for (const f of files) {
+      if (state.images.length >= max) break;
+      if (!types.includes(f.type)) continue;
+      state.images.push({ file: f, url: URL.createObjectURL(f) });
+    }
+    renderThumbs();
+  }
+  function renderThumbs() {
+    const box = $("thumbs");
+    box.replaceChildren(...state.images.map((img, i) => {
+      const d = document.createElement("div"); d.className = "thumb";
+      const im = document.createElement("img"); im.src = img.url; im.alt = "Screenshot " + (i + 1);
+      const x = document.createElement("button"); x.type = "button"; x.textContent = "×"; x.setAttribute("aria-label", "Remove screenshot " + (i + 1));
+      x.onclick = () => { URL.revokeObjectURL(img.url); state.images.splice(i, 1); renderThumbs(); };
+      d.append(im, x); return d;
+    }));
+    const max = state.imgLimits?.maxCount ?? 5;
+    $("shots-hint").textContent = state.images.length
+      ? `${state.images.length} of ${max} added.`
+      : "Pause on the supplies, product labels or on-screen text and screenshot them.";
+  }
+  $("shots").addEventListener("change", (e) => { addImages(e.target.files); e.target.value = ""; });
+  const drop = $("drop");
+  drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("over"); });
+  drop.addEventListener("dragleave", () => drop.classList.remove("over"));
+  drop.addEventListener("drop", (e) => { e.preventDefault(); drop.classList.remove("over"); addImages(e.dataTransfer.files); });
+  document.addEventListener("paste", (e) => {
+    if (!state.imgLimits || !e.clipboardData?.files.length) return;
+    e.preventDefault(); addImages(e.clipboardData.files);
+  });
+
+  // ---------- scanning ----------
+  function buildPrompt(url, caption, nImages) {
+    return `You are helping Dani, who runs a needlepoint shop and loves crafts, DIY, recipes and home projects, turn a TikTok into a shopping list.
+
+Below is what we have from one TikTok post: the link, the caption or text she pasted${nImages ? `, and ${nImages} screenshot(s) from the video (attached)` : ""}. You cannot open the link, so work only from the text${nImages ? " and screenshots" : ""}. The link's @handle and URL words may hint at the topic.
+
+List every item she would need to buy or have on hand to make or do what the video shows: materials, ingredients, tools, supplies and equipment. Be specific when the post is: brand, color name or number (e.g. DMC 310, Silk & Ivory 'Snow'), size, mesh count, needle size, amounts and quantities. Don't invent specifics that aren't shown or said; if something is implied but unclear, include it with a short note in "details" saying what to check. Mark items that are nice-to-have rather than required as optional. Group items into short categories that fit the project (e.g. "Canvas & thread", "Tools", "Finishing", "Ingredients", "Equipment").
+
+Reply with only a JSON object in this shape:
+{"title": "short name for the project", "kind": "one or two words, e.g. needlepoint, recipe, home decor", "summary": "one sentence on what the video makes or does", "items": [{"name": "item", "qty": "amount or empty string", "category": "group name", "details": "brand/size/color/notes or empty string", "optional": false, "source": "caption | screenshot | inferred"}], "tips": ["up to 3 short practical notes, e.g. what to confirm before buying"], "confidence": "high | medium | low"}
+
+If there's too little to go on, return an empty items array and use tips to say what to paste or screenshot.
+
+TikTok link: ${url || "(none given)"}
+
+Pasted text:
+"""
+${caption.slice(0, 20000) || "(none)"}
+"""`;
+  }
+
+  function normalize(raw) {
+    const s = (v) => (typeof v === "string" ? v.trim() : v == null ? "" : String(v)).slice(0, 400);
+    const items = Array.isArray(raw?.items) ? raw.items : [];
+    return {
+      title: s(raw?.title) || "TikTok project",
+      kind: s(raw?.kind),
+      summary: s(raw?.summary),
+      confidence: ["high", "medium", "low"].includes(raw?.confidence) ? raw.confidence : "",
+      tips: (Array.isArray(raw?.tips) ? raw.tips : []).map(s).filter(Boolean).slice(0, 5),
+      items: items.filter((it) => it && s(it.name)).slice(0, 150).map((it) => ({
+        name: s(it.name), qty: s(it.qty), category: s(it.category) || "Supplies",
+        details: s(it.details), optional: it.optional === true,
+        source: ["caption", "screenshot", "inferred"].includes(it.source) ? it.source : "", have: false,
+      })),
+    };
+  }
+
+  const ERR_COPY = {
+    not_granted: "Claude wasn't allowed for this page, so scanning is off for now. Reload to be asked again.",
+    sampling_disabled: "Claude isn't available on this account.",
+    rate_limited: "Too many scans at once, or you've hit your usage limit. Give it a minute and try again.",
+    session_expired: "You've been signed out. Sign back in to claude.ai, then try again.",
+    image_rejected: "One of the screenshots couldn't be read. Try removing it or using a different one.",
+    images_unavailable: "Screenshots can't be sent from this view. Remove them and scan with the caption only.",
+    refused: "Claude couldn't help with this one. Try different text or screenshots.",
+    prompt_too_large: "That's a lot of text. Paste just the caption and the supply list.",
+    invalid_json: "The answer came back garbled. Press Find what I need to try again.",
+    empty_completion: "Nothing came back. Try adding more of the caption or a screenshot.",
+  };
+
+  async function scan() {
+    $("scan-err").hidden = true;
+    const u = cleanUrl($("url").value);
+    $("url-field").classList.toggle("bad", !u.ok);
+    $("url-err").hidden = u.ok;
+    if (!u.ok) { $("url-err").textContent = "That doesn't look like a TikTok link. It should start with tiktok.com or vm.tiktok.com."; $("url").focus(); return; }
+    const caption = $("caption").value.trim();
+    if (!caption && !state.images.length) {
+      showErr("Paste the caption or add a screenshot first. The link alone isn't enough, since this page can't open TikTok.");
+      return;
+    }
+    const imgs = state.images.map((i) => i.file);
+    state.ctl = new AbortController();
+    setBusy(true);
+    try {
+      const raw = await state.sample.json(buildPrompt(u.url, caption, imgs.length), {
+        signal: state.ctl.signal,
+        images: imgs.length ? imgs : undefined,
+        cache: false,
+        onText: () => { $("thinking-text").textContent = "Writing your list…"; },
+      });
+      const list = { id: newId(), url: u.url, caption: caption.slice(0, 4000), shots: imgs.length, createdAt: new Date().toISOString(), ...normalize(raw) };
+      state.currentId = list.id;
+      renderResult(list);
+      upsertLocal(list);
+      try { await saveList(list); }
+      catch (e) { showErr(e?.code === "quota_exceeded" ? "Your list is here but couldn't be saved: storage is full. Delete a few old lists." : "Your list is here but couldn't be saved. Copy it so you don't lose it."); }
+      $("url").value = ""; $("caption").value = "";
+      state.images.forEach((i) => URL.revokeObjectURL(i.url)); state.images = []; renderThumbs();
+      $("result").scrollIntoView({ behavior: "smooth", block: "start" });
+    } catch (e) {
+      if (e?.code === "cancelled") return;
+      if (e?.code === "not_granted" || e?.code === "sampling_disabled") disableScan();
+      showErr(ERR_COPY[e?.code] || "Something went wrong reaching Claude. Try again in a moment.");
+    } finally { setBusy(false); }
+  }
+  function showErr(msg) { const b = $("scan-err"); b.querySelector("p").textContent = msg; b.hidden = false; }
+  function setBusy(on) {
+    $("go").disabled = on; $("stop").hidden = !on; $("thinking").hidden = !on;
+    $("thinking-text").textContent = "Reading the post…";
+  }
+  function disableScan() { $("go").disabled = true; $("no-claude").hidden = false; }
+  $("go").onclick = scan;
+  $("stop").onclick = () => state.ctl?.abort();
+  $("url").addEventListener("input", () => { $("url-field").classList.remove("bad"); $("url-err").hidden = true; });
+
+  // ---------- result checklist ----------
+  function upsertLocal(list) {
+    const i = state.lists.findIndex((l) => l.id === list.id);
+    if (i >= 0) state.lists[i] = list; else state.lists.unshift(list);
+    renderSaved();
+  }
+  function current() { return state.lists.find((l) => l.id === state.currentId); }
+
+  function renderResult(list) {
+    const card = $("result");
+    if (!list) { card.hidden = true; return; }
+    card.hidden = false;
+    shownItems = JSON.stringify(list.items);
+    $("result-h").textContent = list.title;
+    $("result-kind").textContent = list.kind || "project";
+    $("result-kind").hidden = !list.kind;
+    const meta = $("result-meta"); meta.replaceChildren();
+    if (list.url) { const a = document.createElement("a"); a.href = list.url; a.target = "_blank"; a.rel = "noopener"; a.textContent = list.url.replace(/^https?:\/\/(www\.)?/, ""); meta.append(a); }
+    meta.append(span(fmtDate(list.createdAt)));
+    if (list.confidence && list.confidence !== "high") meta.append(pill(list.confidence === "low" ? "Rough guess" : "Mostly sure"));
+    $("result-summary").textContent = list.summary;
+    $("result-summary").hidden = !list.summary;
+
+    const groups = new Map();
+    list.items.forEach((it, idx) => { if (!groups.has(it.category)) groups.set(it.category, []); groups.get(it.category).push([it, idx]); });
+    const gbox = $("groups"); gbox.replaceChildren();
+    if (!list.items.length) gbox.append(Object.assign(document.createElement("p"), { className: "empty", textContent: "Claude couldn't find supplies in what was pasted. See the notes below for what to add." }));
+    for (const [cat, rows] of groups) {
+      const g = document.createElement("div"); g.className = "group";
+      const h = document.createElement("h3"); h.textContent = cat;
+      const ul = document.createElement("ul"); ul.className = "items";
+      for (const [it, idx] of rows) {
+        const li = document.createElement("li"); li.classList.toggle("have", it.have);
+        const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = it.have; cb.id = `it-${list.id}-${idx}`;
+        cb.onchange = () => toggleHave(idx, cb.checked);
+        const lab = document.createElement("label"); lab.htmlFor = cb.id;
+        const nm = document.createElement("span"); nm.className = "iname"; nm.textContent = it.name;
+        if (it.qty) { const q = document.createElement("span"); q.className = "qty"; q.textContent = " · " + it.qty; nm.append(q); }
+        lab.append(nm);
+        if (it.details) lab.append(Object.assign(document.createElement("span"), { className: "idetail", textContent: it.details }));
+        const bits = [it.optional ? "Optional" : "", it.source === "inferred" ? "Claude's guess" : it.source === "screenshot" ? "Seen in screenshot" : ""].filter(Boolean);
+        if (bits.length) lab.append(Object.assign(document.createElement("span"), { className: "isrc", textContent: bits.join(" · ") }));
+        li.append(cb, lab); ul.append(li);
+      }
+      g.append(h, ul); gbox.append(g);
+    }
+    $("tips-wrap").hidden = !list.tips.length;
+    $("tips").replaceChildren(...list.tips.map((t) => Object.assign(document.createElement("li"), { textContent: t })));
+    renderProgress(list);
+    $("copy-box").hidden = true; $("copy-msg").textContent = "";
+    resetDel();
+  }
+  function renderProgress(list) {
+    const n = list.items.length, have = list.items.filter((i) => i.have).length;
+    $("have-count").textContent = n ? `${have} of ${n} already on hand · tick what you have` : "";
+    $("have-bar").style.width = n ? (100 * have / n) + "%" : "0";
+  }
+  let haveTimer = null, shownItems = "";
+  function toggleHave(idx, on) {
+    const list = current(); if (!list) return;
+    list.items[idx].have = on;
+    const li = document.getElementById(`it-${list.id}-${idx}`).closest("li");
+    li.classList.toggle("have", on);
+    renderProgress(list); renderSaved();
+    shownItems = JSON.stringify(list.items);
+    clearTimeout(haveTimer);
+    haveTimer = setTimeout(() => {
+      haveTimer = null;
+      const p = state.db ? state.db.collection("scans").doc(list.id).update({ items: list.items }) : saveList(list);
+      Promise.resolve(p).catch(() => { $("copy-msg").textContent = "Couldn't save that tick. Try again."; });
+    }, 600);
+  }
+  function listText(list) {
+    const need = list.items.filter((i) => !i.have);
+    const lines = [list.title + (list.url ? `\n${list.url}` : ""), ""];
+    const byCat = new Map();
+    need.forEach((i) => { if (!byCat.has(i.category)) byCat.set(i.category, []); byCat.get(i.category).push(i); });
+    for (const [cat, its] of byCat) {
+      lines.push(cat.toUpperCase());
+      its.forEach((i) => lines.push(`[ ] ${i.name}${i.qty ? " (" + i.qty + ")" : ""}${i.details ? " - " + i.details : ""}${i.optional ? " [optional]" : ""}`));
+      lines.push("");
+    }
+    if (!need.length) lines.push("You have everything!");
+    return lines.join("\n").trim();
+  }
+  $("copy").onclick = async () => {
+    const list = current(); if (!list) return;
+    const text = listText(list);
+    try { await navigator.clipboard.writeText(text); $("copy-msg").textContent = "Copied."; $("copy-box").hidden = true; }
+    catch { const box = $("copy-box"); box.value = text; box.hidden = false; box.focus(); box.select(); $("copy-msg").textContent = "Select all and copy from the box below."; }
+  };
+  let delArmed = null;
+  function resetDel() { clearTimeout(delArmed); delArmed = null; $("del").classList.remove("armed"); $("del").textContent = "Delete this list"; }
+  $("del").onclick = async () => {
+    if (!delArmed) { $("del").classList.add("armed"); $("del").textContent = "Tap again to delete"; delArmed = setTimeout(resetDel, 4000); return; }
+    const id = state.currentId; resetDel();
+    try {
+      await removeList(id);
+      state.lists = state.lists.filter((l) => l.id !== id); state.currentId = null;
+      renderResult(null); renderSaved();
+    } catch { $("copy-msg").textContent = "Couldn't delete it. Try again."; }
+  };
+
+  // ---------- saved lists ----------
+  function renderSaved() {
+    const box = $("saved");
+    if (!state.lists.length) { box.replaceChildren(Object.assign(document.createElement("p"), { className: "empty", textContent: "Nothing scanned yet." })); return; }
+    box.replaceChildren(...state.lists.map((l) => {
+      const b = document.createElement("button"); b.type = "button"; b.className = "saved-row";
+      b.setAttribute("aria-current", String(l.id === state.currentId));
+      const n = l.items.length, have = l.items.filter((i) => i.have).length;
+      const t = document.createElement("strong"); t.textContent = l.title;
+      const p = pill(n ? (have === n ? "All set" : `${n - have} to get`) : "No items");
+      if (n && have === n) p.classList.add("good");
+      const m = document.createElement("div"); m.className = "scan-meta";
+      if (l.kind) m.append(span(l.kind));
+      m.append(span(fmtDate(l.createdAt)));
+      b.append(t, p, m);
+      b.onclick = () => { state.currentId = l.id; renderResult(l); renderSaved(); $("result").scrollIntoView({ behavior: "smooth", block: "start" }); };
+      return b;
+    }));
+  }
+  function span(t) { return Object.assign(document.createElement("span"), { textContent: t }); }
+  function pill(t) { return Object.assign(document.createElement("span"), { className: "pill", textContent: t }); }
+  function fmtDate(iso) { const d = new Date(iso); return isNaN(d) ? "" : d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }); }
+
+  function fromDoc(d) {
+    const x = d.data() || {};
+    return { id: d.id, url: x.url || "", caption: x.caption || "", createdAt: x.createdAt || "", title: x.title || "TikTok project", kind: x.kind || "", summary: x.summary || "", confidence: x.confidence || "", tips: Array.isArray(x.tips) ? x.tips : [], items: Array.isArray(x.items) ? x.items : [] };
+  }
+
+  // ---------- start up ----------
+  state.lists = lsRead();
+  renderSaved();
+  $("saved-where").textContent = "Saved in this browser";
+  $("go").disabled = true; $("go-hint").textContent = "Connecting to Claude…";
+  $("shots-field").hidden = true;
+
+  if (!window.claude?.use) {
+    $("go-hint").textContent = ""; disableScan(); return;
+  }
+  claude.use("sample").then(async (sample) => {
+    $("go-hint").textContent = "";
+    if (!sample) { disableScan(); return; }
+    state.sample = sample; $("go").disabled = false;
+    const lim = await sample.limits().catch(() => null);
+    if (lim?.images) { state.imgLimits = lim.images; $("shots").accept = lim.images.mediaTypes.join(","); $("shots-field").hidden = false; renderThumbs(); }
+  });
+  claude.use("db").then((db) => {
+    if (!db) return;
+    state.db = db;
+    $("saved-where").textContent = "Saved to this page";
+    db.collection("scans").orderBy("createdAt", "desc").limit(200).onSnapshot((snap) => {
+      state.lists = snap.docs.map(fromDoc);
+      renderSaved();
+      const cur = current();
+      if (state.currentId && !cur) renderResult(null);
+      else if (cur && !haveTimer && JSON.stringify(cur.items) !== shownItems) renderResult(cur);
+    }, () => { state.db = null; $("saved-where").textContent = "Saved in this browser"; state.lists = lsRead(); renderSaved(); });
+  });
+})();
+</script>
