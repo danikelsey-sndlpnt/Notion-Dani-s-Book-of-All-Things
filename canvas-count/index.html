@@ -205,6 +205,7 @@ td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; white-space:
   <nav class="tabs" role="tablist" aria-label="Sections" id="tabs">
     <button role="tab" data-tab="count" type="button">Count</button>
     <button role="tab" data-tab="photos" type="button">Photos</button>
+    <button role="tab" data-tab="supplies" type="button">Supplies &amp; more</button>
     <button role="tab" data-tab="fix" type="button">Fix in Square</button>
     <button role="tab" data-tab="add" type="button">Add from photo</button>
   </nav>
@@ -316,16 +317,22 @@ async function loadSquare() {
       for (const c of p.counts || []) qty[c.catalog_object_id] = Number(c.quantity);
       cursor = p.cursor; if (!cursor) break;
     }
-    const byVar = {}; let threadItems = 0;
+    const byVar = {}, lines = []; let threadItems = 0;
     for (const it of items) {
       const d = it.item_data || {}; const vars = d.variations || [];
       if (d.is_archived) continue;
-      if (vars.length !== 1) { threadItems++; continue; }   // thread colors and multi-size items are skipped for now
+      const cats = (d.categories || []).map(c => c.id).concat(d.reporting_category ? [d.reporting_category.id] : []);
+      if (vars.length !== 1) {   // thread colors and multi-size items: kept as lines, not counted on the Count tab
+        threadItems++;
+        lines.push({ item: it.id, name: (d.name || '').trim(), cats, vars: vars.map(v => { const vd = v.item_variation_data || {};
+          return { var: v.id, name: vd.name || '', sku: vd.sku || '', price: ((vd.price_money || {}).amount || 0) / 100, qty: v.id in qty ? qty[v.id] : null }; }) });
+        continue;
+      }
       const v = vars[0], vd = v.item_variation_data || {};
-      byVar[v.id] = { var: v.id, item: it.id, name: (d.name || '').trim(), price: ((vd.price_money || {}).amount || 0) / 100,
+      byVar[v.id] = { var: v.id, item: it.id, name: (d.name || '').trim(), price: ((vd.price_money || {}).amount || 0) / 100, cats,
         sku: vd.sku || '', qty: v.id in qty ? qty[v.id] : null, track: vd.track_inventory !== false, desc: (d.description_plaintext || '').slice(0, 80) };
     }
-    S.square = { byVar, loadedAt: new Date(), threadItems };
+    S.square = { byVar, lines, loadedAt: new Date(), threadItems };
     S.sqState = 'ready';
     setSq('Square loaded', `${Object.keys(byVar).length} items, as of ${S.square.loadedAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}. Thread colors are left out.`, 'good');
   } catch (e) {
@@ -404,7 +411,7 @@ function render() {
   const v = $('#view');
   if (!S.dbReady) { v.innerHTML = `<div class="empty"><strong>Opening your saved counts…</strong></div>`; return; }
   const keep = document.activeElement && document.activeElement.id; const caret = keep && document.activeElement.selectionStart;
-  v.innerHTML = S.tab === 'fix' ? viewFix(all) : S.tab === 'add' ? viewAdd() : S.tab === 'photos' ? viewPhotos(all) : viewCount(all);
+  v.innerHTML = S.tab === 'fix' ? viewFix(all) : S.tab === 'add' ? viewAdd() : S.tab === 'photos' ? viewPhotos(all) : S.tab === 'supplies' ? viewSupplies(all) : viewCount(all);
   if (keep && document.getElementById(keep)) { const el = document.getElementById(keep); el.focus(); try { if (caret != null) el.setSelectionRange(caret, caret); } catch (e) {} }
 }
 function tile(label, val, sub, alert) {
@@ -420,6 +427,7 @@ function viewCount(all) {
   const f = S.filter;
   if (f === 'mine') list = list.filter(r => r.doc);
   else if (f !== 'all') list = list.filter(r => r.status === f);
+  if (S.square) list = list.filter(r => r.doc || !r.var || !S.square.byVar[r.var] || classify(r.name, r.price, S.square.byVar[r.var].cats, false) === 'canvas');   // supplies live on their own tab
   if (S.spot !== 'all') list = list.filter(r => (r.spot || 'Not placed') === S.spot);
   if (S.q) { const q = norm(S.q); list = list.filter(r => norm(r.name + ' ' + r.maker + ' ' + r.sku).includes(q)); }
   list.sort((a, b) => a.name.localeCompare(b.name));
@@ -608,6 +616,73 @@ function countTag(n, confirm = true) {
   saveDoc('counts', t.v, { ...base, count: n == null ? null : Math.max(0, Math.round(n)), confirmed: confirm, countedAt: new Date().toISOString() });
 }
 
+/* ---------- Supplies & more: everything in Square that isn't a canvas ---------- */
+const CAT_IDS = { minder: 'X2XPSG377FG4R7GGFTAB24N4', bars: 'VF2RSQCSDTEOG7ALC7KZ65NS', canvas: 'YVW4S5JTV7SEE4U6GR5EOQKB', halloween: 'ONQ75WTSAREAUA7TJZDYZQMT' };
+const SUP_GROUPS = [
+  ['thread', 'Threads & fibers', 'Thread lines list every color. Single thread buttons (like Milan or Very Velvet) are usually rung up without receiving stock, which is why many are below zero.'],
+  ['minder', 'Needle minders', ''],
+  ['frame', 'Frames, stretcher bars & tacks', ''],
+  ['tool', 'Tools & notions', ''],
+  ['book', 'Books & cards', ''],
+  ['kit', 'Kits', ''],
+  ['catchall', 'Register buttons', "Open-price buttons for ringing up things that aren't listed, like In Store Canvas. Their stock numbers don't mean anything. In Square you can turn off stock tracking for these so they stop showing below zero."],
+  ['other', 'Other non-canvas', 'Low-priced items that didn\'t fit a group. Check whether any are really canvases.'],
+];
+const THREAD_RE = /\b(silk|velvet|milan|radiance|razzle|kreinik|krenick|wool|dmc|pepper|frye|eye ?lash|reflections|city needlework|essentials?|skeins?|bisous|ribbon|lam[eé]|caron|planet earth|cottage garden|vineyard|braid|floss|threads?)\b/i;
+function classify(name, price, cats, multi) {
+  const n = name.toLowerCase().trim();
+  cats = cats || [];
+  if (cats.includes(CAT_IDS.canvas) || cats.includes(CAT_IDS.halloween)) return 'canvas';
+  if (/^(in[- ]?store canvas|canvas|adhoc|project|custom|misc\w*)$/.test(n) || (!price && !multi && /canvas|adhoc|custom/.test(n))) return 'catchall';
+  if (cats.includes(CAT_IDS.minder) || /needle ?minder|corner minder/.test(n)) return /corner/.test(n) ? 'tool' : 'minder';
+  if (cats.includes(CAT_IDS.bars) || /\bframes?\b|stretcher|tacks|featherlight/.test(n)) return 'frame';
+  if (/kreinik|krenick/.test(n) || (THREAD_RE.test(n) && (multi || price <= 15) && !/mini|ornament|round|angel/.test(n))) return 'thread';
+  if (/\bkit\b/.test(n)) return 'kit';
+  if (/paperback|directory|needle ?point cards|^cards$/.test(n)) return /^cards$/.test(n) ? 'thread' : 'book';
+  if (/tool|boogie board|scissors|snips|magnet|needles?\b|organizer|bag$/.test(n) && price < 30) return 'tool';
+  if (multi) return 'canvas';
+  if (price < 15) return 'other';
+  return 'canvas';
+}
+const lineOpen = new Set();
+function viewSupplies(all) {
+  if (!S.square) return `<div class="empty"><strong>Load Square to see your supplies.</strong><span>Threads, needle minders, frames, books, kits and register buttons are listed here, grouped, with what Square has in stock.</span><button class="btn primary" type="button" data-act="load">Load from Square</button></div>`;
+  const byVar = {}; for (const r of all) if (r.coll === 'counts') byVar[r.var] = r;
+  const q = norm(S.supQ || ''), k = skuNorm(S.supQ || ''), f = S.supF || 'all';
+  const keep = s => (!q || norm(s.name).includes(q) || (k.length >= 2 && skuNorm(s.sku).includes(k))) && (f === 'all' || (f === 'neg' ? s.qty != null && s.qty < 0 : (s.qty == null || s.qty === 0)));
+  const G = {}; for (const [g] of SUP_GROUPS) G[g] = { items: [], lines: [] };
+  for (const s of Object.values(S.square.byVar)) { const g = classify(s.name, s.price, s.cats, false); if (g !== 'canvas') G[g].items.push(s); }
+  for (const L of S.square.lines || []) { const g = classify(L.name, L.vars[0] ? L.vars[0].price : 0, L.cats, true); if (g !== 'canvas') G[g].lines.push(L); }
+  const units = arr => arr.reduce((a, x) => a + (x.qty > 0 ? x.qty : 0), 0);
+  const value = arr => arr.reduce((a, x) => a + (x.qty > 0 ? x.qty * x.price : 0), 0);
+  let totalItems = 0, totalUnits = 0, totalValue = 0;
+  const cards = SUP_GROUPS.map(([g, title, help]) => {
+    const flat = G[g].items.concat(...G[g].lines.map(L => L.vars));
+    if (!flat.length) return '';
+    totalItems += G[g].items.length + G[g].lines.length; totalUnits += units(flat); totalValue += value(flat);
+    const neg = flat.filter(x => x.qty != null && x.qty < 0).length;
+    const items = G[g].items.filter(keep).sort((a, b) => a.name.localeCompare(b.name));
+    const lines = G[g].lines.map(L => ({ L, vars: L.vars.filter(v => keep({ ...v, name: L.name + ' ' + v.name })) })).filter(x => x.vars.length || (!q && f === 'all'));
+    if (!items.length && !lines.length) return '';
+    return `<div class="card">
+      <div class="card-h"><h2>${esc(title)}</h2><span class="small muted">${G[g].items.length + G[g].lines.length} listing${G[g].items.length + G[g].lines.length === 1 ? '' : 's'} · ${units(flat)} in stock · ${money(value(flat))} retail${neg ? ` · <span style="color:var(--bad)">${neg} below zero</span>` : ''}</span></div>
+      ${help ? `<p class="small muted">${esc(help)}</p>` : ''}
+      ${lines.map(({ L, vars }) => { const lneg = L.vars.filter(v => v.qty != null && v.qty < 0).length; const open = lineOpen.has(L.item) || !!q || f !== 'all';
+        return `<details class="line" data-line="${esc(L.item)}" ${open ? 'open' : ''}><summary><b>${esc(L.name)}</b> <span class="small muted">${L.vars.length} colors · ${units(L.vars)} in stock · ${money(value(L.vars))}${lneg ? ` · <span style="color:var(--bad)">${lneg} below zero</span>` : ''}</span></summary>
+          ${open ? `<div class="table-wrap"><table><thead><tr><th>Color</th><th>SKU</th><th class="n">Price</th><th class="n">Square</th></tr></thead><tbody>${vars.map(v => `<tr><td>${esc(v.name)}</td><td>${esc(v.sku)}</td><td class="n">${money(v.price)}</td><td class="n" ${v.qty != null && v.qty <= 0 ? 'style="color:var(--bad);font-weight:700"' : ''}>${v.qty ?? '—'}</td></tr>`).join('')}</tbody></table></div>` : ''}
+        </details>`; }).join('')}
+      ${items.length ? `<div class="list">${items.map(s => rowHtml(byVar[s.var])).join('')}</div>` : ''}
+    </div>`;
+  }).join('');
+  return `
+    <div class="bar">
+      <input type="search" id="supq" placeholder="Search supplies by name, color or SKU" value="${esc(S.supQ || '')}" aria-label="Search supplies">
+      <div class="chips" role="group" aria-label="Show">${[['all', 'Everything'], ['zero', 'Out of stock'], ['neg', 'Below zero']].map(([key, l]) => `<button class="chip" type="button" data-supf="${key}" aria-pressed="${f === key}">${l}</button>`).join('')}</div>
+    </div>
+    <p class="small muted" style="margin-bottom:12px">${totalItems} non-canvas listings in Square · ${totalUnits} units in stock · ${money(totalValue)} at retail. Sorted by name and price, so tell me if something landed in the wrong group.</p>
+    ${cards || `<div class="empty">Nothing matches that search.</div>`}`;
+}
+
 function viewFix(all) {
   const off = all.filter(r => r.status === 'off');
   const missing = all.filter(r => r.status === 'missing');
@@ -746,6 +821,7 @@ document.addEventListener('click', e => {
   if (t.dataset.linkto) { doLink(t.dataset.linkto); return; }
   if (t.dataset.linkcancel) { S.linking = null; render(); return; }
   if (t.dataset.unlink) { const id = t.dataset.unlink, L = S.links[id]; if (L && L.note) saveDoc('links', id, { note: L.note }); else deleteDoc('links', id); toast('Unlinked. The count you made stays on the Square item.'); return; }
+  if (t.dataset.supf) { S.supF = t.dataset.supf; render(); return; }
   if (t.dataset.hidetags) { S.ph.hide = !S.ph.hide; render(); return; }
   if (t.dataset.tagnav) { S.ph.sel = Math.max(0, Math.min(PHOTOS[S.ph.i].tags.length - 1, S.ph.sel + Number(t.dataset.tagnav))); render(); return; }
   if (t.dataset.tstep) { const x = photoTags(rows())[S.ph.sel]; const c = x && x.r ? x.r.count : null; countTag((c ?? (Number(t.dataset.tstep) > 0 ? 0 : 1)) + Number(t.dataset.tstep)); return; }
@@ -768,10 +844,17 @@ document.addEventListener('click', e => {
   if (t.id === 'dropRes') { S.photo.results = null; render(); return; }
   if (t.id === 'mAdd') { manualAdd(); return; }
 });
+document.addEventListener('toggle', e => {
+  const d = e.target; if (!d.dataset || !d.dataset.line) return;
+  const had = lineOpen.has(d.dataset.line);
+  if (d.open && !had) { lineOpen.add(d.dataset.line); render(); }
+  else if (!d.open && had) { lineOpen.delete(d.dataset.line); }
+}, true);
 document.addEventListener('input', e => {
   const t = e.target;
   if (t.id === 'q') { S.q = t.value; render(); }
   if (t.id === 'skuQ') { S.sku = t.value; render(); }
+  if (t.id === 'supq') { S.supQ = t.value; render(); }
   if (t.dataset.linkq && S.linking) { S.linking.q = t.value; render(); }
 });
 document.addEventListener('change', e => {
