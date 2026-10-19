@@ -1,0 +1,706 @@
+<title>Canvas Count</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Public+Sans:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: a header cut from pink-and-white shop wall, then a counting list that reads like the price labels on the canvases. */
+:root {
+  --bg: #FBF6F8;
+  --surface: #FFFFFF;
+  --surface-2: #F6ECF0;
+  --ink: #2A1B22;
+  --ink-2: #5C4651;
+  --muted: #8A7480;
+  --line: #EBDCE3;
+  --stripe: #F7D9E5;
+  --accent: #C2185B;
+  --accent-soft: #FCE4EE;
+  --on-accent: #FFFFFF;
+  --label: #BFE8C7;
+  --label-ink: #1F4D2B;
+  --good: #2E7D4F; --good-soft: #DDF1E4;
+  --warn: #9A6200; --warn-soft: #FBEBC8;
+  --bad: #B3261E; --bad-soft: #F9DEDC;
+  --shadow: 0 1px 2px rgba(42,27,34,.06), 0 4px 16px rgba(42,27,34,.05);
+  --display: "Bricolage Grotesque", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  --body: "Public Sans", "Segoe UI", system-ui, -apple-system, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #171114; --surface: #201a1d; --surface-2: #2a2125; --ink: #F3E8ED; --ink-2: #C9B6BF; --muted: #9C8891;
+    --line: #3a2e34; --stripe: #2c1f25; --accent: #F06C9B; --accent-soft: #3d1b29; --on-accent: #22070F;
+    --label: #24432c; --label-ink: #BFE8C7;
+    --good: #62C28B; --good-soft: #173526; --warn: #E5AA45; --warn-soft: #3A2C10; --bad: #F27B72; --bad-soft: #3E1A18;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 4px 16px rgba(0,0,0,.25);
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #171114; --surface: #201a1d; --surface-2: #2a2125; --ink: #F3E8ED; --ink-2: #C9B6BF; --muted: #9C8891;
+  --line: #3a2e34; --stripe: #2c1f25; --accent: #F06C9B; --accent-soft: #3d1b29; --on-accent: #22070F;
+  --label: #24432c; --label-ink: #BFE8C7;
+  --good: #62C28B; --good-soft: #173526; --warn: #E5AA45; --warn-soft: #3A2C10; --bad: #F27B72; --bad-soft: #3E1A18;
+  --shadow: 0 1px 2px rgba(0,0,0,.3), 0 4px 16px rgba(0,0,0,.25);
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font: 15px/1.5 var(--body);
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 0 56px; }
+.wrap { max-width: 1080px; margin: 0 auto; }
+h1, h2, h3 { font-family: var(--display); text-wrap: balance; margin: 0; letter-spacing: -.01em; }
+h1 { font-size: clamp(30px, 5vw, 42px); line-height: 1.02; }
+h2 { font-size: 20px; }
+h3 { font-size: 16px; }
+p { margin: 0; }
+button, input, select { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.muted { color: var(--muted); }
+.small { font-size: 13px; }
+.num { font-variant-numeric: tabular-nums; }
+.label { font-size: 11.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+
+header.top { margin-left: calc(-1 * max(16px, env(safe-area-inset-left, 0px))); margin-right: calc(-1 * max(16px, env(safe-area-inset-right, 0px)));
+  padding-block: 26px 18px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  background: repeating-linear-gradient(90deg, var(--stripe) 0 38px, var(--bg) 38px 76px); border-bottom: 2px dashed var(--line); }
+header.top .wrap { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-end; justify-content: space-between; }
+.titlecard { background: var(--surface); border: 1px solid var(--line); border-radius: 4px; padding: 12px 16px; box-shadow: var(--shadow); display: grid; gap: 4px;
+  border-image: repeating-linear-gradient(45deg, var(--accent) 0 6px, var(--surface) 6px 12px) 6; border-width: 6px; border-style: solid; }
+.titlecard p { color: var(--ink-2); }
+.sqbox { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 8px 10px; box-shadow: var(--shadow); max-width: 100%; }
+.sqbox .msg { font-size: 13px; color: var(--ink-2); min-width: 0; }
+
+.btn { border: 1px solid var(--line); background: var(--surface); padding: 8px 14px; border-radius: 999px; cursor: pointer; font-weight: 600; font-size: 14px; white-space: nowrap; }
+.btn:hover { border-color: var(--accent); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.btn.small { padding: 4px 10px; font-size: 13px; }
+.btn.ghost { background: transparent; }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+.linkbtn { border: 0; background: none; padding: 0; color: var(--accent); font-weight: 600; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr)); gap: 12px; margin-top: 20px; }
+.tile { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: grid; gap: 2px; }
+.tile strong { font-family: var(--display); font-size: 28px; line-height: 1.05; font-variant-numeric: tabular-nums; }
+.tile.alert strong { color: var(--bad); }
+
+nav.tabs { display: flex; gap: 4px; overflow-x: auto; margin: 22px 0 16px; border-bottom: 1px solid var(--line); scrollbar-width: none; }
+nav.tabs button { border: 0; background: none; padding: 10px 14px; cursor: pointer; font-weight: 600; color: var(--muted); border-bottom: 3px solid transparent; margin-bottom: -1px; white-space: nowrap; }
+nav.tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
+nav.tabs .count { display: inline-block; min-width: 20px; padding: 0 6px; margin-left: 4px; border-radius: 999px; background: var(--bad-soft); color: var(--bad); font-size: 12px; }
+
+.bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
+.bar input[type=search], .bar select, .field input, .field select { border: 1px solid var(--line); background: var(--surface); border-radius: 10px; padding: 8px 10px; min-width: 0; }
+.bar input[type=search] { flex: 1 1 220px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { border: 1px solid var(--line); background: var(--surface); padding: 4px 11px; border-radius: 999px; cursor: pointer; font-size: 13px; font-weight: 600; color: var(--ink-2); }
+.chip[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: var(--bg); }
+
+.list { display: grid; gap: 8px; }
+.group-h { display: flex; justify-content: space-between; align-items: baseline; margin: 14px 2px 2px; gap: 8px; }
+.row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 14px; align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; }
+.row .name { font-weight: 600; overflow-wrap: anywhere; }
+.row .meta { display: flex; flex-wrap: wrap; gap: 6px 10px; font-size: 13px; color: var(--muted); align-items: center; margin-top: 2px; }
+.row .right { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+.tag { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: 4px; background: var(--label); color: var(--label-ink); font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.pill { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 700; padding: 2px 9px; border-radius: 999px; white-space: nowrap; }
+.pill.good { background: var(--good-soft); color: var(--good); }
+.pill.warn { background: var(--warn-soft); color: var(--warn); }
+.pill.bad { background: var(--bad-soft); color: var(--bad); }
+.pill.info { background: var(--accent-soft); color: var(--accent); }
+.pill.none { background: var(--surface-2); color: var(--muted); }
+.sqq { display: grid; justify-items: end; font-size: 12px; color: var(--muted); line-height: 1.2; }
+.sqq b { font-size: 16px; color: var(--ink); font-variant-numeric: tabular-nums; }
+.stepper { display: inline-flex; align-items: center; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; background: var(--surface-2); }
+.stepper button { border: 0; background: none; width: 34px; height: 34px; cursor: pointer; font-size: 18px; font-weight: 700; color: var(--ink-2); }
+.stepper button:hover { background: var(--accent-soft); color: var(--accent); }
+.stepper input { width: 44px; text-align: center; border: 0; background: var(--surface); height: 34px; font-weight: 700; font-variant-numeric: tabular-nums; -moz-appearance: textfield; }
+.stepper input::-webkit-outer-spin-button, .stepper input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.row details { grid-column: 1 / -1; font-size: 13px; }
+.row details summary { cursor: pointer; color: var(--muted); }
+.row .edit { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; align-items: center; }
+
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 16px; box-shadow: var(--shadow); min-width: 0; }
+.card + .card { margin-top: 14px; }
+.card > * + * { margin-top: 10px; }
+.card-h { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { text-align: left; padding: 8px 8px; border-bottom: 1px dashed var(--line); vertical-align: middle; }
+th { font-size: 12px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
+td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.confirm { border: 2px dashed var(--accent); background: var(--accent-soft); border-radius: 12px; padding: 12px 14px; display: grid; gap: 10px; }
+.confirm .acts { display: flex; gap: 8px; flex-wrap: wrap; }
+.empty { border: 2px dashed var(--line); border-radius: 14px; padding: 22px; text-align: center; color: var(--ink-2); display: grid; gap: 8px; justify-items: center; }
+.grid2 { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); }
+.field { display: grid; gap: 4px; font-size: 13px; color: var(--ink-2); min-width: 0; }
+.form { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr)); align-items: end; }
+.thumbs { display: flex; gap: 8px; flex-wrap: wrap; }
+.thumbs img { width: 84px; height: 84px; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); }
+.drop { border: 2px dashed var(--accent); border-radius: 14px; padding: 18px; display: grid; gap: 10px; justify-items: start; background: var(--accent-soft); }
+.toast { position: fixed; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 10px; font-size: 14px; box-shadow: var(--shadow); max-width: calc(100% - 32px); z-index: 20; }
+.progress { height: 6px; background: var(--surface-2); border-radius: 999px; overflow: hidden; }
+.progress div { height: 100%; background: var(--accent); width: 0; transition: width .2s; }
+@media (prefers-reduced-motion: reduce) { .progress div { transition: none; } }
+@media (max-width: 560px) { .row { grid-template-columns: 1fr; } .row .right { justify-content: space-between; } }
+</style>
+
+<header class="top">
+  <div class="wrap">
+    <div class="titlecard">
+      <span class="label">Sookie's Needlepoint · Katy</span>
+      <h1>Canvas Count</h1>
+      <p>Count what's on the walls, then fix Square to match.</p>
+    </div>
+    <div class="sqbox" aria-live="polite">
+      <span class="pill none" id="sqPill">Square not loaded</span>
+      <span class="msg" id="sqMsg">Showing the counts saved here.</span>
+      <button class="btn primary small" id="sqLoad" type="button">Load from Square</button>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <section class="tiles" id="tiles" aria-label="Summary"></section>
+  <nav class="tabs" role="tablist" aria-label="Sections" id="tabs">
+    <button role="tab" data-tab="count" type="button">Count</button>
+    <button role="tab" data-tab="fix" type="button">Fix in Square</button>
+    <button role="tab" data-tab="add" type="button">Add from photo</button>
+  </nav>
+  <section id="view"></section>
+</main>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+const LOCATION_ID = 'LBV57104VNB7X';
+const SPOTS = ['Christmas wall', 'Pink wall', 'Charm display', 'New arrivals table', 'Back stock', 'Other'];
+const $ = (s, el = document) => el.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const money = n => '$' + (Math.round((n || 0) * 100) / 100).toLocaleString('en-US', { minimumFractionDigits: n % 1 ? 2 : 0, maximumFractionDigits: 2 });
+const norm = s => String(s || '').toLowerCase().replace(/[’']/g, "'").replace(/\b(canvas|printed|needlepoint|kcn|designers?|the|stand up|series)\b/g, ' ').replace(/[^a-z0-9]+/g, ' ').trim();
+
+function toast(msg) {
+  const t = $('#toast'); t.textContent = msg; t.hidden = false;
+  clearTimeout(toast.t); toast.t = setTimeout(() => { t.hidden = true; }, 4200);
+}
+const pref = {
+  get(k, d) { try { return localStorage.getItem('cc-' + k) ?? d; } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem('cc-' + k, v); } catch (e) {} }
+};
+
+/* ---------- state ---------- */
+const S = {
+  tab: pref.get('tab', 'count'),
+  q: '', spot: pref.get('spot', 'all'), filter: pref.get('filter', 'mine'),
+  counts: {}, extras: {}, dbReady: false, dbMode: 'none',
+  square: null,           // { byVar: {varId: {...}}, loadedAt }
+  sqState: 'idle',        // idle | loading | ready | error
+  review: null,           // pending Square update preview
+  photo: { files: [], spot: 'Christmas wall', results: null, busy: false, err: '' },
+};
+let db = null, mcp = null, sample = null, downloads = null;
+
+/* ---------- storage ---------- */
+const writeTimers = {};
+function saveDoc(coll, id, data) {
+  if (coll === 'counts') S.counts[id] = data; else S.extras[id] = data;
+  render();
+  if (S.dbMode === 'local') { try { localStorage.setItem('cc-data', JSON.stringify({ counts: S.counts, extras: S.extras })); } catch (e) {} return; }
+  if (!db) return;
+  clearTimeout(writeTimers[coll + id]);
+  writeTimers[coll + id] = setTimeout(() => {
+    db.collection(coll).doc(id).set(data).catch(e => toast(e && e.code === 'quota_exceeded' ? 'Storage is full. Remove old extras to make room.' : "Couldn't save that change. Check your connection and try again."));
+  }, 500);
+}
+function deleteDoc(coll, id) {
+  if (coll === 'counts') delete S.counts[id]; else delete S.extras[id];
+  render();
+  if (S.dbMode === 'local') { try { localStorage.setItem('cc-data', JSON.stringify({ counts: S.counts, extras: S.extras })); } catch (e) {} return; }
+  if (db) db.collection(coll).doc(id).delete().catch(() => toast("Couldn't remove that. Try again."));
+}
+
+/* ---------- Square ---------- */
+async function squareCall(service, method, request, write) {
+  if (!mcp) throw { code: 'no_mcp' };
+  const r = await mcp.callTool('Square', write ? 'make_api_request' : 'make_api_request_read',
+    { service, method, request, characterization: write ? 'inventory physical count update' : 'inventory count review' }, write ? { cache: false } : undefined);
+  const p = r.payload;
+  if (typeof p === 'string') throw { code: 'tool_error', message: p.slice(0, 200) };
+  if (p && p.errors && p.errors.length) throw { code: 'tool_error', message: p.errors.map(e => e.detail || e.code).join('; ') };
+  return p || {};
+}
+function squareErrorCopy(e) {
+  return ({
+    no_mcp: "Square can only be reached when this page is open on claude.ai.",
+    server_not_connected: "Square isn't connected for you here. Add it in claude.ai Settings → Connectors, then load again.",
+    needs_reauth: "Your Square connection expired. Reconnect it in claude.ai Settings → Connectors.",
+    not_in_manifest: "Square is turned off for this page. Turn it on from the page's Permissions menu.",
+    approval_required: "Square needs your OK first. Press Load from Square and choose Allow.",
+    selection_required: "You have more than one Square connection. Pick one when claude.ai asks, then load again.",
+    server_unavailable: "Square didn't answer. Wait a moment and try again.",
+    blocked_by_policy: "Your organization blocks this Square tool here.",
+    tool_error: "Square said: " + ((e && e.message) || 'the request failed') + '.',
+  })[e && e.code] || ("Something went wrong talking to Square" + (e && e.message ? ': ' + e.message : '.'));
+}
+async function loadSquare() {
+  if (S.sqState === 'loading') return;
+  S.sqState = 'loading'; setSq('Loading…', 'Reading your items from Square…', 'info'); render();
+  try {
+    const items = []; let cursor = '';
+    for (let i = 0; i < 25; i++) {
+      const p = await squareCall('catalog', 'searchItems', cursor ? { limit: 100, cursor } : { limit: 100 });
+      items.push(...(p.items || []));
+      setSq('Loading…', `Read ${items.length} items…`, 'info');
+      cursor = p.cursor; if (!cursor) break;
+    }
+    const qty = {}; cursor = '';
+    for (let i = 0; i < 25; i++) {
+      const p = await squareCall('inventory', 'batchGetcounts', cursor ? { location_ids: [LOCATION_ID], states: ['IN_STOCK'], limit: 1000, cursor } : { location_ids: [LOCATION_ID], states: ['IN_STOCK'], limit: 1000 });
+      for (const c of p.counts || []) qty[c.catalog_object_id] = Number(c.quantity);
+      cursor = p.cursor; if (!cursor) break;
+    }
+    const byVar = {}; let threadItems = 0;
+    for (const it of items) {
+      const d = it.item_data || {}; const vars = d.variations || [];
+      if (d.is_archived) continue;
+      if (vars.length !== 1) { threadItems++; continue; }   // thread colors and multi-size items are skipped for now
+      const v = vars[0], vd = v.item_variation_data || {};
+      byVar[v.id] = { var: v.id, item: it.id, name: (d.name || '').trim(), price: ((vd.price_money || {}).amount || 0) / 100,
+        sku: vd.sku || '', qty: v.id in qty ? qty[v.id] : null, track: vd.track_inventory !== false, desc: (d.description_plaintext || '').slice(0, 80) };
+    }
+    S.square = { byVar, loadedAt: new Date(), threadItems };
+    S.sqState = 'ready';
+    setSq('Square loaded', `${Object.keys(byVar).length} items, as of ${S.square.loadedAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}. Thread colors are left out.`, 'good');
+  } catch (e) {
+    S.sqState = 'error'; setSq('Square not loaded', squareErrorCopy(e), 'bad');
+  }
+  render();
+}
+function setSq(pill, msg, kind) {
+  const p = $('#sqPill'); p.textContent = pill; p.className = 'pill ' + (kind || 'none');
+  $('#sqMsg').textContent = msg;
+  $('#sqLoad').textContent = S.sqState === 'ready' ? 'Reload' : 'Load from Square';
+  $('#sqLoad').disabled = S.sqState === 'loading';
+}
+
+/* ---------- model ---------- */
+function rows() {
+  const out = [];
+  const sqv = S.square ? S.square.byVar : {};
+  const seen = new Set();
+  for (const [id, c] of Object.entries(S.counts)) {
+    const s = sqv[id];
+    out.push(mk({ id, coll: 'counts', var: id, name: s ? s.name : c.name, price: s ? s.price : c.price, sqQty: s ? s.qty : c.sq, sqLive: !!s, doc: c }));
+    seen.add(id);
+  }
+  for (const [id, x] of Object.entries(S.extras)) out.push(mk({ id, coll: 'extras', var: null, name: x.name, price: x.price, sqQty: null, doc: x }));
+  for (const [id, s] of Object.entries(sqv)) if (!seen.has(id)) out.push(mk({ id, coll: 'counts', var: id, name: s.name, price: s.price, sqQty: s.qty, sqLive: true, doc: null }));
+  return out;
+}
+function mk(r) {
+  const d = r.doc || {};
+  r.spot = d.spot || ''; r.count = d.count ?? null; r.confirmed = !!d.confirmed; r.photo = !!d.photo; r.note = d.note || ''; r.maker = d.maker || '';
+  if (!r.var) r.status = 'missing';
+  else if (r.count != null && !r.confirmed) r.status = 'photo';
+  else if (r.count != null && r.sqQty != null && r.count !== r.sqQty) r.status = 'off';
+  else if (r.count != null && r.sqQty == null) r.status = 'off';
+  else if (r.count != null) r.status = 'ok';
+  else r.status = 'todo';
+  return r;
+}
+function stats(all) {
+  const mine = all.filter(r => r.count != null);
+  const counted = mine.filter(r => r.confirmed || r.coll === 'extras');
+  return {
+    units: counted.reduce((a, r) => a + r.count, 0),
+    value: counted.reduce((a, r) => a + r.count * (r.price || 0), 0),
+    photo: all.filter(r => r.status === 'photo').length,
+    off: all.filter(r => r.status === 'off').length,
+    missing: all.filter(r => r.status === 'missing').length,
+    neg: S.square ? Object.values(S.square.byVar).filter(s => s.qty != null && s.qty < 0).length : null,
+  };
+}
+function dupGroups() {
+  if (!S.square) return [];
+  const g = {};
+  for (const s of Object.values(S.square.byVar)) { const k = norm(s.name); if (k) (g[k] = g[k] || []).push(s); }
+  return Object.values(g).filter(a => a.length > 1);
+}
+
+/* ---------- render ---------- */
+function render() {
+  const all = rows(); const st = stats(all);
+  $('#tiles').innerHTML = [
+    tile('Canvases counted', st.units, 'confirmed on the floor'),
+    tile('Retail value counted', money(st.value), 'at the price in Square'),
+    tile('Seen in photos', st.photo, 'waiting for you to confirm'),
+    tile('Square is off', st.off, 'your count ≠ Square', st.off > 0),
+    tile('Not in Square', st.missing, 'on the wall, no listing', st.missing > 0),
+    tile('Below zero in Square', st.neg == null ? '—' : st.neg, st.neg == null ? 'load Square to check' : 'sold more than received', st.neg > 0),
+  ].join('');
+  for (const b of document.querySelectorAll('#tabs button')) {
+    b.setAttribute('aria-selected', String(b.dataset.tab === S.tab));
+    if (b.dataset.tab === 'fix') b.innerHTML = 'Fix in Square' + (st.off + st.missing ? `<span class="count">${st.off + st.missing}</span>` : '');
+  }
+  const v = $('#view');
+  if (!S.dbReady) { v.innerHTML = `<div class="empty"><strong>Opening your saved counts…</strong></div>`; return; }
+  const keep = document.activeElement && document.activeElement.id; const caret = keep && document.activeElement.selectionStart;
+  v.innerHTML = S.tab === 'fix' ? viewFix(all) : S.tab === 'add' ? viewAdd() : viewCount(all);
+  if (keep && document.getElementById(keep)) { const el = document.getElementById(keep); el.focus(); try { if (caret != null) el.setSelectionRange(caret, caret); } catch (e) {} }
+}
+function tile(label, val, sub, alert) {
+  return `<div class="tile${alert ? ' alert' : ''}"><span class="label">${esc(label)}</span><strong>${esc(val)}</strong><span class="small muted">${esc(sub)}</span></div>`;
+}
+const STATUS = {
+  ok: ['good', 'Matches Square'], off: ['bad', 'Square is off'], photo: ['info', 'Seen in photo'], todo: ['none', 'Not counted'], missing: ['warn', 'Not in Square'],
+};
+const FILTERS = [['mine', 'My list'], ['photo', 'Seen in photo'], ['off', 'Square is off'], ['missing', 'Not in Square'], ['todo', 'Not counted yet'], ['all', 'Everything']];
+
+function viewCount(all) {
+  let list = all;
+  const f = S.filter;
+  if (f === 'mine') list = list.filter(r => r.doc);
+  else if (f !== 'all') list = list.filter(r => r.status === f);
+  if (S.spot !== 'all') list = list.filter(r => (r.spot || 'Not placed') === S.spot);
+  if (S.q) { const q = norm(S.q); list = list.filter(r => norm(r.name + ' ' + r.maker).includes(q)); }
+  list.sort((a, b) => a.name.localeCompare(b.name));
+  const groups = {};
+  for (const r of list) (groups[r.spot || 'Not placed'] = groups[r.spot || 'Not placed'] || []).push(r);
+  const order = [...SPOTS, 'Not placed'].filter(s => groups[s]);
+  const needSq = (f === 'todo' || f === 'all') && !S.square;
+  const photoCount = all.filter(r => r.status === 'photo').length;
+  return `
+    <div class="bar">
+      <input type="search" id="q" placeholder="Search a canvas name or designer" value="${esc(S.q)}" aria-label="Search">
+      <select id="spot" aria-label="Spot in the shop">
+        <option value="all">All spots</option>
+        ${[...SPOTS, 'Not placed'].map(s => `<option ${S.spot === s ? 'selected' : ''}>${esc(s)}</option>`).join('')}
+      </select>
+      <button class="btn small" id="csv" type="button">Save as spreadsheet</button>
+    </div>
+    <div class="chips" role="group" aria-label="Show" style="margin-bottom:12px">
+      ${FILTERS.map(([k, l]) => `<button class="chip" type="button" data-filter="${k}" aria-pressed="${f === k}">${l}</button>`).join('')}
+    </div>
+    ${f === 'photo' && photoCount ? `<div class="confirm" style="margin-bottom:12px"><p>${photoCount} canvases were read from your photos with a count of what showed in the picture. Check each one on the wall, change the number if there are more in back stock, then press Confirm. Or confirm them all at once.</p><div class="acts"><button class="btn primary small" id="confirmAll" type="button">Confirm all ${photoCount}</button></div></div>` : ''}
+    ${needSq ? `<div class="empty"><strong>Load Square to see everything you sell.</strong><span>Then you can count any item, not just the ones on your list.</span><button class="btn primary" type="button" data-act="load">Load from Square</button></div>` : ''}
+    ${!list.length && !needSq ? `<div class="empty"><strong>Nothing here yet.</strong><span>${f === 'mine' ? 'Add canvases from a photo, or load Square and count from the full list.' : 'Try another filter or spot.'}</span></div>` : ''}
+    ${order.map(s => `<div class="group-h"><h3>${esc(s)}</h3><span class="small muted">${groups[s].length} item${groups[s].length === 1 ? '' : 's'}</span></div><div class="list">${groups[s].slice(0, 300).map(rowHtml).join('')}</div>`).join('')}`;
+}
+function rowHtml(r) {
+  const [k, l] = STATUS[r.status];
+  const label = r.status === 'off' && r.sqQty != null ? `Square says ${r.sqQty}` : l;
+  const key = r.coll + ':' + r.id;
+  return `<div class="row">
+    <div>
+      <div class="name">${esc(r.name)}</div>
+      <div class="meta">${r.price ? `<span class="tag">${money(r.price)}</span>` : ''}${r.maker ? `<span>${esc(r.maker)}</span>` : ''}<span class="pill ${k}">${esc(label)}</span>${r.note ? `<span>${esc(r.note)}</span>` : ''}</div>
+    </div>
+    <div class="right">
+      ${r.var ? `<div class="sqq"><span>Square</span><b>${r.sqQty == null ? '—' : r.sqQty}</b>${r.sqLive || r.sqQty == null ? '' : '<span>saved</span>'}</div>` : ''}
+      <div class="stepper" aria-label="My count for ${esc(r.name)}">
+        <button type="button" data-step="-1" data-key="${esc(key)}" aria-label="One less">−</button>
+        <input type="number" inputmode="numeric" min="0" id="n-${esc(key)}" data-key="${esc(key)}" value="${r.count ?? ''}" placeholder="–" aria-label="My count">
+        <button type="button" data-step="1" data-key="${esc(key)}" aria-label="One more">+</button>
+      </div>
+      ${r.status === 'photo' ? `<button class="btn small primary" type="button" data-confirm="${esc(key)}">Confirm</button>` : ''}
+    </div>
+    <details><summary>Spot, note${r.coll === 'extras' ? ', remove' : ''}</summary>
+      <div class="edit">
+        <select data-spotset="${esc(key)}" aria-label="Spot">${['', ...SPOTS].map(s => `<option value="${esc(s)}" ${r.spot === s ? 'selected' : ''}>${s || 'Not placed'}</option>`).join('')}</select>
+        <input type="text" data-noteset="${esc(key)}" value="${esc(r.note)}" placeholder="Note (back stock, damaged…)" style="flex:1 1 200px;border:1px solid var(--line);border-radius:10px;padding:6px 10px;background:var(--surface)">
+        ${r.doc ? `<button class="btn small ghost" type="button" data-remove="${esc(key)}">${r.coll === 'extras' ? 'Remove' : 'Clear my count'}</button>` : ''}
+      </div>
+    </details>
+  </div>`;
+}
+
+function viewFix(all) {
+  const off = all.filter(r => r.status === 'off');
+  const missing = all.filter(r => r.status === 'missing');
+  const neg = S.square ? Object.values(S.square.byVar).filter(s => s.qty != null && s.qty < 0).sort((a, b) => a.qty - b.qty) : null;
+  const dups = dupGroups();
+  const rv = S.review;
+  return `
+    <div class="card">
+      <div class="card-h"><h2>Square is off</h2><span class="small muted">${off.length} item${off.length === 1 ? '' : 's'}</span></div>
+      <p class="muted">These are canvases you counted where Square shows a different number. Updating sets Square's stock to your count as a physical count, the same as doing a stock count in the Square app.</p>
+      ${!off.length ? `<div class="empty">Nothing to fix yet. Counts you confirm on the Count tab show up here when they don't match Square.</div>` : rv ? reviewHtml(rv) : `
+        <div class="table-wrap"><table><thead><tr><th><input type="checkbox" id="offAll" checked aria-label="Select all"></th><th>Canvas</th><th class="n">Square</th><th class="n">Your count</th></tr></thead><tbody>
+          ${off.map(r => `<tr><td><input type="checkbox" data-pick="${esc(r.id)}" checked aria-label="Include ${esc(r.name)}"></td><td>${esc(r.name)}</td><td class="n">${r.sqQty ?? '—'}</td><td class="n"><b>${r.count}</b></td></tr>`).join('')}
+        </tbody></table></div>
+        <div class="bar"><button class="btn primary" id="review" type="button">Review update</button><span class="small muted">You'll see Square's latest numbers before anything changes.</span></div>`}
+    </div>
+    <div class="card">
+      <div class="card-h"><h2>On the wall, not in Square</h2><span class="small muted">${missing.length}</span></div>
+      <p class="muted">You can't ring these up by name. Add each one in the Square app (Items → Create item) with its price, then load Square here and count it.</p>
+      ${missing.length ? `<div class="table-wrap"><table><thead><tr><th>Canvas</th><th>Designer / code</th><th class="n">Price</th><th class="n">Count</th><th>Spot</th></tr></thead><tbody>
+        ${missing.map(r => `<tr><td>${esc(r.name)}${r.note ? `<div class="small muted">${esc(r.note)}</div>` : ''}</td><td>${esc(r.maker)}</td><td class="n">${r.price ? money(r.price) : '—'}</td><td class="n">${r.count ?? '—'}</td><td>${esc(r.spot)}</td></tr>`).join('')}
+      </tbody></table></div>` : `<div class="empty">Everything you've counted is in Square.</div>`}
+    </div>
+    <div class="card">
+      <div class="card-h"><h2>Below zero in Square</h2><span class="small muted">${neg ? neg.length : 'Load Square to check'}</span></div>
+      <p class="muted">A number below zero means Square recorded more sales than stock received. Most are catch-all buttons (like In Store Canvas or Adhoc) or threads sold by the skein. Count the real ones and they'll move to "Square is off".</p>
+      ${neg ? `<div class="table-wrap"><table><thead><tr><th>Item</th><th class="n">Price</th><th class="n">Square</th><th></th></tr></thead><tbody>
+        ${neg.map(s => `<tr><td>${esc(s.name)}</td><td class="n">${s.price ? money(s.price) : '—'}</td><td class="n" style="color:var(--bad)"><b>${s.qty}</b></td><td class="n"><button class="linkbtn" type="button" data-countit="${esc(s.var)}">${S.counts[s.var] ? 'Counted' : 'Count it'}</button></td></tr>`).join('')}
+      </tbody></table></div>` : `<button class="btn" type="button" data-act="load">Load from Square</button>`}
+    </div>
+    <div class="card">
+      <div class="card-h"><h2>Look like duplicates</h2><span class="small muted">${S.square ? dups.length + ' pairs' : 'Load Square to check'}</span></div>
+      <p class="muted">Two listings for one canvas split its stock, so one shows 0 while the other shows what you have. Keep one in the Square app and archive the other, then count the one you kept.</p>
+      ${dups.length ? `<div class="table-wrap"><table><thead><tr><th>Listings</th><th class="n">Square counts</th><th class="n">Prices</th></tr></thead><tbody>
+        ${dups.map(g => `<tr><td>${g.map(s => esc(s.name)).join('<br>')}</td><td class="n">${g.map(s => s.qty ?? '—').join('<br>')}</td><td class="n">${g.map(s => money(s.price)).join('<br>')}</td></tr>`).join('')}
+      </tbody></table></div>` : ''}
+    </div>`;
+}
+function reviewHtml(rv) {
+  if (rv.state === 'reading') return `<div class="confirm"><p>Getting Square's latest numbers…</p></div>`;
+  if (rv.state === 'error') return `<div class="confirm"><p>${esc(rv.msg)}</p><div class="acts"><button class="btn" type="button" id="reviewCancel">Back</button></div></div>`;
+  if (rv.state === 'done') return `<div class="confirm"><p><b>Square updated.</b> ${rv.done} item${rv.done === 1 ? '' : 's'} now match your count.</p><div class="acts"><button class="btn" type="button" id="reviewCancel">Done</button></div></div>`;
+  const changes = rv.items.filter(i => i.now !== i.count);
+  return `<div class="confirm">
+    <p><b>Update ${changes.length} item${changes.length === 1 ? '' : 's'} in Square?</b> Square will set each one's stock at Sookie's Needlepoint LLC to your count.</p>
+    <div class="table-wrap"><table><thead><tr><th>Canvas</th><th class="n">Square now</th><th class="n">Becomes</th></tr></thead><tbody>
+      ${rv.items.map(i => `<tr><td>${esc(i.name)}</td><td class="n">${i.now ?? '—'}</td><td class="n"><b>${i.now === i.count ? 'already ' + i.count : i.count}</b></td></tr>`).join('')}
+    </tbody></table></div>
+    <div class="acts">
+      <button class="btn primary" type="button" id="reviewGo" ${changes.length && rv.state !== 'writing' ? '' : 'disabled'}>${rv.state === 'writing' ? 'Updating…' : 'Update Square'}</button>
+      <button class="btn" type="button" id="reviewCancel" ${rv.state === 'writing' ? 'disabled' : ''}>Cancel</button>
+    </div>
+  </div>`;
+}
+
+function viewAdd() {
+  const P = S.photo;
+  return `<div class="grid2">
+    <div class="card">
+      <h2>Read canvases from a photo</h2>
+      <p class="muted">Take a picture of a wall section or a stack. Claude reads the price labels and designer codes, matches each canvas to Square, and you check the list before anything is saved.</p>
+      ${sample ? `
+      <div class="drop">
+        <input type="file" id="photos" accept="image/jpeg,image/png,image/webp" multiple aria-label="Photos">
+        ${P.files.length ? `<div class="thumbs">${P.files.map(f => `<img src="${f.url}" alt="">`).join('')}</div>` : ''}
+        <label class="field">Where are these?
+          <select id="photoSpot">${SPOTS.map(s => `<option ${P.spot === s ? 'selected' : ''}>${esc(s)}</option>`).join('')}</select>
+        </label>
+        <button class="btn primary" id="readPhotos" type="button" ${P.files.length && !P.busy ? '' : 'disabled'}>${P.busy ? 'Reading… this takes about a minute' : 'Read canvases'}</button>
+      </div>
+      ${P.err ? `<p style="color:var(--bad)">${esc(P.err)}</p>` : ''}
+      ${!S.square ? `<p class="small muted">Load Square first so Claude can match names to your listings.</p>` : ''}` :
+      `<div class="empty">Reading photos works when this page is open on claude.ai.</div>`}
+    </div>
+    <div class="card">
+      <h2>Add one by hand</h2>
+      <p class="muted">For a canvas that's not in Square yet, or one the photo missed.</p>
+      <div class="form">
+        <label class="field" style="grid-column:1/-1">Name<input id="mName" list="sqNames" placeholder="Canvas name"></label>
+        <datalist id="sqNames">${S.square ? Object.values(S.square.byVar).map(s => `<option value="${esc(s.name)}">`).join('') : ''}</datalist>
+        <label class="field">Designer / code<input id="mMaker" placeholder="Penny Linn, KCD1933…"></label>
+        <label class="field">Price<input id="mPrice" type="number" step="0.01" min="0" inputmode="decimal"></label>
+        <label class="field">Count<input id="mCount" type="number" min="0" value="1" inputmode="numeric"></label>
+        <label class="field">Spot<select id="mSpot">${SPOTS.map(s => `<option>${esc(s)}</option>`).join('')}</select></label>
+      </div>
+      <button class="btn primary" id="mAdd" type="button">Add to my count</button>
+    </div>
+  </div>
+  ${P.results ? photoResults(P.results) : ''}`;
+}
+function photoResults(res) {
+  if (!res.length) return `<div class="card"><p>Claude didn't find any canvases in those photos. Try a closer picture where the price labels are readable.</p></div>`;
+  return `<div class="card">
+    <div class="card-h"><h2>Found ${res.length} canvas${res.length === 1 ? '' : 'es'}</h2><span class="small muted">Untick anything that's wrong</span></div>
+    <div class="table-wrap"><table><thead><tr><th></th><th>Canvas</th><th>Square listing</th><th class="n">Price</th><th class="n">Count</th></tr></thead><tbody>
+      ${res.map((r, i) => `<tr>
+        <td><input type="checkbox" data-res="${i}" ${r.keep ? 'checked' : ''} aria-label="Keep ${esc(r.name)}"></td>
+        <td>${esc(r.name)}${r.maker ? `<div class="small muted">${esc(r.maker)}${r.mesh ? ' · ' + esc(r.mesh) + ' mesh' : ''}</div>` : ''}</td>
+        <td>${r.match ? esc(r.match.name) + ` <span class="small muted">(Square: ${r.match.qty ?? '—'})</span>` : '<span class="pill warn">Not in Square</span>'}</td>
+        <td class="n">${r.price ? money(r.price) : '—'}</td>
+        <td class="n"><input type="number" min="0" data-rescount="${i}" value="${r.count}" style="width:56px;border:1px solid var(--line);border-radius:8px;padding:4px 6px;background:var(--surface);text-align:right"></td>
+      </tr>`).join('')}
+    </tbody></table></div>
+    <div class="bar"><button class="btn primary" id="saveRes" type="button">Add ${res.filter(r => r.keep).length} to my count</button><button class="btn" id="dropRes" type="button">Discard</button></div>
+    <p class="small muted">They're added as "Seen in photo" so you can confirm each count on the wall.</p>
+  </div>`;
+}
+
+/* ---------- actions ---------- */
+function findRow(key) {
+  const [coll, id] = key.split(':');
+  return rows().find(r => r.coll === coll && r.id === id);
+}
+function setCount(key, n, extra = {}) {
+  const r = findRow(key); if (!r) return;
+  const base = r.doc ? { ...r.doc } : { name: r.name, price: r.price || 0 };
+  if (r.var && r.sqQty != null) base.sq = r.sqQty;
+  const data = { ...base, count: n == null ? null : Math.max(0, Math.round(n)), confirmed: true, countedAt: new Date().toISOString(), ...extra };
+  saveDoc(r.coll, r.id, data);
+}
+document.addEventListener('click', e => {
+  const t = e.target.closest('button, input[type=checkbox]'); if (!t) return;
+  if (t.matches('#tabs button')) { S.tab = t.dataset.tab; pref.set('tab', S.tab); S.review = null; render(); return; }
+  if (t.id === 'sqLoad' || t.dataset.act === 'load') { loadSquare(); return; }
+  if (t.dataset.filter) { S.filter = t.dataset.filter; pref.set('filter', S.filter); render(); return; }
+  if (t.dataset.step) { const r = findRow(t.dataset.key); setCount(t.dataset.key, (r.count ?? (Number(t.dataset.step) > 0 ? 0 : 1)) + Number(t.dataset.step)); return; }
+  if (t.dataset.confirm) { const r = findRow(t.dataset.confirm); setCount(t.dataset.confirm, r.count); return; }
+  if (t.id === 'confirmAll') { for (const r of rows().filter(r => r.status === 'photo')) setCount(r.coll + ':' + r.id, r.count); toast('Confirmed. Any that differ from Square are on the Fix in Square tab.'); return; }
+  if (t.dataset.remove) { const [coll, id] = t.dataset.remove.split(':'); deleteDoc(coll, id); return; }
+  if (t.dataset.countit) { const s = S.square.byVar[t.dataset.countit]; S.tab = 'count'; S.filter = 'all'; S.spot = 'all'; S.q = s.name; render(); return; }
+  if (t.id === 'csv') { exportCsv(); return; }
+  if (t.id === 'offAll') { for (const c of document.querySelectorAll('[data-pick]')) c.checked = t.checked; return; }
+  if (t.id === 'review') { startReview(); return; }
+  if (t.id === 'reviewGo') { pushToSquare(); return; }
+  if (t.id === 'reviewCancel') { S.review = null; render(); return; }
+  if (t.id === 'readPhotos') { readPhotos(); return; }
+  if (t.dataset.res) { S.photo.results[Number(t.dataset.res)].keep = t.checked; render(); return; }
+  if (t.id === 'saveRes') { saveResults(); return; }
+  if (t.id === 'dropRes') { S.photo.results = null; render(); return; }
+  if (t.id === 'mAdd') { manualAdd(); return; }
+});
+document.addEventListener('input', e => {
+  const t = e.target;
+  if (t.id === 'q') { S.q = t.value; render(); }
+});
+document.addEventListener('change', e => {
+  const t = e.target;
+  if (t.id === 'spot') { S.spot = t.value; pref.set('spot', S.spot); render(); }
+  else if (t.matches('.stepper input')) setCount(t.dataset.key, t.value === '' ? null : Number(t.value));
+  else if (t.dataset.spotset) { const r = findRow(t.dataset.spotset); saveDoc(r.coll, r.id, { ...(r.doc || { name: r.name, price: r.price || 0, sq: r.sqQty }), spot: t.value }); }
+  else if (t.dataset.noteset) { const r = findRow(t.dataset.noteset); saveDoc(r.coll, r.id, { ...(r.doc || { name: r.name, price: r.price || 0, sq: r.sqQty }), note: t.value.slice(0, 200) }); }
+  else if (t.id === 'photoSpot') S.photo.spot = t.value;
+  else if (t.dataset.rescount) S.photo.results[Number(t.dataset.rescount)].count = Math.max(0, Number(t.value) || 0);
+  else if (t.id === 'photos') {
+    for (const f of S.photo.files) URL.revokeObjectURL(f.url);
+    S.photo.files = [...t.files].slice(0, 5).map(f => ({ file: f, url: URL.createObjectURL(f) }));
+    S.photo.err = t.files.length > 5 ? 'Only the first 5 photos are read at a time.' : ''; render();
+  }
+});
+
+async function startReview() {
+  const ids = [...document.querySelectorAll('[data-pick]:checked')].map(c => c.dataset.pick);
+  if (!ids.length) { toast('Tick at least one item.'); return; }
+  if (!mcp) { toast(squareErrorCopy({ code: 'no_mcp' })); return; }
+  const all = rows();
+  const items = ids.map(id => all.find(r => r.coll === 'counts' && r.id === id)).filter(Boolean).map(r => ({ var: r.var, name: r.name, count: r.count, now: null }));
+  S.review = { state: 'reading', items }; render();
+  try {
+    const now = {};
+    for (let i = 0; i < items.length; i += 500) {
+      const p = await squareCall('inventory', 'batchGetcounts', { catalog_object_ids: items.slice(i, i + 500).map(x => x.var), location_ids: [LOCATION_ID], states: ['IN_STOCK'], limit: 1000 });
+      for (const c of p.counts || []) now[c.catalog_object_id] = Number(c.quantity);
+    }
+    for (const x of items) x.now = x.var in now ? now[x.var] : 0;
+    S.review = { state: 'ready', items };
+  } catch (e) { S.review = { state: 'error', msg: squareErrorCopy(e) }; }
+  render();
+}
+async function pushToSquare() {
+  const rv = S.review; if (!rv || rv.state !== 'ready') return;
+  const changes = rv.items.filter(i => i.now !== i.count);
+  rv.state = 'writing'; render();
+  const when = new Date().toISOString(); let done = 0;
+  try {
+    for (let i = 0; i < changes.length; i += 100) {
+      const chunk = changes.slice(i, i + 100);
+      await squareCall('inventory', 'batchChange', {
+        idempotency_key: (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random()),
+        changes: chunk.map(x => ({ type: 'PHYSICAL_COUNT', physical_count: { catalog_object_id: x.var, catalog_object_type: 'ITEM_VARIATION', state: 'IN_STOCK', location_id: LOCATION_ID, quantity: String(x.count), occurred_at: when } })),
+        ignore_unchanged_counts: true,
+      }, true);
+      done += chunk.length;
+      for (const x of chunk) {
+        if (S.square && S.square.byVar[x.var]) S.square.byVar[x.var].qty = x.count;
+        const d = S.counts[x.var]; if (d) saveDoc('counts', x.var, { ...d, sq: x.count, pushedAt: when });
+      }
+    }
+    S.review = { state: 'done', done };
+  } catch (e) {
+    S.review = { state: 'error', msg: (done ? `${done} item${done === 1 ? ' was' : 's were'} updated before Square stopped. ` : '') + squareErrorCopy(e) + ' Press Load from Square to see where things stand before trying again.' };
+  }
+  render();
+}
+
+async function readPhotos() {
+  const P = S.photo; if (!P.files.length || P.busy) return;
+  P.busy = true; P.err = ''; P.results = null; render();
+  const names = S.square ? Object.values(S.square.byVar).map(s => s.name) : Object.values(S.counts).map(c => c.name);
+  const prompt = `These photos show hand-painted needlepoint canvases for sale at Sookie's Needlepoint, a needlepoint shop. Each canvas is in a white sleeve with a pink border. Many have a small sticker with the canvas name, mesh count (13 or 18) and price, and a designer mark or code printed in a lower corner (for example Penny Linn, KCD1933 for KCN Designers, KDS-95, SCT, CMC, MD-54, LDD, MN).
+
+List every distinct canvas you can see. Count how many copies of the same design are visible. Then pick the matching listing from the shop's Square item names below, or null if none fits. Only match when you are fairly sure.
+
+Square item names:
+${names.slice(0, 1500).join('\n')}
+
+Reply with only a JSON array, one object per canvas:
+[{"name": "short descriptive name, using the sticker name if readable", "maker": "designer or code if visible, else empty", "mesh": "13 or 18 or empty", "price": number or null, "count": number, "square": "exact Square item name or null"}]`;
+  try {
+    const out = await sample.json(prompt, { images: P.files.map(f => f.file), cache: false });
+    const byName = {}; if (S.square) for (const s of Object.values(S.square.byVar)) byName[s.name] = s;
+    P.results = (Array.isArray(out) ? out : []).filter(o => o && o.name).slice(0, 80).map(o => {
+      const m = o.square && (byName[o.square] || Object.values(byName).find(s => norm(s.name) === norm(o.square)));
+      return { name: String(o.name).slice(0, 120), maker: String(o.maker || '').slice(0, 60), mesh: String(o.mesh || ''), price: Number(o.price) || (m ? m.price : 0), count: Math.max(1, Math.round(Number(o.count) || 1)), match: m || null, keep: true };
+    });
+  } catch (e) {
+    P.err = ({ not_granted: 'Reading photos needs your OK. Allow Claude for this page and try again.', images_unavailable: "Photos can't be sent from this view.", image_rejected: 'That photo could not be read. Try a JPG or PNG under 20 MB.', rate_limited: "You've hit a usage limit. Wait a bit and try again.", invalid_json: 'The answer came back in the wrong shape. Press Read canvases again.', refused: 'Claude declined that photo. Try a different one.' })[e && e.code] || 'Reading the photos failed. Try again in a moment.';
+  }
+  P.busy = false; render();
+}
+function saveResults() {
+  const P = S.photo; let n = 0;
+  for (const r of P.results.filter(x => x.keep)) {
+    if (r.match) {
+      const prev = S.counts[r.match.var];
+      saveDoc('counts', r.match.var, { ...(prev || {}), name: r.match.name, price: r.match.price, sq: r.match.qty, count: (prev && prev.count != null ? prev.count : 0) + r.count, confirmed: false, photo: true, spot: (prev && prev.spot) || P.spot, maker: r.maker });
+    } else {
+      saveDoc('extras', 'x' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), { name: r.name, maker: r.maker + (r.mesh ? ` · ${r.mesh} mesh` : ''), price: r.price || 0, count: r.count, spot: P.spot, photo: true, confirmed: true });
+    }
+    n++;
+  }
+  P.results = null; S.tab = 'count'; S.filter = 'photo'; render();
+  toast(`Added ${n}. Confirm each count on the wall.`);
+}
+function manualAdd() {
+  const name = $('#mName').value.trim(); if (!name) { toast('Type a canvas name first.'); return; }
+  const count = Math.max(0, Number($('#mCount').value) || 0), spot = $('#mSpot').value, maker = $('#mMaker').value.trim(), price = Number($('#mPrice').value) || 0;
+  const s = S.square && Object.values(S.square.byVar).find(x => x.name.toLowerCase() === name.toLowerCase());
+  if (s) saveDoc('counts', s.var, { ...(S.counts[s.var] || {}), name: s.name, price: s.price, sq: s.qty, count, confirmed: true, spot, maker, countedAt: new Date().toISOString() });
+  else saveDoc('extras', 'x' + Date.now().toString(36), { name, maker, price, count, spot, confirmed: true });
+  toast(s ? `Counted ${count} of ${s.name}.` : `Added ${name}. It's on the Fix in Square list until it's listed.`);
+  for (const id of ['mName', 'mMaker', 'mPrice']) $('#' + id).value = '';
+}
+async function exportCsv() {
+  const all = rows().filter(r => r.doc);
+  const q = v => '"' + String(v ?? '').replace(/"/g, '""') + '"';
+  const lines = [['Canvas', 'Designer', 'Spot', 'Price', 'My count', 'Square count', 'Status', 'Note'].join(',')]
+    .concat(all.map(r => [r.name, r.maker, r.spot, r.price || '', r.count ?? '', r.sqQty ?? '', STATUS[r.status][1], r.note].map(q).join(',')));
+  const data = lines.join('\n');
+  if (downloads) {
+    try { await downloads.save({ filename: `canvas-count-${new Date().toISOString().slice(0, 10)}.csv`, data }); toast('Saved.'); return; }
+    catch (e) { if (e && e.code === 'cancelled') return; }
+  }
+  try { await navigator.clipboard.writeText(data); toast('Copied the spreadsheet. Paste it into Numbers, Excel or Google Sheets.'); }
+  catch (e) { toast("Couldn't save or copy here."); }
+}
+
+/* ---------- boot ---------- */
+render();
+(async () => {
+  const use = n => (window.claude && typeof window.claude.use === 'function') ? window.claude.use(n).catch(() => null) : Promise.resolve(null);
+  [db, mcp, sample, downloads] = await Promise.all([use('db'), use('mcp'), use('sample'), use('downloads')]);
+  if (db) {
+    S.dbMode = 'db';
+    const waiting = new Set(['counts', 'extras']);
+    for (const c of ['counts', 'extras']) {
+      db.collection(c).onSnapshot(snap => {
+        const target = {};
+        for (const d of snap.docs) if (d.exists) target[d.id] = JSON.parse(JSON.stringify(d.data()));
+        if (c === 'counts') S.counts = target; else S.extras = target;
+        waiting.delete(c); S.dbReady = waiting.size === 0; render();
+      }, () => toast('Lost the connection to your saved counts. Reload the page to reconnect.'));
+    }
+  } else {
+    S.dbMode = 'local';
+    try { const d = JSON.parse(localStorage.getItem('cc-data') || '{}'); S.counts = d.counts || {}; S.extras = d.extras || {}; } catch (e) {}
+    S.dbReady = true; render();
+  }
+  if (sample) { try { const lim = await sample.limits(); if (!lim.images) sample = null; } catch (e) { sample = null; } render(); }
+  if (!mcp) setSq('Square not loaded', 'Square can be reached when this page is open on claude.ai.', 'none');
+})();
+</script>
