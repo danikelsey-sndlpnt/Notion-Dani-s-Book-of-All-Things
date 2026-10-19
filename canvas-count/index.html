@@ -144,8 +144,9 @@ td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; white-space:
 .phwrap { display: grid; gap: 16px; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); align-items: start; margin-top: 10px; }
 .ph { position: relative; width: 100%; max-width: 100%; border-radius: 12px; overflow: hidden; border: 1px solid var(--line); background: var(--surface-2); }
 .ph img { display: block; width: 100%; height: 100%; object-fit: cover; }
-.tagdot { position: absolute; transform: translate(-50%, -50%); min-width: 30px; height: 30px; padding: 0 6px; border-radius: 999px; border: 2.5px solid #fff; color: #fff; font: 700 14px/1 var(--body); cursor: pointer; box-shadow: 0 1px 4px rgba(0,0,0,.35); font-variant-numeric: tabular-nums; }
-.tagdot.on { outline: 3px solid var(--ink); outline-offset: 2px; transform: translate(-50%, -50%) scale(1.18); z-index: 2; }
+.tagdot { position: absolute; transform: translate(-50%, -50%); min-width: 22px; height: 22px; padding: 0 5px; border-radius: 999px; border: 2px solid #fff; color: #fff; font: 700 11.5px/1 var(--body); opacity: .92; cursor: pointer; box-shadow: 0 1px 4px rgba(0,0,0,.35); font-variant-numeric: tabular-nums; }
+.tagdot.on { outline: 3px solid var(--ink); outline-offset: 2px; transform: translate(-50%, -50%) scale(1.25); z-index: 2; opacity: 1; }
+.ph.hidetags .tagdot:not(.on) { display: none; }
 .s-ok { background: #2E7D4F; } .s-off { background: #B3261E; } .s-photo { background: #C2185B; } .s-todo { background: #6B5A62; } .s-missing { background: #A86A00; }
 .phside { display: grid; gap: 12px; position: sticky; top: calc(env(safe-area-inset-top, 0px) + 8px); max-height: calc(100vh - 24px); overflow: auto; min-width: 0; }
 .tpanel h3 { font-size: 19px; }
@@ -458,12 +459,13 @@ function viewPhotos(all) {
     <div class="chips" role="group" aria-label="Photo">${PHOTOS.map((p, i) => `<button class="chip" type="button" data-ph="${i}" aria-pressed="${i === S.ph.i}">${i + 1}. ${esc(p.title)}</button>`).join('')}</div>
     <div class="bar" style="margin:12px 0 0;justify-content:space-between">
       <span class="small muted">Tap a number to see its Square listing and count it. <b>${done} of ${tags.length}</b> counted on this photo.</span>
+      <button class="btn small" type="button" data-hidetags="1">${S.ph.hide ? 'Show numbers' : 'Hide numbers'}</button>
       <div class="legend"><span><i class="s-ok"></i>Matches</span><span><i class="s-off"></i>Square is off</span><span><i class="s-photo"></i>Seen in photo</span><span><i class="s-todo"></i>Not counted</span><span><i class="s-missing"></i>Not in Square</span></div>
     </div>
     <div class="phwrap">
-      <div class="ph" style="aspect-ratio:${ph.ar}">
+      <div class="ph${S.ph.hide ? ' hidetags' : ''}" style="aspect-ratio:${ph.ar}">
         <img src="${esc(ph.src)}" alt="${esc(ph.title)}">
-        ${tags.map(x => `<button type="button" class="tagdot s-${x.st}${S.ph.sel === x.i ? ' on' : ''}" style="left:${x.t.x}%;top:${x.t.y}%" data-tag="${x.i}" aria-label="${x.i + 1}: ${esc(label(x))}, ${TAGWORD[x.st]}">${x.i + 1}</button>`).join('')}
+        ${tags.map(x => `<button type="button" class="tagdot s-${x.st}${S.ph.sel === x.i ? ' on' : ''}" style="left:${x.t.x}%;top:${Math.max(2, x.t.y - 4.5 * Math.min(1.6, ph.ar))}%" data-tag="${x.i}" aria-label="${x.i + 1}: ${esc(label(x))}, ${TAGWORD[x.st]}">${x.i + 1}</button>`).join('')}
       </div>
       <div class="phside">
         ${sel ? tagPanel(sel, tags.length) : `<div class="empty">Tap a numbered tag on the photo to check it against Square.</div>`}
@@ -638,8 +640,9 @@ document.addEventListener('click', e => {
   const t = e.target.closest('button, input[type=checkbox]'); if (!t) return;
   if (t.matches('#tabs button')) { S.tab = t.dataset.tab; pref.set('tab', S.tab); S.review = null; render(); return; }
   if (t.id === 'sqLoad' || t.dataset.act === 'load') { loadSquare(); return; }
-  if (t.dataset.ph) { S.ph = { i: Number(t.dataset.ph), sel: null }; pref.set('ph', S.ph.i); render(); return; }
+  if (t.dataset.ph) { S.ph = { i: Number(t.dataset.ph), sel: null, hide: S.ph.hide }; pref.set('ph', S.ph.i); render(); return; }
   if (t.dataset.tag) { S.ph.sel = Number(t.dataset.tag); render(); return; }
+  if (t.dataset.hidetags) { S.ph.hide = !S.ph.hide; render(); return; }
   if (t.dataset.tagnav) { S.ph.sel = Math.max(0, Math.min(PHOTOS[S.ph.i].tags.length - 1, S.ph.sel + Number(t.dataset.tagnav))); render(); return; }
   if (t.dataset.tstep) { const x = photoTags(rows())[S.ph.sel]; const c = x && x.r ? x.r.count : null; countTag((c ?? (Number(t.dataset.tstep) > 0 ? 0 : 1)) + Number(t.dataset.tstep)); return; }
   if (t.dataset.tconfirm) { const x = photoTags(rows())[S.ph.sel]; countTag(x.r.count); return; }
