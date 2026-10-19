@@ -83,6 +83,11 @@ header.top .wrap { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-
 .tile strong { font-family: var(--display); font-size: 28px; line-height: 1.05; font-variant-numeric: tabular-nums; }
 .tile.alert strong { color: var(--bad); }
 
+.skufind { margin-top: 16px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; display: grid; gap: 8px; }
+.skubar { display: flex; gap: 8px; align-items: center; }
+.skubar input { flex: 1; min-width: 0; border: 2px solid var(--accent); border-radius: 10px; padding: 9px 12px; background: var(--surface); font-size: 16px; font-weight: 600; letter-spacing: .04em; font-variant-numeric: tabular-nums; }
+#skuRes:empty { display: none; }
+#skuRes .list { gap: 6px; }
 nav.tabs { display: flex; gap: 4px; overflow-x: auto; margin: 22px 0 16px; border-bottom: 1px solid var(--line); scrollbar-width: none; }
 nav.tabs button { border: 0; background: none; padding: 10px 14px; cursor: pointer; font-weight: 600; color: var(--muted); border-bottom: 3px solid transparent; margin-bottom: -1px; white-space: nowrap; }
 nav.tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
@@ -182,6 +187,14 @@ td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; white-space:
 
 <main class="wrap">
   <section class="tiles" id="tiles" aria-label="Summary"></section>
+  <section class="skufind" aria-label="Look up a SKU">
+    <label class="label" for="skuQ">Look up a SKU</label>
+    <div class="skubar">
+      <input id="skuQ" type="search" placeholder="Type or scan a SKU, like 762765K" autocomplete="off" autocapitalize="characters" spellcheck="false" enterkeyhint="search">
+      <button class="btn small" id="skuClear" type="button">Clear</button>
+    </div>
+    <div id="skuRes"></div>
+  </section>
   <nav class="tabs" role="tablist" aria-label="Sections" id="tabs">
     <button role="tab" data-tab="count" type="button">Count</button>
     <button role="tab" data-tab="photos" type="button">Photos</button>
@@ -223,6 +236,17 @@ const S = {
   ph: { i: Math.min(PHOTOS.length - 1, Number(pref.get('ph', '0')) || 0), sel: null },
 };
 let db = null, mcp = null, sample = null, downloads = null;
+const SKU_BY_VAR = {}; for (const p of PHOTOS) for (const t of p.tags) if (t.v && t.sku) SKU_BY_VAR[t.v] = t.sku;
+const skuNorm = s => String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+function skuResults(all) {
+  const q = skuNorm(S.sku);
+  if (!q) return '';
+  const exact = all.filter(r => r.sku && skuNorm(r.sku) === q);
+  const near = q.length >= 3 ? all.filter(r => r.sku && skuNorm(r.sku) !== q && skuNorm(r.sku).includes(q)).slice(0, 8) : [];
+  const hits = exact.concat(near);
+  if (!hits.length) return `<p class="small muted">No canvas with SKU "${esc(S.sku)}"${S.square ? '.' : ' in your saved counts. Press Load from Square to search every SKU in Square.'}</p>`;
+  return `<p class="small muted">${exact.length ? 'Found it.' : 'No exact match. Closest SKUs:'}</p><div class="list">${hits.map(rowHtml).join('')}</div>`;
+}
 
 /* ---------- storage ---------- */
 const writeTimers = {};
@@ -324,6 +348,7 @@ function rows() {
 }
 function mk(r) {
   const d = r.doc || {};
+  r.sku = (r.var && ((S.square && S.square.byVar[r.var] && S.square.byVar[r.var].sku) || SKU_BY_VAR[r.var])) || d.sku || '';
   r.spot = d.spot || ''; r.count = d.count ?? null; r.confirmed = !!d.confirmed; r.photo = !!d.photo; r.note = d.note || ''; r.maker = d.maker || '';
   if (!r.var) r.status = 'missing';
   else if (r.count != null && !r.confirmed) r.status = 'photo';
@@ -355,6 +380,7 @@ function dupGroups() {
 /* ---------- render ---------- */
 function render() {
   const all = rows(); const st = stats(all);
+  $('#skuRes').innerHTML = S.dbReady ? skuResults(all) : '';
   $('#tiles').innerHTML = [
     tile('Canvases counted', st.units, 'confirmed on the floor'),
     tile('Retail value counted', money(st.value), 'at the price in Square'),
@@ -387,7 +413,7 @@ function viewCount(all) {
   if (f === 'mine') list = list.filter(r => r.doc);
   else if (f !== 'all') list = list.filter(r => r.status === f);
   if (S.spot !== 'all') list = list.filter(r => (r.spot || 'Not placed') === S.spot);
-  if (S.q) { const q = norm(S.q); list = list.filter(r => norm(r.name + ' ' + r.maker).includes(q)); }
+  if (S.q) { const q = norm(S.q); list = list.filter(r => norm(r.name + ' ' + r.maker + ' ' + r.sku).includes(q)); }
   list.sort((a, b) => a.name.localeCompare(b.name));
   const groups = {};
   for (const r of list) (groups[r.spot || 'Not placed'] = groups[r.spot || 'Not placed'] || []).push(r);
@@ -396,7 +422,7 @@ function viewCount(all) {
   const photoCount = all.filter(r => r.status === 'photo').length;
   return `
     <div class="bar">
-      <input type="search" id="q" placeholder="Search a canvas name or designer" value="${esc(S.q)}" aria-label="Search">
+      <input type="search" id="q" placeholder="Search a canvas name, designer or SKU" value="${esc(S.q)}" aria-label="Search">
       <select id="spot" aria-label="Spot in the shop">
         <option value="all">All spots</option>
         ${[...SPOTS, 'Not placed'].map(s => `<option ${S.spot === s ? 'selected' : ''}>${esc(s)}</option>`).join('')}
@@ -418,7 +444,7 @@ function rowHtml(r) {
   return `<div class="row">
     <div>
       <div class="name">${esc(r.name)}</div>
-      <div class="meta">${r.price ? `<span class="tag">${money(r.price)}</span>` : ''}${r.maker ? `<span>${esc(r.maker)}</span>` : ''}<span class="pill ${k}">${esc(label)}</span>${r.note ? `<span>${esc(r.note)}</span>` : ''}</div>
+      <div class="meta">${r.sku ? `<span class="tag">SKU ${esc(r.sku)}</span>` : ''}${r.price ? `<span class="tag">${money(r.price)}</span>` : ''}${r.maker ? `<span>${esc(r.maker)}</span>` : ''}<span class="pill ${k}">${esc(label)}</span>${r.note ? `<span>${esc(r.note)}</span>` : ''}</div>
     </div>
     <div class="right">
       ${r.var ? `<div class="sqq"><span>Square</span><b>${r.sqQty == null ? '—' : r.sqQty}</b>${r.sqLive || r.sqQty == null ? '' : '<span>saved</span>'}</div>` : ''}
@@ -640,6 +666,7 @@ document.addEventListener('click', e => {
   const t = e.target.closest('button, input[type=checkbox]'); if (!t) return;
   if (t.matches('#tabs button')) { S.tab = t.dataset.tab; pref.set('tab', S.tab); S.review = null; render(); return; }
   if (t.id === 'sqLoad' || t.dataset.act === 'load') { loadSquare(); return; }
+  if (t.id === 'skuClear') { S.sku = ''; $('#skuQ').value = ''; $('#skuQ').focus(); render(); return; }
   if (t.dataset.ph) { S.ph = { i: Number(t.dataset.ph), sel: null, hide: S.ph.hide }; pref.set('ph', S.ph.i); render(); return; }
   if (t.dataset.tag) { S.ph.sel = Number(t.dataset.tag); render(); return; }
   if (t.dataset.hidetags) { S.ph.hide = !S.ph.hide; render(); return; }
@@ -667,6 +694,7 @@ document.addEventListener('click', e => {
 document.addEventListener('input', e => {
   const t = e.target;
   if (t.id === 'q') { S.q = t.value; render(); }
+  if (t.id === 'skuQ') { S.sku = t.value; render(); }
 });
 document.addEventListener('change', e => {
   const t = e.target;
