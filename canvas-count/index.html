@@ -157,6 +157,11 @@ td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; white-space:
 .ph { position: relative; width: 100%; max-width: 100%; border-radius: 12px; overflow: hidden; border: 1px solid var(--line); background: var(--surface-2); }
 .ph img { display: block; width: 100%; height: 100%; object-fit: cover; }
 .tagdot { position: absolute; transform: translate(-50%, -50%); min-width: 22px; height: 22px; padding: 0 5px; border-radius: 999px; border: 2px solid #fff; color: #fff; font: 700 11.5px/1 var(--body); opacity: .92; cursor: pointer; box-shadow: 0 1px 4px rgba(0,0,0,.35); font-variant-numeric: tabular-nums; }
+.tagdot .ck { position: absolute; top: -8px; right: -8px; width: 15px; height: 15px; border-radius: 50%; background: #1E8E4E; border: 1.5px solid #fff; color: #fff; font-size: 10px; line-height: 12px; text-align: center; }
+.taglist .tagdot { position: relative; }
+.btn.verify { border-color: var(--good); color: var(--good); }
+.btn.verify.on { background: var(--good); color: var(--on-accent); }
+.locs { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 8px 12px; align-items: center; }
 .tagdot.on { outline: 3px solid var(--ink); outline-offset: 2px; transform: translate(-50%, -50%) scale(1.25); z-index: 2; opacity: 1; }
 .ph.hidetags .tagdot:not(.on) { display: none; }
 .s-ok { background: #2E7D4F; } .s-off { background: #B3261E; } .s-photo { background: #C2185B; } .s-todo { background: #6B5A62; } .s-missing { background: #A86A00; }
@@ -254,7 +259,7 @@ function skuResults(all) {
   const near = q.length >= 3 ? all.filter(r => r.sku && skuNorm(r.sku) !== q && skuNorm(r.sku).includes(q)).slice(0, 8) : [];
   const hits = exact.concat(near);
   if (!hits.length) return `<p class="small muted">No canvas with SKU "${esc(S.sku)}"${S.square ? '.' : ' in your saved counts. Press Load from Square to search every SKU in Square.'}</p>`;
-  return `<p class="small muted">${exact.length ? 'Found it.' : 'No exact match. Closest SKUs:'}</p><div class="list">${hits.map(rowHtml).join('')}</div>`;
+  return `<p class="small muted">${exact.length ? 'Found it.' : 'No exact match. Closest SKUs:'}</p><div class="list">${hits.map(r => rowHtml(r) + locsHtml(r)).join('')}</div>`;
 }
 
 /* ---------- storage ---------- */
@@ -364,6 +369,7 @@ function rows() {
 function mk(r) {
   const d = r.doc || {};
   r.sku = (r.var && ((S.square && S.square.byVar[r.var] && S.square.byVar[r.var].sku) || SKU_BY_VAR[r.var])) || d.sku || '';
+  r.verified = !!d.verified;
   r.spot = d.spot || ''; r.count = d.count ?? null; r.confirmed = !!d.confirmed; r.photo = !!d.photo; r.note = d.note || ''; r.maker = d.maker || '';
   if (!r.var) r.status = 'missing';
   else if (r.count != null && !r.confirmed) r.status = 'photo';
@@ -460,7 +466,7 @@ function rowHtml(r) {
   return `<div class="row">
     <div>
       <div class="name">${esc(r.name)}</div>
-      <div class="meta">${r.sku ? `<span class="tag">SKU ${esc(r.sku)}</span>` : ''}${r.price ? `<span class="tag">${money(r.price)}</span>` : ''}${r.maker ? `<span>${esc(r.maker)}</span>` : ''}<span class="pill ${k}">${esc(label)}</span>${r.note ? `<span>${esc(r.note)}</span>` : ''}</div>
+      <div class="meta">${r.sku ? `<span class="tag">SKU ${esc(r.sku)}</span>` : ''}${r.price ? `<span class="tag">${money(r.price)}</span>` : ''}${r.maker ? `<span>${esc(r.maker)}</span>` : ''}<span class="pill ${k}">${esc(label)}</span>${r.verified ? '<span class="pill good">✓ Checked</span>' : ''}${r.note ? `<span>${esc(r.note)}</span>` : ''}</div>
     </div>
     <div class="right">
       ${r.var ? `<div class="sqq"><span>Square</span><b>${r.sqQty == null ? '—' : r.sqQty}</b>${r.sqLive || r.sqQty == null ? '' : '<span>saved</span>'}</div>` : ''}
@@ -470,6 +476,7 @@ function rowHtml(r) {
         <button type="button" data-step="1" data-key="${esc(key)}" aria-label="One more">+</button>
       </div>
       ${r.status === 'photo' ? `<button class="btn small primary" type="button" data-confirm="${esc(key)}">Confirm</button>` : ''}
+      ${r.var ? `<button class="btn small verify${r.verified ? ' on' : ''}" type="button" data-verify="${esc(r.var)}" title="${r.verified ? 'Remove check mark' : 'Square listing and photo match'}">${r.verified ? '✓ Checked' : '✓ Matches'}</button>` : ''}
     </div>
     <details ${S.linking && S.linking.key === key ? 'open' : ''}><summary>${r.coll === 'extras' ? 'Note, spot, in Square as…, remove' : 'Spot, note'}</summary>
       <div class="edit">
@@ -530,6 +537,27 @@ function doLink(v) {
   toast(`Linked to ${c.n} in Square. Check the count and press Confirm.`);
 }
 
+function photoSpots(v) {
+  const out = [];
+  PHOTOS.forEach((p, i) => p.tags.forEach((t, j) => { const L = S.links[`p${i}-t${j}`]; if (t.v === v || (!t.v && L && L.v === v)) out.push([i, j]); }));
+  return out;
+}
+function locsHtml(r) {
+  if (!r.var) return '';
+  const spots = photoSpots(r.var);
+  return `<div class="locs">${spots.length ? spots.map(([i, j]) => `<button class="btn small" type="button" data-goto="${i}-${j}">See it on photo ${i + 1}, #${j + 1} · ${esc(PHOTOS[i].title)}</button>`).join('') : '<span class="small muted">Not tagged in any photo.</span>'}</div>`;
+}
+function toggleVerify(v) {
+  const prev = S.counts[v], s = S.square && S.square.byVar[v];
+  if (prev && prev.verified) { saveDoc('counts', v, { ...prev, verified: false, verifiedAt: null }); return false; }
+  const c = candPool().find(x => x.v === v) || {};
+  const base = prev ? { ...prev } : { name: (s && s.name) || c.n || '', price: s ? s.price : (c.p || 0), sq: s ? s.qty : c.q };
+  if (s) base.sq = s.qty;
+  if (base.count == null) base.count = base.sq > 0 ? base.sq : 1;
+  saveDoc('counts', v, { ...base, confirmed: true, verified: true, verifiedAt: new Date().toISOString() });
+  return true;
+}
+
 function photoRow(t, byVar) {
   if (!t.v) return null;
   return byVar[t.v] || mk({ id: t.v, coll: 'counts', var: t.v, name: t.n, price: t.p, sqQty: t.q, doc: null });
@@ -554,19 +582,19 @@ function viewPhotos(all) {
   return `
     <div class="chips" role="group" aria-label="Photo">${PHOTOS.map((p, i) => `<button class="chip" type="button" data-ph="${i}" aria-pressed="${i === S.ph.i}">${i + 1}. ${esc(p.title)}</button>`).join('')}</div>
     <div class="bar" style="margin:12px 0 0;justify-content:space-between">
-      <span class="small muted">Tap a number to see its Square listing and count it. <b>${done} of ${tags.length}</b> counted on this photo.</span>
+      <span class="small muted">Tap a number to see its Square listing and count it. <b>${done} of ${tags.length}</b> counted, <b>${tags.filter(x => x.r && x.r.verified).length}</b> checked ✓ on this photo.</span>
       <button class="btn small" type="button" data-hidetags="1">${S.ph.hide ? 'Show numbers' : 'Hide numbers'}</button>
       <div class="legend"><span><i class="s-ok"></i>Matches</span><span><i class="s-off"></i>Square is off</span><span><i class="s-photo"></i>Seen in photo</span><span><i class="s-todo"></i>Not counted</span><span><i class="s-missing"></i>Not in Square</span></div>
     </div>
     <div class="phwrap">
       <div class="ph${S.ph.hide ? ' hidetags' : ''}" style="aspect-ratio:${ph.ar}">
         <img src="${esc(ph.src)}" alt="${esc(ph.title)}">
-        ${tags.map(x => `<button type="button" class="tagdot s-${x.st}${S.ph.sel === x.i ? ' on' : ''}" style="left:${x.t.x}%;top:${Math.max(2, x.t.y - 4.5 * Math.min(1.6, ph.ar))}%" data-tag="${x.i}" aria-label="${x.i + 1}: ${esc(label(x))}, ${TAGWORD[x.st]}">${x.i + 1}</button>`).join('')}
+        ${tags.map(x => `<button type="button" class="tagdot s-${x.st}${S.ph.sel === x.i ? ' on' : ''}" style="left:${x.t.x}%;top:${Math.max(2, x.t.y - 4.5 * Math.min(1.6, ph.ar))}%" data-tag="${x.i}" aria-label="${x.i + 1}: ${esc(label(x))}, ${TAGWORD[x.st]}${x.r && x.r.verified ? ', checked' : ''}">${x.i + 1}${x.r && x.r.verified ? '<span class="ck" aria-hidden="true">✓</span>' : ''}</button>`).join('')}
       </div>
       <div class="phside">
         ${sel ? tagPanel(sel, tags.length) : `<div class="empty">Tap a numbered tag on the photo to check it against Square.</div>`}
         <div class="card" style="padding:10px">
-          <ol class="taglist">${tags.map(x => `<li><button type="button" data-tag="${x.i}" class="${S.ph.sel === x.i ? 'on' : ''}"><span class="tagdot s-${x.st}">${x.i + 1}</span><span class="nm">${esc(label(x))}</span>${x.r && x.r.count != null ? `<span class="num small"><b>${x.r.count}</b></span>` : ''}</button></li>`).join('')}</ol>
+          <ol class="taglist">${tags.map(x => `<li><button type="button" data-tag="${x.i}" class="${S.ph.sel === x.i ? 'on' : ''}"><span class="tagdot s-${x.st}">${x.i + 1}${x.r && x.r.verified ? '<span class="ck" aria-hidden="true">✓</span>' : ''}</span><span class="nm">${esc(label(x))}</span>${x.r && x.r.count != null ? `<span class="num small"><b>${x.r.count}</b></span>` : ''}</button></li>`).join('')}</ol>
         </div>
       </div>
     </div>`;
@@ -602,6 +630,7 @@ function tagPanel(x, total) {
         </div>
       </div>
       ${r.status === 'photo' ? `<button class="btn primary" type="button" data-tconfirm="1">Confirm ${r.count}</button>` : ''}
+      <button class="btn verify${r.verified ? ' on' : ''}" type="button" data-verify="${esc(t.v)}" data-next="1">${r.verified ? '✓ Checked · undo' : '✓ Matches, next'}</button>
     </div>
     ${r.note ? `<p class="small muted">${esc(r.note)}</p>` : ''}
     ${linkedNote}
@@ -821,6 +850,18 @@ document.addEventListener('click', e => {
   if (t.dataset.linkto) { doLink(t.dataset.linkto); return; }
   if (t.dataset.linkcancel) { S.linking = null; render(); return; }
   if (t.dataset.unlink) { const id = t.dataset.unlink, L = S.links[id]; if (L && L.note) saveDoc('links', id, { note: L.note }); else deleteDoc('links', id); toast('Unlinked. The count you made stays on the Square item.'); return; }
+  if (t.dataset.verify) {
+    const on = toggleVerify(t.dataset.verify);
+    if (on && t.dataset.next && S.tab === 'photos' && S.ph.sel < PHOTOS[S.ph.i].tags.length - 1) { S.ph.sel++; render(); }
+    toast(on ? 'Checked ✓ Square and photo match.' : 'Check mark removed.');
+    return;
+  }
+  if (t.dataset.goto) {
+    const [i, j] = t.dataset.goto.split('-').map(Number);
+    S.tab = 'photos'; pref.set('tab', 'photos'); S.ph = { i, sel: j, hide: S.ph.hide }; pref.set('ph', i); render();
+    const ph = document.querySelector('.ph'); if (ph) ph.scrollIntoView({ block: 'start', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+    return;
+  }
   if (t.dataset.supf) { S.supF = t.dataset.supf; render(); return; }
   if (t.dataset.hidetags) { S.ph.hide = !S.ph.hide; render(); return; }
   if (t.dataset.tagnav) { S.ph.sel = Math.max(0, Math.min(PHOTOS[S.ph.i].tags.length - 1, S.ph.sel + Number(t.dataset.tagnav))); render(); return; }
