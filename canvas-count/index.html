@@ -87,6 +87,13 @@ header.top .wrap { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-
 .skubar { display: flex; gap: 8px; align-items: center; }
 .skubar input { flex: 1; min-width: 0; border: 2px solid var(--accent); border-radius: 10px; padding: 9px 12px; background: var(--surface); font-size: 16px; font-weight: 600; letter-spacing: .04em; font-variant-numeric: tabular-nums; }
 #skuRes:empty { display: none; }
+.noteinput, .tpanel textarea { flex: 1 1 220px; min-width: 0; border: 1px solid var(--line); border-radius: 10px; padding: 7px 10px; background: var(--surface); font: inherit; }
+.tpanel textarea { width: 100%; resize: vertical; }
+.linkform { display: grid; gap: 8px; width: 100%; padding: 10px; border: 2px dashed var(--accent); border-radius: 12px; background: var(--accent-soft); }
+.linkform input { border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; background: var(--surface); }
+.linkres { display: grid; gap: 6px; }
+.linkpick { display: grid; gap: 2px; text-align: left; border: 1px solid var(--line); background: var(--surface); border-radius: 10px; padding: 8px 10px; cursor: pointer; }
+.linkpick:hover { border-color: var(--accent); }
 #skuRes .list { gap: 6px; }
 nav.tabs { display: flex; gap: 4px; overflow-x: auto; margin: 22px 0 16px; border-bottom: 1px solid var(--line); scrollbar-width: none; }
 nav.tabs button { border: 0; background: none; padding: 10px 14px; cursor: pointer; font-weight: 600; color: var(--muted); border-bottom: 3px solid transparent; margin-bottom: -1px; white-space: nowrap; }
@@ -228,7 +235,8 @@ const pref = {
 const S = {
   tab: pref.get('tab', 'count'),
   q: '', spot: pref.get('spot', 'all'), filter: pref.get('filter', 'mine'),
-  counts: {}, extras: {}, dbReady: false, dbMode: 'none',
+  counts: {}, extras: {}, links: {}, dbReady: false, dbMode: 'none',
+  linking: null,          // { key: 'extras:<id>' | 'tag:p<photo>-t<tag>', q }
   square: null,           // { byVar: {varId: {...}}, loadedAt }
   sqState: 'idle',        // idle | loading | ready | error
   review: null,           // pending Square update preview
@@ -251,9 +259,9 @@ function skuResults(all) {
 /* ---------- storage ---------- */
 const writeTimers = {};
 function saveDoc(coll, id, data) {
-  if (coll === 'counts') S.counts[id] = data; else S.extras[id] = data;
+  S[coll][id] = data;
   render();
-  if (S.dbMode === 'local') { try { localStorage.setItem('cc-data', JSON.stringify({ counts: S.counts, extras: S.extras })); } catch (e) {} return; }
+  if (S.dbMode === 'local') { try { localStorage.setItem('cc-data', JSON.stringify({ counts: S.counts, extras: S.extras, links: S.links })); } catch (e) {} return; }
   if (!db) return;
   clearTimeout(writeTimers[coll + id]);
   writeTimers[coll + id] = setTimeout(() => {
@@ -261,9 +269,9 @@ function saveDoc(coll, id, data) {
   }, 500);
 }
 function deleteDoc(coll, id) {
-  if (coll === 'counts') delete S.counts[id]; else delete S.extras[id];
+  delete S[coll][id];
   render();
-  if (S.dbMode === 'local') { try { localStorage.setItem('cc-data', JSON.stringify({ counts: S.counts, extras: S.extras })); } catch (e) {} return; }
+  if (S.dbMode === 'local') { try { localStorage.setItem('cc-data', JSON.stringify({ counts: S.counts, extras: S.extras, links: S.links })); } catch (e) {} return; }
   if (db) db.collection(coll).doc(id).delete().catch(() => toast("Couldn't remove that. Try again."));
 }
 
@@ -455,14 +463,63 @@ function rowHtml(r) {
       </div>
       ${r.status === 'photo' ? `<button class="btn small primary" type="button" data-confirm="${esc(key)}">Confirm</button>` : ''}
     </div>
-    <details><summary>Spot, note${r.coll === 'extras' ? ', remove' : ''}</summary>
+    <details ${S.linking && S.linking.key === key ? 'open' : ''}><summary>${r.coll === 'extras' ? 'Note, spot, in Square as…, remove' : 'Spot, note'}</summary>
       <div class="edit">
         <select data-spotset="${esc(key)}" aria-label="Spot">${['', ...SPOTS].map(s => `<option value="${esc(s)}" ${r.spot === s ? 'selected' : ''}>${s || 'Not placed'}</option>`).join('')}</select>
-        <input type="text" data-noteset="${esc(key)}" value="${esc(r.note)}" placeholder="Note (back stock, damaged…)" style="flex:1 1 200px;border:1px solid var(--line);border-radius:10px;padding:6px 10px;background:var(--surface)">
+        <input type="text" class="noteinput" data-noteset="${esc(key)}" value="${esc(r.note)}" placeholder="Note (back stock, damaged…)">
         ${r.doc ? `<button class="btn small ghost" type="button" data-remove="${esc(key)}">${r.coll === 'extras' ? 'Remove' : 'Clear my count'}</button>` : ''}
       </div>
+      ${r.coll === 'extras' ? `<div class="edit">${linkForm(key)}</div>` : ''}
     </details>
   </div>`;
+}
+
+/* ---------- "In Square as…" links and notes for canvases not found in Square ---------- */
+function candPool() {
+  if (S.square) return Object.values(S.square.byVar).map(s => ({ v: s.var, n: s.name, sku: s.sku, p: s.price, q: s.qty }));
+  const m = {};
+  for (const p of PHOTOS) for (const t of p.tags) if (t.v) m[t.v] = { v: t.v, n: t.n, sku: t.sku, p: t.p, q: t.q };
+  for (const [id, c] of Object.entries(S.counts)) if (!m[id]) m[id] = { v: id, n: c.name, sku: c.sku || '', p: c.price, q: c.sq };
+  return Object.values(m);
+}
+function linkCandidates(q) {
+  const n = norm(q), k = skuNorm(q); if (!n && !k) return [];
+  const pool = candPool();
+  const exact = pool.filter(c => k && c.sku && skuNorm(c.sku) === k);
+  const rest = pool.filter(c => !exact.includes(c) && ((n && norm(c.n).includes(n)) || (k.length >= 3 && c.sku && skuNorm(c.sku).includes(k))));
+  return exact.concat(rest).slice(0, 6);
+}
+function linkForm(key) {
+  if (!S.linking || S.linking.key !== key) return `<button class="btn small" type="button" data-linkstart="${esc(key)}">In Square as…</button><span class="small muted">Listed under another name or SKU?</span>`;
+  const res = linkCandidates(S.linking.q);
+  return `<div class="linkform">
+    <label class="field">Find the Square listing by name or SKU
+      <input type="search" id="lq-${esc(key)}" data-linkq="1" value="${esc(S.linking.q)}" placeholder="e.g. Bow Round or 762765K" autocomplete="off" spellcheck="false"></label>
+    ${S.linking.q ? (res.length ? `<div class="linkres">${res.map(c => `<button type="button" class="linkpick" data-linkto="${esc(c.v)}"><b>${esc(c.n)}</b><span class="small muted">${c.sku ? 'SKU ' + esc(c.sku) + ' · ' : ''}${money(c.p)} · Square has ${c.q ?? '—'}</span></button>`).join('')}</div>` : `<p class="small muted">No match${S.square ? '' : '. Press Load from Square to search every item'}.</p>`) : ''}
+    <button class="linkbtn small" type="button" data-linkcancel="1">Cancel</button>
+  </div>`;
+}
+function doLink(v) {
+  const key = S.linking && S.linking.key; if (!key) return;
+  const c = candPool().find(x => x.v === v); if (!c) return;
+  const kind = key.slice(0, key.indexOf(':')), id = key.slice(key.indexOf(':') + 1);
+  let moved = kind === 'extras' ? id : null;
+  if (kind === 'tag') {
+    const [pi, ti] = id.slice(1).split('-t').map(Number);
+    const lab = norm(PHOTOS[pi].tags[ti].l);
+    saveDoc('links', id, { ...(S.links[id] || {}), v: c.v, n: c.n, sku: c.sku || '', p: c.p, q: c.q, at: new Date().toISOString() });
+    const same = Object.entries(S.extras).filter(([, x]) => norm(x.name) && lab.includes(norm(x.name)));
+    if (same.length === 1) moved = same[0][0];
+    else if (!S.counts[c.v]) saveDoc('counts', c.v, { name: c.n, price: c.p, sq: c.q, count: 1, confirmed: false, photo: true, spot: PHOTOS[pi].spot, note: `Tagged in photo ${pi + 1}` });
+  }
+  if (moved && S.extras[moved]) {
+    const x = S.extras[moved], prev = S.counts[c.v];
+    saveDoc('counts', c.v, { ...(prev || { name: c.n, price: c.p, sq: c.q }), count: (prev && prev.count != null ? prev.count : 0) + (x.count || 0), confirmed: false, photo: true,
+      spot: (prev && prev.spot) || x.spot || '', note: [prev && prev.note, `Was listed here as "${x.name}"${x.note ? ' – ' + x.note : ''}`].filter(Boolean).join(' · ') });
+    deleteDoc('extras', moved);
+  }
+  S.linking = null; render();
+  toast(`Linked to ${c.n} in Square. Check the count and press Confirm.`);
 }
 
 function photoRow(t, byVar) {
@@ -472,7 +529,12 @@ function photoRow(t, byVar) {
 function photoTags(all) {
   const byVar = {}; for (const r of all) if (r.coll === 'counts') byVar[r.var] = r;
   const ph = PHOTOS[S.ph.i] || PHOTOS[0];
-  return ph.tags.map((t, i) => { const r = photoRow(t, byVar); return { t, i, r, st: r ? r.status : 'missing' }; });
+  return ph.tags.map((t0, i) => {
+    const tid = `p${S.ph.i}-t${i}`, L = S.links[tid];
+    const t = !t0.v && L && L.v ? { ...t0, v: L.v, n: L.n, sku: L.sku, p: L.p, q: L.q, linked: 1 } : t0;
+    const r = photoRow(t, byVar);
+    return { t, i, r, tid, note: (L && L.note) || '', st: r ? r.status : 'missing' };
+  });
 }
 const TAGWORD = { ok: 'matches Square', off: 'Square is off', photo: 'seen in photo', todo: 'not counted', missing: 'not in Square' };
 function viewPhotos(all) {
@@ -508,9 +570,12 @@ function tagPanel(x, total) {
       <span class="label">Tag ${x.i + 1}</span>
       <h3>${esc(t.l)}</h3>
       <span class="pill warn">Not in Square</span>
-      <p class="muted">There's no Square listing for this canvas, so it can't be rung up by name. Add it in the Square app (Items → Create item) with its price, then reload Square here.</p>
+      <p class="muted">I couldn't find a Square listing for this canvas. If it's in Square under another name or SKU, link it. If not, add it in the Square app (Items → Create item).</p>
+      <div class="edit">${linkForm('tag:' + x.tid)}</div>
+      <label class="field">Note<textarea id="tn-${x.tid}" data-tagnote="${x.tid}" rows="2" placeholder="e.g. reordered, back stock, sold out">${esc(x.note)}</textarea></label>
       ${nav}</div>`;
   const [k, l] = STATUS[r.status];
+  const linkedNote = t.linked ? `<p class="small muted">You linked this from "${esc(t.l)}". <button class="linkbtn" type="button" data-unlink="${x.tid}">Unlink</button></p>` : '';
   return `<div class="card tpanel">
     <span class="label">Tag ${x.i + 1}${t.g ? ' · best guess, check the label' : ''}</span>
     <h3>${esc(r.name)}</h3>
@@ -531,6 +596,7 @@ function tagPanel(x, total) {
       ${r.status === 'photo' ? `<button class="btn primary" type="button" data-tconfirm="1">Confirm ${r.count}</button>` : ''}
     </div>
     ${r.note ? `<p class="small muted">${esc(r.note)}</p>` : ''}
+    ${linkedNote}
     ${nav}
   </div>`;
 }
@@ -560,10 +626,17 @@ function viewFix(all) {
     </div>
     <div class="card">
       <div class="card-h"><h2>On the wall, not in Square</h2><span class="small muted">${missing.length}</span></div>
-      <p class="muted">You can't ring these up by name. Add each one in the Square app (Items → Create item) with its price, then load Square here and count it.</p>
-      ${missing.length ? `<div class="table-wrap"><table><thead><tr><th>Canvas</th><th>Designer / code</th><th class="n">Price</th><th class="n">Count</th><th>Spot</th></tr></thead><tbody>
-        ${missing.map(r => `<tr><td>${esc(r.name)}${r.note ? `<div class="small muted">${esc(r.note)}</div>` : ''}</td><td>${esc(r.maker)}</td><td class="n">${r.price ? money(r.price) : '—'}</td><td class="n">${r.count ?? '—'}</td><td>${esc(r.spot)}</td></tr>`).join('')}
-      </tbody></table></div>` : `<div class="empty">Everything you've counted is in Square.</div>`}
+      <p class="muted">If one is in Square under another name or SKU, press <b>In Square as…</b> to link it and its count moves over. If it's truly missing, add it in the Square app (Items → Create item). Use the note for anything else.</p>
+      ${missing.length ? `<div class="list">
+        ${missing.map(r => { const key = 'extras:' + r.id; return `<div class="row">
+          <div><div class="name">${esc(r.name)}</div>
+            <div class="meta">${r.maker ? `<span>${esc(r.maker)}</span>` : ''}${r.price ? `<span class="tag">${money(r.price)}</span>` : ''}<span>Count ${r.count ?? '—'}</span>${r.spot ? `<span>${esc(r.spot)}</span>` : ''}</div></div>
+          <div class="edit" style="grid-column:1/-1;margin-top:0">
+            <input type="text" class="noteinput" data-noteset="${esc(key)}" value="${esc(r.note)}" placeholder="Add a note (reordered, sold, on order…)" aria-label="Note for ${esc(r.name)}">
+          </div>
+          <div class="edit" style="grid-column:1/-1;margin-top:0">${linkForm(key)}</div>
+        </div>`; }).join('')}
+      </div>` : `<div class="empty">Everything you've counted is in Square.</div>`}
     </div>
     <div class="card">
       <div class="card-h"><h2>Below zero in Square</h2><span class="small muted">${neg ? neg.length : 'Load Square to check'}</span></div>
@@ -669,6 +742,10 @@ document.addEventListener('click', e => {
   if (t.id === 'skuClear') { S.sku = ''; $('#skuQ').value = ''; $('#skuQ').focus(); render(); return; }
   if (t.dataset.ph) { S.ph = { i: Number(t.dataset.ph), sel: null, hide: S.ph.hide }; pref.set('ph', S.ph.i); render(); return; }
   if (t.dataset.tag) { S.ph.sel = Number(t.dataset.tag); render(); return; }
+  if (t.dataset.linkstart) { S.linking = { key: t.dataset.linkstart, q: '' }; render(); const el = document.getElementById('lq-' + S.linking.key); if (el) el.focus(); return; }
+  if (t.dataset.linkto) { doLink(t.dataset.linkto); return; }
+  if (t.dataset.linkcancel) { S.linking = null; render(); return; }
+  if (t.dataset.unlink) { const id = t.dataset.unlink, L = S.links[id]; if (L && L.note) saveDoc('links', id, { note: L.note }); else deleteDoc('links', id); toast('Unlinked. The count you made stays on the Square item.'); return; }
   if (t.dataset.hidetags) { S.ph.hide = !S.ph.hide; render(); return; }
   if (t.dataset.tagnav) { S.ph.sel = Math.max(0, Math.min(PHOTOS[S.ph.i].tags.length - 1, S.ph.sel + Number(t.dataset.tagnav))); render(); return; }
   if (t.dataset.tstep) { const x = photoTags(rows())[S.ph.sel]; const c = x && x.r ? x.r.count : null; countTag((c ?? (Number(t.dataset.tstep) > 0 ? 0 : 1)) + Number(t.dataset.tstep)); return; }
@@ -695,10 +772,12 @@ document.addEventListener('input', e => {
   const t = e.target;
   if (t.id === 'q') { S.q = t.value; render(); }
   if (t.id === 'skuQ') { S.sku = t.value; render(); }
+  if (t.dataset.linkq && S.linking) { S.linking.q = t.value; render(); }
 });
 document.addEventListener('change', e => {
   const t = e.target;
   if (t.id === 'spot') { S.spot = t.value; pref.set('spot', S.spot); render(); }
+  else if (t.dataset.tagnote) { const id = t.dataset.tagnote; saveDoc('links', id, { ...(S.links[id] || {}), note: t.value.slice(0, 300) }); }
   else if (t.dataset.tcount) countTag(t.value === '' ? null : Number(t.value));
   else if (t.matches('.stepper input')) setCount(t.dataset.key, t.value === '' ? null : Number(t.value));
   else if (t.dataset.spotset) { const r = findRow(t.dataset.spotset); saveDoc(r.coll, r.id, { ...(r.doc || { name: r.name, price: r.price || 0, sq: r.sqQty }), spot: t.value }); }
@@ -825,18 +904,18 @@ render();
   [db, mcp, sample, downloads] = await Promise.all([use('db'), use('mcp'), use('sample'), use('downloads')]);
   if (db) {
     S.dbMode = 'db';
-    const waiting = new Set(['counts', 'extras']);
-    for (const c of ['counts', 'extras']) {
+    const waiting = new Set(['counts', 'extras', 'links']);
+    for (const c of ['counts', 'extras', 'links']) {
       db.collection(c).onSnapshot(snap => {
         const target = {};
         for (const d of snap.docs) if (d.exists) target[d.id] = JSON.parse(JSON.stringify(d.data()));
-        if (c === 'counts') S.counts = target; else S.extras = target;
+        S[c] = target;
         waiting.delete(c); S.dbReady = waiting.size === 0; render();
       }, () => toast('Lost the connection to your saved counts. Reload the page to reconnect.'));
     }
   } else {
     S.dbMode = 'local';
-    try { const d = JSON.parse(localStorage.getItem('cc-data') || '{}'); S.counts = d.counts || {}; S.extras = d.extras || {}; } catch (e) {}
+    try { const d = JSON.parse(localStorage.getItem('cc-data') || '{}'); S.counts = d.counts || {}; S.extras = d.extras || {}; S.links = d.links || {}; } catch (e) {}
     S.dbReady = true; render();
   }
   if (sample) { try { const lim = await sample.limits(); if (!lim.images) sample = null; } catch (e) { sample = null; } render(); }
