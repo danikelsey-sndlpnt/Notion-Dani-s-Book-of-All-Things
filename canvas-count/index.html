@@ -199,10 +199,10 @@ td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; white-space:
 
 <main class="wrap">
   <section class="tiles" id="tiles" aria-label="Summary"></section>
-  <section class="skufind" aria-label="Look up a SKU">
-    <label class="label" for="skuQ">Look up a SKU</label>
+  <section class="skufind" aria-label="Look up a SKU or name">
+    <label class="label" for="skuQ">Look up a SKU or name</label>
     <div class="skubar">
-      <input id="skuQ" type="search" placeholder="Type or scan a SKU, like 762765K" autocomplete="off" autocapitalize="characters" spellcheck="false" enterkeyhint="search">
+      <input id="skuQ" type="search" placeholder="SKU or keywords, like 762765K or moon charm" autocomplete="off" autocapitalize="characters" spellcheck="false" enterkeyhint="search">
       <button class="btn small" id="skuClear" type="button">Clear</button>
     </div>
     <div id="skuRes"></div>
@@ -253,13 +253,24 @@ let db = null, mcp = null, sample = null, downloads = null;
 const SKU_BY_VAR = {}; for (const p of PHOTOS) for (const t of p.tags) if (t.v && t.sku) SKU_BY_VAR[t.v] = t.sku;
 const skuNorm = s => String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 function skuResults(all) {
-  const q = skuNorm(S.sku);
+  const raw = (S.sku || '').trim(), q = skuNorm(raw);
   if (!q) return '';
+  const words = norm(raw).split(' ').filter(Boolean);
+  const hay = r => norm([r.name, r.maker, r.note, r.spot].join(' '));
+  const byWords = h => words.length && words.every(w => h.includes(w));
   const exact = all.filter(r => r.sku && skuNorm(r.sku) === q);
-  const near = q.length >= 3 ? all.filter(r => r.sku && skuNorm(r.sku) !== q && skuNorm(r.sku).includes(q)).slice(0, 8) : [];
-  const hits = exact.concat(near);
-  if (!hits.length) return `<p class="small muted">No canvas with SKU "${esc(S.sku)}"${S.square ? '.' : ' in your saved counts. Press Load from Square to search every SKU in Square.'}</p>`;
-  return `<p class="small muted">${exact.length ? 'Found it.' : 'No exact match. Closest SKUs:'}</p><div class="list">${hits.map(r => rowHtml(r) + locsHtml(r)).join('')}</div>`;
+  const near = q.length >= 3 ? all.filter(r => r.sku && !exact.includes(r) && skuNorm(r.sku).includes(q)) : [];
+  const named = all.filter(r => !exact.includes(r) && !near.includes(r) && byWords(hay(r)));
+  named.sort((a, b) => (b.doc ? 1 : 0) - (a.doc ? 1 : 0) || a.name.localeCompare(b.name));
+  const hits = exact.concat(near, named).slice(0, 25);
+  // Canvases tagged in a photo but not in Square yet (and not linked)
+  const tagHits = [];
+  PHOTOS.forEach((p, i) => p.tags.forEach((t, j) => { if (!t.v && !(S.links[`p${i}-t${j}`] || {}).v && byWords(norm(t.l))) tagHits.push([i, j, t.l]); }));
+  if (!hits.length && !tagHits.length) return `<p class="small muted">Nothing matches "${esc(raw)}"${S.square ? '.' : '. Press Load from Square to search everything in Square.'}</p>`;
+  const more = exact.length + near.length + named.length > 25 ? ' Showing the first 25; add another word to narrow it down.' : '';
+  return `<p class="small muted">${exact.length ? 'Found the SKU.' : hits.length ? `${Math.min(25, exact.length + near.length + named.length)} match${hits.length === 1 ? '' : 'es'}.` : ''}${more}</p>
+    ${hits.length ? `<div class="list">${hits.map(r => rowHtml(r) + locsHtml(r)).join('')}</div>` : ''}
+    ${tagHits.length ? `<p class="small muted" style="margin-top:8px">In your photos, not in Square:</p><div class="locs" style="margin-left:0">${tagHits.slice(0, 12).map(([i, j, l]) => `<button class="btn small" type="button" data-goto="${i}-${j}">${esc(l)} · photo ${i + 1}, #${j + 1}</button>`).join('')}</div>` : ''}`;
 }
 
 /* ---------- storage ---------- */
