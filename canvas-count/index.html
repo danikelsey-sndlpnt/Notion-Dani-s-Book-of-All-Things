@@ -225,6 +225,7 @@ async function squareCall(service, method, request, write) {
     { service, method, request, characterization: write ? 'inventory physical count update' : 'inventory count review' }, write ? { cache: false } : undefined);
   const p = r.payload;
   if (typeof p === 'string') throw { code: 'tool_error', message: p.slice(0, 200) };
+  if (p && p.error) throw { code: 'tool_error', message: ((p.details && p.details.square_errors) || []).map(e => e.detail || e.code).join('; ') || String(p.error) };
   if (p && p.errors && p.errors.length) throw { code: 'tool_error', message: p.errors.map(e => e.detail || e.code).join('; ') };
   return p || {};
 }
@@ -601,7 +602,7 @@ async function pushToSquare() {
       const chunk = changes.slice(i, i + 100);
       await squareCall('inventory', 'batchChange', {
         idempotency_key: (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random()),
-        changes: chunk.map(x => ({ type: 'PHYSICAL_COUNT', physical_count: { catalog_object_id: x.var, catalog_object_type: 'ITEM_VARIATION', state: 'IN_STOCK', location_id: LOCATION_ID, quantity: String(x.count), occurred_at: when } })),
+        changes: chunk.map(x => ({ type: 'PHYSICAL_COUNT', physical_count: { catalog_object_id: x.var, state: 'IN_STOCK', location_id: LOCATION_ID, quantity: String(x.count), occurred_at: when } })),
         ignore_unchanged_counts: true,
       }, true);
       done += chunk.length;
