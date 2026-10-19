@@ -141,6 +141,26 @@ td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; white-space:
 .progress { height: 6px; background: var(--surface-2); border-radius: 999px; overflow: hidden; }
 .progress div { height: 100%; background: var(--accent); width: 0; transition: width .2s; }
 @media (prefers-reduced-motion: reduce) { .progress div { transition: none; } }
+.phwrap { display: grid; gap: 16px; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); align-items: start; margin-top: 10px; }
+.ph { position: relative; width: 100%; max-width: 100%; border-radius: 12px; overflow: hidden; border: 1px solid var(--line); background: var(--surface-2); }
+.ph img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.tagdot { position: absolute; transform: translate(-50%, -50%); min-width: 30px; height: 30px; padding: 0 6px; border-radius: 999px; border: 2.5px solid #fff; color: #fff; font: 700 14px/1 var(--body); cursor: pointer; box-shadow: 0 1px 4px rgba(0,0,0,.35); font-variant-numeric: tabular-nums; }
+.tagdot.on { outline: 3px solid var(--ink); outline-offset: 2px; transform: translate(-50%, -50%) scale(1.18); z-index: 2; }
+.s-ok { background: #2E7D4F; } .s-off { background: #B3261E; } .s-photo { background: #C2185B; } .s-todo { background: #6B5A62; } .s-missing { background: #A86A00; }
+.phside { display: grid; gap: 12px; position: sticky; top: calc(env(safe-area-inset-top, 0px) + 8px); max-height: calc(100vh - 24px); overflow: auto; min-width: 0; }
+.tpanel h3 { font-size: 19px; }
+.tpanel .big { display: flex; gap: 18px; align-items: end; flex-wrap: wrap; }
+.tpanel .big div { display: grid; gap: 2px; }
+.tpanel .big b { font-family: var(--display); font-size: 26px; line-height: 1; font-variant-numeric: tabular-nums; }
+.taglist { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.taglist button { display: flex; gap: 10px; align-items: center; width: 100%; text-align: left; border: 0; background: none; padding: 5px 6px; border-radius: 8px; cursor: pointer; font-size: 14px; }
+.taglist button:hover, .taglist button.on { background: var(--surface-2); }
+.taglist .tagdot { position: static; transform: none; min-width: 26px; height: 26px; font-size: 12px; border-width: 2px; box-shadow: none; display: inline-grid; place-items: center; flex: none; }
+.taglist .nm { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12.5px; color: var(--ink-2); }
+.legend span { display: inline-flex; align-items: center; gap: 5px; }
+.legend i { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
+@media (max-width: 760px) { .phwrap { grid-template-columns: 1fr; } .phside { position: static; max-height: none; } }
 @media (max-width: 560px) { .row { grid-template-columns: 1fr; } .row .right { justify-content: space-between; } }
 </style>
 
@@ -163,6 +183,7 @@ td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; white-space:
   <section class="tiles" id="tiles" aria-label="Summary"></section>
   <nav class="tabs" role="tablist" aria-label="Sections" id="tabs">
     <button role="tab" data-tab="count" type="button">Count</button>
+    <button role="tab" data-tab="photos" type="button">Photos</button>
     <button role="tab" data-tab="fix" type="button">Fix in Square</button>
     <button role="tab" data-tab="add" type="button">Add from photo</button>
   </nav>
@@ -173,6 +194,8 @@ td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; white-space:
 <script>
 const LOCATION_ID = 'LBV57104VNB7X';
 const SPOTS = ['Christmas wall', 'Pink wall', 'Charm display', 'New arrivals table', 'Back stock', 'Other'];
+/* Shop photos with tag positions (percent of width/height) matched to Square variations; snapshot counts from the first Square pull. */
+const PHOTOS = [{"src":"photos/p1.jpg","title":"New arrivals (floor)","spot":"New arrivals table","ar":0.7497,"tags":[{"x":12.7,"y":30.2,"l":"Royal guards with girl (pink sticker)"},{"x":34.0,"y":30.2,"l":"Pink nutcracker – Penny Linn"},{"x":55.4,"y":36.8,"l":"Snowman in blue – HCD-1940"},{"x":79.9,"y":37.4,"l":"Pink roses round"},{"x":11.9,"y":46.3,"l":"Blonde angel"},{"x":34.0,"y":46.9,"v":"MTNCHEDNZOKAA67BDKLNKTSL","n":"Diana Ross","sku":"443183T","p":38.5,"q":0},{"x":55.4,"y":52.8,"v":"TDJMXZWU57R2AJCHV3D22ZMY","n":"Malachite Clover Charm Canvas","sku":"G201163","p":40.0,"q":1},{"x":72.0,"y":52.2,"v":"577SGQVRMWDCUSH4JLWDX5E3","n":"Moon Charm","sku":"762765K","p":41.0,"q":0},{"x":87.0,"y":53.4,"l":"Nesting doll blonde – SH65-247"},{"x":11.1,"y":65.8,"v":"EL6P2KUHTE3VGUEF5YXRWC6H","n":"Bitsy the Chic Dog Lady Canvas","sku":"M644691","p":77.0,"q":1},{"x":34.0,"y":65.8,"l":"Burgundy round with wave – CC-10/20"},{"x":57.0,"y":67.6,"v":"ZZ53RECDIW7U3XHOUV6SJ5S3","n":"Anchor Charm","sku":"L834870","p":41.0,"q":1},{"x":74.4,"y":67.0,"v":"BX5HZR5ZCUVR222ARAZ6KUBZ","n":"Raspberry Mini","sku":"602609Q","p":24.0,"q":1,"g":1},{"x":89.4,"y":67.6,"v":"XQOISLW3EFTFUM7V4HOEPGMG","n":"Orange Mini","sku":"D072744","p":24.0,"q":1}]},{"src":"photos/p2.jpg","title":"Charm display (piano)","spot":"Charm display","ar":0.7502,"tags":[{"x":19.5,"y":53.3,"v":"577SGQVRMWDCUSH4JLWDX5E3","n":"Moon Charm","sku":"762765K","p":41.0,"q":0},{"x":56.9,"y":54.7,"v":"J6YBEH5CE37RYUY56M6CQXQZ","n":"Sheepshead Mini Needlepoint Canvas","sku":"935589D","p":32.0,"q":0},{"x":86.5,"y":52.0,"v":"ISNO4LV2YP74EOADJ7DRODTF","n":"Key Charm","sku":"382352R","p":41.0,"q":1}]},{"src":"photos/p3.jpg","title":"Christmas wall – left","spot":"Christmas wall","ar":0.7502,"tags":[{"x":4.7,"y":16.0,"l":"Santa red coat – SCT"},{"x":26.7,"y":14.7,"v":"JQHIPY3772NN6H5T7NAXWAVF","n":"Bam Elephant Ornament","sku":"X357118","p":51.0,"q":1},{"x":56.9,"y":14.2,"v":"Y2BOVVRNTWZPKNKN62LM33QY","n":"Christmas Train Bolster Pillow - KCN Designers","sku":"916880A","p":135.0,"q":1},{"x":16.6,"y":33.3,"l":"Nutcracker brown – Penny Linn"},{"x":37.9,"y":31.6,"v":"B2RUCJM7QFFIY4Y7R672STSU","n":"Poinsettia Mini","sku":"6504937","p":40.0,"q":1},{"x":58.1,"y":31.6,"v":"ZKGTWGJIBEVV5OIMO4L4PSMA","n":"Christmas tree white","sku":"9564203","p":40.0,"q":1},{"x":77.0,"y":31.6,"v":"V6OIEHEKSFWLAUM6IV42CM3G","n":"Santa Mini","sku":"685582X","p":40.0,"q":1},{"x":15.4,"y":54.2,"v":"2AORDDZD3YL4HS3Q7ZVCDCKW","n":"Running Santa","sku":"A316305","p":65.0,"q":1},{"x":38.5,"y":49.8,"l":"Pine Scallop pattern ($40 sticker)"},{"x":56.9,"y":46.2,"l":"Round snowman (maybe Happy Snowman)"},{"x":77.0,"y":46.2,"l":"Red bow – Penny Linn (maybe Bow Round)"},{"x":92.4,"y":46.2,"l":"Green bow – Penny Linn (maybe Bow Round)"},{"x":37.9,"y":66.2,"l":"Nutcracker red – Penny Linn"},{"x":59.2,"y":62.2,"v":"SNKCOSNUBENVXTSF2MWK4CRB","n":"Our 1st Christmas","sku":"T241074","p":53.0,"q":1},{"x":77.0,"y":62.2,"v":"A3D2DOUVZQZORXQTNTW3WZNP","n":"Mini Texans Nutcracker","sku":"9319730","p":54.0,"q":2},{"x":13.0,"y":77.8,"v":"YUNIC64RPY66TQNXHUEGF4OV","n":"Hope","sku":"2149152","p":52.0,"q":1}]},{"src":"photos/p4.jpg","title":"Christmas wall – right","spot":"Christmas wall","ar":0.7502,"tags":[{"x":23.7,"y":13.3,"l":"Blue floral round – MP"},{"x":42.7,"y":13.8,"l":"Lady in red w/ dragon round – KDS"},{"x":62.8,"y":13.3,"v":"DNCSBKCOLVKFT65XRPBBEEJS","n":"FAO Schwarz Round","sku":"5513915","p":70.0,"q":1},{"x":77.0,"y":13.3,"l":"Santa – SCT"},{"x":91.2,"y":13.3,"l":"Santa – SCT"},{"x":20.7,"y":28.9,"l":"Bloomingdale's round – KDS-95 ($75)"},{"x":39.7,"y":28.4,"l":"Snowman w/ green scarf – SLS"},{"x":55.7,"y":28.4,"l":"Nutcracker – Penny Linn"},{"x":71.7,"y":28.4,"l":"Nutcracker – Penny Linn"},{"x":85.3,"y":26.2,"v":"5CY3WIFLKRRT4SFDWD7AEYWK","n":"Mini Grinch","sku":"K133379","p":36.0,"q":1},{"x":19.5,"y":44.4,"l":"Nutcracker – Penny Linn"},{"x":36.1,"y":44.4,"v":"PRFTXFWKCO5ZQ2DFUMW6F2XK","n":"Christmas Tree Oval Ornament","sku":"384475T","p":52.0,"q":1,"g":1},{"x":53.9,"y":43.6,"v":"KYECDALNWNKRDPDX6AHUJPVR","n":"Baby's First Christmas Round Printed Canvas - KCN Designers","sku":"J278960","p":50.0,"q":1},{"x":71.7,"y":42.7,"l":"Nutcracker red (pink frame) – Penny Linn"},{"x":85.9,"y":40.0,"v":"EULGKNPJ4FDBAJ2JIG6CPY2Y","n":"Peppermint Village House","sku":"607024H","p":57.0,"q":1},{"x":16.0,"y":56.9,"l":"Nesting doll blue – SH65-1"},{"x":33.8,"y":56.9,"v":"WSHADAN2P3NUTKOBDLZ7CEYK","n":"In Our Wreath ERA","sku":"5869531","p":65.0,"q":1,"g":1},{"x":54.5,"y":54.2,"v":"NSQSVUSVZHRPRFODC4TVOPJK","n":"Charlie Brown Christmas Tree","sku":"354145L","p":30.0,"q":1},{"x":71.7,"y":55.1,"v":"534IRNSJKTDDUNQL4SYBNG5I","n":"Christmas Ferragamos","sku":"A913274","p":27.5,"q":3},{"x":87.1,"y":52.4,"l":"Dark Christmas tree – Bea"},{"x":14.8,"y":70.2,"v":"A3D2DOUVZQZORXQTNTW3WZNP","n":"Mini Texans Nutcracker","sku":"9319730","p":54.0,"q":2},{"x":32.0,"y":71.1,"v":"GAJEQMM5AHDLZGACWR57P4EA","n":"What’s Cookin Gourd Lookin","sku":"C584077","p":52.0,"q":1},{"x":56.9,"y":72.0,"v":"I5NGZOCA6VE2DICP5BE4QYAH","n":"Please Snow, I'm a Teacher","sku":"710067B","p":65.0,"q":1},{"x":73.5,"y":67.6,"v":"NG7Y3FOAVRHUGKSCALBUZSEH","n":"I love Santa Angel","sku":"N690159","p":35.0,"q":1},{"x":87.1,"y":65.8,"l":"Nutcracker pink – Penny Linn"},{"x":16.6,"y":85.3,"v":"HEYALQCZZQG67RLNMEORKHHX","n":"Astros Nutcracker Stand","sku":"820273H","p":72.0,"q":1},{"x":33.8,"y":86.2,"l":"Nutcracker – Penny Linn"},{"x":47.4,"y":86.2,"l":"Nutcracker pink – Penny Linn"}]},{"src":"photos/p5.jpg","title":"Pink wall – door","spot":"Pink wall","ar":0.7502,"tags":[{"x":20.7,"y":11.6,"v":"OJR3WOC3UNFFZFEUWWADRW2F","n":"little miss tan lines","sku":"5380568","p":43.0,"q":0},{"x":53.3,"y":9.8,"v":"ASF5XIK7S3JV57WYAAWDZZAU","n":"Nap Queen Stitch It Angel","sku":"F137461","p":35.0,"q":1},{"x":82.9,"y":8.9,"v":"GVVL2MLOI5BHP7QCDKZEAJBM","n":"Horseshoe Charm","sku":"Q658806","p":41.0,"q":1},{"x":23.7,"y":35.6,"v":"OVH2ZR2FABWJDVR75AOBT6VU","n":"Beach Bum","sku":"559442S","p":45.0,"q":0},{"x":56.9,"y":37.3,"v":"EL6P2KUHTE3VGUEF5YXRWC6H","n":"Bitsy the Chic Dog Lady Canvas","sku":"M644691","p":77.0,"q":1},{"x":85.3,"y":24.9,"v":"DL5O5VK5BWVYKZRVCIPLRBUI","n":"I Hate Interstate (Series) (10)","sku":"493585V","p":44.0,"q":1},{"x":85.3,"y":46.2,"v":"GVINQJZONQSN5AS36BM2ABH2","n":"Cat Mom Angel Printed","sku":"C352276","p":35.0,"q":1},{"x":23.7,"y":59.6,"v":"MN2S5VKW53XHILB444MD4M66","n":"POP-135 Disco Dorothy","sku":"681769Z","p":58.0,"q":1},{"x":65.2,"y":66.7,"l":"Couple in black tie – Needlepoint & Chill ($45)"},{"x":82.9,"y":62.2,"l":"Nesting doll red plaid ($44)"},{"x":13.0,"y":88.9,"v":"B47VWZKATDVMAWYCP3ZNIZH3","n":"Funny Story","sku":"8477383","p":45.0,"q":1},{"x":59.2,"y":88.9,"v":"AGM3MFL6FGWG24TFPAORX2N6","n":"Blue Gemstone bag tag","sku":"635623A","p":39.0,"q":1},{"x":85.3,"y":76.4,"v":"TDJMXZWU57R2AJCHV3D22ZMY","n":"Malachite Clover Charm Canvas","sku":"G201163","p":40.0,"q":1},{"x":85.3,"y":93.3,"v":"M7KE4LVRVJBWA7PDHTMAVTKK","n":"Bow Charm Canvas - Light Pink","sku":"9161227","p":40.0,"q":1}]},{"src":"photos/p6.jpg","title":"Pink wall – lower","spot":"Pink wall","ar":0.7502,"tags":[{"x":16.6,"y":21.3,"v":"MPLGT6BTSSD36EWNUMJNDFSS","n":"Tennis Ducks Small - 18 Mesh","sku":"6350079","p":74.0,"q":1},{"x":41.5,"y":18.2,"v":"GVVL2MLOI5BHP7QCDKZEAJBM","n":"Horseshoe Charm","sku":"Q658806","p":41.0,"q":1},{"x":63.4,"y":16.9,"v":"7YUY66XYVGKZW45LBVBHCAOW","n":"Iced Matcha Latte - Safira Stitch","sku":"318603Y","p":52.0,"q":1},{"x":87.1,"y":20.4,"v":"KCDIM5IERK6KWVA7BY4VLSWA","n":"snappys","sku":"6274498","p":40.0,"q":1},{"x":5.9,"y":42.2,"v":"XQOISLW3EFTFUM7V4HOEPGMG","n":"Orange Mini","sku":"D072744","p":24.0,"q":1},{"x":24.9,"y":40.4,"v":"5XWN34TTW6DVL47TEETCGDCS","n":"Man Behind the Counter","sku":"355844Y","p":47.0,"q":-1,"g":1},{"x":43.8,"y":39.1,"l":"Dancing girl pink pants – MM-W016"},{"x":62.8,"y":40.9,"v":"FR5J2VBHZDIN5ZTH7FAMEMK6","n":"tomato soup","sku":"474856E","p":75.0,"q":0},{"x":85.3,"y":40.9,"v":"7D6K5DCADUJR47FDXF4Y7S3W","n":"Dole Whip 13","sku":"5447834","p":50.0,"q":1},{"x":9.5,"y":60.4,"v":"ZUHV6DWQPXMT67EDCVTXJNT6","n":"Utah Round","sku":"2567626","p":56.0,"q":1},{"x":33.8,"y":60.4,"v":"CJDLRXYTQK3KI4MKYSNSRZOS","n":"Bikini Kitty","sku":"3654765","p":80.0,"q":1},{"x":61.6,"y":61.3,"v":"5MNKNTIBTCMHUC3EUUIKH2HI","n":"Dole Whip 18","sku":"F296775","p":55.0,"q":1},{"x":86.5,"y":61.3,"v":"R2RJSLQ56K5NEMRGN4MNMETZ","n":"Farmers Market: Tomato Slices 18 Mesh","sku":"SNP-ABC-0014","p":70.0,"q":1},{"x":10.7,"y":80.4,"v":"Y5Z2CRSZU6PT22RUETDOSIPO","n":"Rosie","sku":"3348965","p":50.0,"q":0},{"x":34.4,"y":79.6,"v":"T6HDNLTUSSHP435EMWPKGT4C","n":"Princess Kate State Dinner Needlepoint Canvas","sku":"462789Q","p":38.5,"q":0,"g":1},{"x":59.8,"y":80.4,"l":"Burgundy round with wave – CC-10"},{"x":84.1,"y":79.6,"v":"5IMDLQ55XL4NTLZCRLGIA3FO","n":"Blockbuster","sku":"V481855","p":42.0,"q":1}]},{"src":"photos/p7.jpg","title":"Pink wall – middle","spot":"Pink wall","ar":0.7502,"tags":[{"x":14.8,"y":14.2,"v":"Z7KZPHCPE3XYA4YKT7RMWWDD","n":"Hydrangea Coaster","sku":"7980360","p":56.0,"q":1,"g":1},{"x":37.9,"y":13.3,"v":"MTNCHEDNZOKAA67BDKLNKTSL","n":"Diana Ross","sku":"443183T","p":38.5,"q":0},{"x":62.8,"y":14.2,"v":"L2BL5WKHOJE2SQ6TQQD3OFY7","n":"Nellie the Needlepointing Kitty©","sku":"621192Q","p":78.0,"q":1},{"x":90.0,"y":4.4,"v":"3CL7SVLCAUGVX3MCH6L5Q6EB","n":"Pink Lily Mini","sku":"F183298","p":34.0,"q":1},{"x":87.1,"y":22.2,"v":"OCUH56EN6NP6DNKVKVOTSKST","n":"Chicago Bulls 23 Bear","sku":"5878281","p":75.0,"q":1},{"x":14.2,"y":33.8,"v":"2B24AWGZRGRGQSXUOHNP2HUT","n":"Queen Bey","sku":"684610N","p":38.5,"q":1},{"x":38.5,"y":36.4,"v":"63M5RLEX3W3QQLHRX4T242KD","n":"Miranda Priestly Needlepoint Canvas","sku":"Y560014","p":38.5,"q":0},{"x":62.8,"y":36.4,"v":"LYQQH6FKHQKUFJBAVJS7Z7OU","n":"Rooster","sku":"750820J","p":55.0,"q":1},{"x":87.1,"y":41.8,"v":"MPLGT6BTSSD36EWNUMJNDFSS","n":"Tennis Ducks Small - 18 Mesh","sku":"6350079","p":74.0,"q":1},{"x":7.1,"y":56.0,"v":"S6GXTJJAZVGZSX5TCSYX5I5M","n":"Climb Every Mountain","sku":"M054682","p":46.0,"q":1},{"x":28.4,"y":56.9,"l":"POP girl on yellow S"},{"x":50.4,"y":56.9,"v":"MN2S5VKW53XHILB444MD4M66","n":"POP-135 Disco Dorothy","sku":"681769Z","p":58.0,"q":1},{"x":68.7,"y":60.4,"v":"XQOISLW3EFTFUM7V4HOEPGMG","n":"Orange Mini","sku":"D072744","p":24.0,"q":1},{"x":88.3,"y":60.4,"v":"5XWN34TTW6DVL47TEETCGDCS","n":"Man Behind the Counter","sku":"355844Y","p":47.0,"q":-1,"g":1},{"x":10.7,"y":70.2,"v":"V3BKVRGMFOBAGZXCQUA6OMIS","n":"Pink Clover Charm","sku":"778050K","p":41.0,"q":1},{"x":26.7,"y":71.1,"v":"7BWOQHHNQMUN5SFXAOZUARJ7","n":"Blue Clover Charm","sku":"446886N","p":41.0,"q":1},{"x":48.6,"y":74.7,"v":"VRRPANYGTBG3BXNBWQMHK632","n":"Pine Car Freshener","sku":"X123147","p":30.0,"q":-1},{"x":68.7,"y":75.6,"v":"ZUHV6DWQPXMT67EDCVTXJNT6","n":"Utah Round","sku":"2567626","p":56.0,"q":1},{"x":91.2,"y":75.6,"v":"CJDLRXYTQK3KI4MKYSNSRZOS","n":"Bikini Kitty","sku":"3654765","p":80.0,"q":1},{"x":10.1,"y":84.4,"v":"QNVI3Z34YVYKNGT22XSQ6T4B","n":"Red Clover Charm","sku":"S182806","p":41.0,"q":1},{"x":27.3,"y":83.6,"v":"ZZ53RECDIW7U3XHOUV6SJ5S3","n":"Anchor Charm","sku":"L834870","p":41.0,"q":1},{"x":48.6,"y":86.2,"l":"Navy sailboat sweater – Sails + Spools"},{"x":67.5,"y":92.4,"v":"Y5Z2CRSZU6PT22RUETDOSIPO","n":"Rosie","sku":"3348965","p":50.0,"q":0},{"x":90.0,"y":92.4,"v":"T6HDNLTUSSHP435EMWPKGT4C","n":"Princess Kate State Dinner Needlepoint Canvas","sku":"462789Q","p":38.5,"q":0,"g":1},{"x":13.0,"y":94.2,"v":"577SGQVRMWDCUSH4JLWDX5E3","n":"Moon Charm","sku":"762765K","p":41.0,"q":0},{"x":29.6,"y":94.2,"v":"VDGRIZGUDSPF5M4NRPVHYDSS","n":"Ew David, Sweater","sku":"736002S","p":50.0,"q":1},{"x":47.4,"y":96.9,"v":"M7KE4LVRVJBWA7PDHTMAVTKK","n":"Bow Charm Canvas - Light Pink","sku":"9161227","p":40.0,"q":1}]},{"src":"photos/p8.jpg","title":"Pink wall – top","spot":"Pink wall","ar":0.7502,"tags":[{"x":26.1,"y":17.8,"v":"ZTTGX7EENSY6WBSJH4U6YDTB","n":"Panther Ornament","sku":"J131256","p":64.0,"q":1},{"x":59.2,"y":17.8,"v":"LYQQH6FKHQKUFJBAVJS7Z7OU","n":"Rooster","sku":"750820J","p":55.0,"q":1},{"x":80.6,"y":17.8,"v":"N3COSYZQ5F3W6UF2IIKHF5GL","n":"seahorses","sku":"3176487","p":44.0,"q":1},{"x":30.2,"y":32.9,"v":"YEKALQZ5OKSVGBJP4NJ2JPSP","n":"Cinderella","sku":"L400096","p":70.0,"q":1},{"x":52.1,"y":33.8,"v":"QBNNBMHWO6RQ5RUL4AD67ABW","n":"prince charming","sku":"W894187","p":70.0,"q":1},{"x":78.2,"y":33.8,"v":"XJ4EG6NOIV5OZTTRWLF2G4L4","n":"MM-W035 Arcade Sign","sku":"MM-W035","p":50.0,"q":1},{"x":5.9,"y":48.0,"v":"GHVLSWVUKBDUXB7HVP5P5BEY","n":"I hate Interstate (series) (69)","sku":"V588745","p":44.0,"q":0},{"x":28.4,"y":50.7,"v":"Q2EMT64QDAAHIFH7XUFWRCJM","n":"Jess (Taylor Swift) Needlepoint Canvas","sku":"240126P","p":56.0,"q":1,"g":1},{"x":59.2,"y":49.8,"v":"KTWTEP56IRRVZ3OMCIBMTHKP","n":"Jimmy Needlepoint Canvas","sku":"F632864","p":38.5,"q":1},{"x":82.9,"y":53.3,"v":"EXOU4CCQW5C4QTNBDDBN7FE4","n":"Fate of Ophelia","sku":"857605X","p":118.0,"q":1},{"x":5.9,"y":62.2,"v":"TWGBZ2JDIRGDFLSI5EDAPO7J","n":"I Hate Interstate (Series)(610)","sku":"W901097","p":44.0,"q":1},{"x":9.5,"y":81.8,"v":"UFYK2LMW5KOZSOOTMU2FFLOJ","n":"Beer Never Broke My Heart- 13 Mesh","sku":"A119164","p":71.0,"q":1},{"x":35.5,"y":79.1,"v":"QX3RM5JLDBOFZXKDQMP4JHJC","n":"Pink Ferragamos","sku":"8321656","p":51.0,"q":3},{"x":62.8,"y":79.1,"v":"ZCPDTWKSB2KR4OVN5MAJU3NQ","n":"Latte With Leaf","sku":"W854145","p":58.0,"q":1},{"x":87.1,"y":78.2,"v":"QYA4G466O2SQLJI7D4JHOEKW","n":"WIP it good","sku":"348371J","p":75.0,"q":0},{"x":65.2,"y":96.9,"v":"MTNCHEDNZOKAA67BDKLNKTSL","n":"Diana Ross","sku":"443183T","p":38.5,"q":0}]},{"src":"photos/p9.jpg","title":"Pink wall – by the door frame","spot":"Pink wall","ar":0.7503,"tags":[{"x":9.8,"y":21.3,"v":"MTNCHEDNZOKAA67BDKLNKTSL","n":"Diana Ross","sku":"443183T","p":38.5,"q":0},{"x":32.4,"y":21.3,"l":"Royal guards with girl ($50)"},{"x":61.3,"y":20.0,"v":"SRDZZJZWP6F5E6GXU3OH6KWV","n":"Lorelei’s Jeep Canvas","sku":"902183V","p":70.0,"q":1},{"x":86.2,"y":24.0,"v":"57BYTCJCR3VOCP3THS7ARD42","n":"Linda-Left","sku":"670182Q","p":84.0,"q":1},{"x":61.3,"y":37.3,"v":"TB24I4T35ZFDMZI55GTJS6RL","n":"Peacock Clutch","sku":"7523095","p":108.0,"q":1},{"x":84.4,"y":41.3,"v":"SXS3OS6ETTRRHPOPVDWQCVCV","n":"Soccer from Above Oval","sku":"5331278","p":65.0,"q":1},{"x":61.3,"y":56.0,"v":"AEV7SQTQ5KKN5NQKHH2YO3DI","n":"Black & White Zebra Clutch","sku":"K680803","p":54.0,"q":1},{"x":85.3,"y":56.0,"v":"BAVDG7QVQ275RQ453LAZV446","n":"12 Gauge Shell","sku":"372257T","p":58.0,"q":1},{"x":56.0,"y":73.3,"v":"22H3AB35XAQUIAGCBLP4RTDA","n":"Blue Truck","sku":"850107P","p":52.0,"q":1},{"x":74.7,"y":72.0,"v":"3DO2WE637LFN3DE5NIVFN2XG","n":"18 mesh chicken","sku":"6679065","p":25.0,"q":0},{"x":89.8,"y":74.7,"v":"7RKW4ESXOGZ7H7QQX657ATYR","n":"Martha Needlepoint Canvas","sku":"45632225","p":38.5,"q":-1},{"x":56.9,"y":90.7,"v":"5F5LTGOXO74FNFBJQW6JUNHJ","n":"Not Your Bag Luggage Tag","sku":"3026886","p":44.0,"q":0},{"x":74.7,"y":89.3,"v":"TL6YRSGMA7SI3GS77K44MQ4X","n":"Dolly Angel","sku":"213167H","p":34.5,"q":2},{"x":89.8,"y":90.0,"v":"KV44YSNW6ODQFDJVZA3POUUO","n":"Tortoiseshell Clover Charm Canvas","sku":"8340108","p":40.0,"q":1}]}];
 const $ = (s, el = document) => el.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const money = n => '$' + (Math.round((n || 0) * 100) / 100).toLocaleString('en-US', { minimumFractionDigits: n % 1 ? 2 : 0, maximumFractionDigits: 2 });
@@ -196,6 +219,7 @@ const S = {
   sqState: 'idle',        // idle | loading | ready | error
   review: null,           // pending Square update preview
   photo: { files: [], spot: 'Christmas wall', results: null, busy: false, err: '' },
+  ph: { i: Math.min(PHOTOS.length - 1, Number(pref.get('ph', '0')) || 0), sel: null },
 };
 let db = null, mcp = null, sample = null, downloads = null;
 
@@ -345,7 +369,7 @@ function render() {
   const v = $('#view');
   if (!S.dbReady) { v.innerHTML = `<div class="empty"><strong>Opening your saved counts…</strong></div>`; return; }
   const keep = document.activeElement && document.activeElement.id; const caret = keep && document.activeElement.selectionStart;
-  v.innerHTML = S.tab === 'fix' ? viewFix(all) : S.tab === 'add' ? viewAdd() : viewCount(all);
+  v.innerHTML = S.tab === 'fix' ? viewFix(all) : S.tab === 'add' ? viewAdd() : S.tab === 'photos' ? viewPhotos(all) : viewCount(all);
   if (keep && document.getElementById(keep)) { const el = document.getElementById(keep); el.focus(); try { if (caret != null) el.setSelectionRange(caret, caret); } catch (e) {} }
 }
 function tile(label, val, sub, alert) {
@@ -412,6 +436,82 @@ function rowHtml(r) {
       </div>
     </details>
   </div>`;
+}
+
+function photoRow(t, byVar) {
+  if (!t.v) return null;
+  return byVar[t.v] || mk({ id: t.v, coll: 'counts', var: t.v, name: t.n, price: t.p, sqQty: t.q, doc: null });
+}
+function photoTags(all) {
+  const byVar = {}; for (const r of all) if (r.coll === 'counts') byVar[r.var] = r;
+  const ph = PHOTOS[S.ph.i] || PHOTOS[0];
+  return ph.tags.map((t, i) => { const r = photoRow(t, byVar); return { t, i, r, st: r ? r.status : 'missing' }; });
+}
+const TAGWORD = { ok: 'matches Square', off: 'Square is off', photo: 'seen in photo', todo: 'not counted', missing: 'not in Square' };
+function viewPhotos(all) {
+  const ph = PHOTOS[S.ph.i] || PHOTOS[0];
+  const tags = photoTags(all);
+  const done = tags.filter(x => x.st === 'ok' || x.st === 'off').length;
+  const sel = S.ph.sel != null ? tags[S.ph.sel] : null;
+  const label = x => x.t.v ? (x.r ? x.r.name : x.t.n) : x.t.l;
+  return `
+    <div class="chips" role="group" aria-label="Photo">${PHOTOS.map((p, i) => `<button class="chip" type="button" data-ph="${i}" aria-pressed="${i === S.ph.i}">${i + 1}. ${esc(p.title)}</button>`).join('')}</div>
+    <div class="bar" style="margin:12px 0 0;justify-content:space-between">
+      <span class="small muted">Tap a number to see its Square listing and count it. <b>${done} of ${tags.length}</b> counted on this photo.</span>
+      <div class="legend"><span><i class="s-ok"></i>Matches</span><span><i class="s-off"></i>Square is off</span><span><i class="s-photo"></i>Seen in photo</span><span><i class="s-todo"></i>Not counted</span><span><i class="s-missing"></i>Not in Square</span></div>
+    </div>
+    <div class="phwrap">
+      <div class="ph" style="aspect-ratio:${ph.ar}">
+        <img src="${esc(ph.src)}" alt="${esc(ph.title)}">
+        ${tags.map(x => `<button type="button" class="tagdot s-${x.st}${S.ph.sel === x.i ? ' on' : ''}" style="left:${x.t.x}%;top:${x.t.y}%" data-tag="${x.i}" aria-label="${x.i + 1}: ${esc(label(x))}, ${TAGWORD[x.st]}">${x.i + 1}</button>`).join('')}
+      </div>
+      <div class="phside">
+        ${sel ? tagPanel(sel, tags.length) : `<div class="empty">Tap a numbered tag on the photo to check it against Square.</div>`}
+        <div class="card" style="padding:10px">
+          <ol class="taglist">${tags.map(x => `<li><button type="button" data-tag="${x.i}" class="${S.ph.sel === x.i ? 'on' : ''}"><span class="tagdot s-${x.st}">${x.i + 1}</span><span class="nm">${esc(label(x))}</span>${x.r && x.r.count != null ? `<span class="num small"><b>${x.r.count}</b></span>` : ''}</button></li>`).join('')}</ol>
+        </div>
+      </div>
+    </div>`;
+}
+function tagPanel(x, total) {
+  const t = x.t, r = x.r;
+  const nav = `<div class="bar" style="margin:0"><button class="btn small" type="button" data-tagnav="-1" ${x.i ? '' : 'disabled'}>‹ Previous</button><button class="btn small" type="button" data-tagnav="1" ${x.i < total - 1 ? '' : 'disabled'}>Next ›</button></div>`;
+  if (!t.v) return `<div class="card tpanel">
+      <span class="label">Tag ${x.i + 1}</span>
+      <h3>${esc(t.l)}</h3>
+      <span class="pill warn">Not in Square</span>
+      <p class="muted">There's no Square listing for this canvas, so it can't be rung up by name. Add it in the Square app (Items → Create item) with its price, then reload Square here.</p>
+      ${nav}</div>`;
+  const [k, l] = STATUS[r.status];
+  return `<div class="card tpanel">
+    <span class="label">Tag ${x.i + 1}${t.g ? ' · best guess, check the label' : ''}</span>
+    <h3>${esc(r.name)}</h3>
+    <div class="meta" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+      ${t.sku ? `<span class="tag">SKU ${esc(t.sku)}</span><button class="linkbtn small" type="button" data-copy="${esc(t.sku)}">Copy SKU</button>` : ''}
+      ${r.price ? `<span class="tag">${money(r.price)}</span>` : ''}
+      <span class="pill ${k}">${esc(r.status === 'off' && r.sqQty != null ? 'Square says ' + r.sqQty : l)}</span>
+    </div>
+    <div class="big">
+      <div><span class="label">Square</span><b>${r.sqQty == null ? '—' : r.sqQty}</b><span class="small muted">${r.sqLive ? 'live' : 'saved earlier'}</span></div>
+      <div><span class="label">My count</span>
+        <div class="stepper" aria-label="My count for ${esc(r.name)}">
+          <button type="button" data-tstep="-1" aria-label="One less">−</button>
+          <input type="number" inputmode="numeric" min="0" id="tc-${esc(t.v)}" data-tcount="1" value="${r.count ?? ''}" placeholder="–" aria-label="My count">
+          <button type="button" data-tstep="1" aria-label="One more">+</button>
+        </div>
+      </div>
+      ${r.status === 'photo' ? `<button class="btn primary" type="button" data-tconfirm="1">Confirm ${r.count}</button>` : ''}
+    </div>
+    ${r.note ? `<p class="small muted">${esc(r.note)}</p>` : ''}
+    ${nav}
+  </div>`;
+}
+function countTag(n, confirm = true) {
+  const tags = photoTags(rows()); const x = tags[S.ph.sel]; if (!x || !x.t.v) return;
+  const t = x.t, prev = S.counts[t.v], s = S.square && S.square.byVar[t.v];
+  const base = prev ? { ...prev } : { name: t.n, price: t.p, spot: PHOTOS[S.ph.i].spot, sq: t.q };
+  if (s) base.sq = s.qty;
+  saveDoc('counts', t.v, { ...base, count: n == null ? null : Math.max(0, Math.round(n)), confirmed: confirm, countedAt: new Date().toISOString() });
 }
 
 function viewFix(all) {
@@ -538,6 +638,12 @@ document.addEventListener('click', e => {
   const t = e.target.closest('button, input[type=checkbox]'); if (!t) return;
   if (t.matches('#tabs button')) { S.tab = t.dataset.tab; pref.set('tab', S.tab); S.review = null; render(); return; }
   if (t.id === 'sqLoad' || t.dataset.act === 'load') { loadSquare(); return; }
+  if (t.dataset.ph) { S.ph = { i: Number(t.dataset.ph), sel: null }; pref.set('ph', S.ph.i); render(); return; }
+  if (t.dataset.tag) { S.ph.sel = Number(t.dataset.tag); render(); return; }
+  if (t.dataset.tagnav) { S.ph.sel = Math.max(0, Math.min(PHOTOS[S.ph.i].tags.length - 1, S.ph.sel + Number(t.dataset.tagnav))); render(); return; }
+  if (t.dataset.tstep) { const x = photoTags(rows())[S.ph.sel]; const c = x && x.r ? x.r.count : null; countTag((c ?? (Number(t.dataset.tstep) > 0 ? 0 : 1)) + Number(t.dataset.tstep)); return; }
+  if (t.dataset.tconfirm) { const x = photoTags(rows())[S.ph.sel]; countTag(x.r.count); return; }
+  if (t.dataset.copy) { const v = t.dataset.copy; navigator.clipboard.writeText(v).then(() => toast(`Copied ${v}. Paste it into Square's item search.`), () => toast(`SKU ${v}. Type it into Square's item search.`)); return; }
   if (t.dataset.filter) { S.filter = t.dataset.filter; pref.set('filter', S.filter); render(); return; }
   if (t.dataset.step) { const r = findRow(t.dataset.key); setCount(t.dataset.key, (r.count ?? (Number(t.dataset.step) > 0 ? 0 : 1)) + Number(t.dataset.step)); return; }
   if (t.dataset.confirm) { const r = findRow(t.dataset.confirm); setCount(t.dataset.confirm, r.count); return; }
@@ -562,6 +668,7 @@ document.addEventListener('input', e => {
 document.addEventListener('change', e => {
   const t = e.target;
   if (t.id === 'spot') { S.spot = t.value; pref.set('spot', S.spot); render(); }
+  else if (t.dataset.tcount) countTag(t.value === '' ? null : Number(t.value));
   else if (t.matches('.stepper input')) setCount(t.dataset.key, t.value === '' ? null : Number(t.value));
   else if (t.dataset.spotset) { const r = findRow(t.dataset.spotset); saveDoc(r.coll, r.id, { ...(r.doc || { name: r.name, price: r.price || 0, sq: r.sqQty }), spot: t.value }); }
   else if (t.dataset.noteset) { const r = findRow(t.dataset.noteset); saveDoc(r.coll, r.id, { ...(r.doc || { name: r.name, price: r.price || 0, sq: r.sqQty }), note: t.value.slice(0, 200) }); }
