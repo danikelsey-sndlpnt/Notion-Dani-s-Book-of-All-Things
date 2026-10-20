@@ -210,6 +210,7 @@ td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; white-space:
   <nav class="tabs" role="tablist" aria-label="Sections" id="tabs">
     <button role="tab" data-tab="count" type="button">Count</button>
     <button role="tab" data-tab="photos" type="button">Photos</button>
+    <button role="tab" data-tab="review" type="button">Review all</button>
     <button role="tab" data-tab="supplies" type="button">Supplies &amp; more</button>
     <button role="tab" data-tab="fix" type="button">Fix in Square</button>
     <button role="tab" data-tab="add" type="button">Add from photo</button>
@@ -348,7 +349,7 @@ async function loadSquare() {
       byVar[v.id] = { var: v.id, item: it.id, name: (d.name || '').trim(), price: ((vd.price_money || {}).amount || 0) / 100, cats,
         sku: vd.sku || '', qty: v.id in qty ? qty[v.id] : null, track: vd.track_inventory !== false, desc: (d.description_plaintext || '').slice(0, 80) };
     }
-    S.square = { byVar, lines, loadedAt: new Date(), threadItems };
+    S.square = { byVar, lines, loadedAt: new Date(), threadItems, dups: buildDups(byVar) };
     S.sqState = 'ready';
     setSq('Square loaded', `${Object.keys(byVar).length} items, as of ${S.square.loadedAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}. Thread colors are left out.`, 'good');
   } catch (e) {
@@ -402,11 +403,37 @@ function stats(all) {
     neg: S.square ? Object.values(S.square.byVar).filter(s => s.qty != null && s.qty < 0).length : null,
   };
 }
+/* Possible duplicate listings: names that share all their meaningful words ("1st" = "first"), similar price, same mesh. */
+const DUP_STOP = new Set('canvas canvases printed needlepoint needle point kcn designer designers the a an of mesh 13 18 14 stand up handpainted hand painted and with series regular by in on for safira stitch stitches round ornament mini small baby babys'.split(' '));
+const dupTokens = name => String(name || '').toLowerCase().replace(/[’']/g, '').replace(/\b1st\b/g, 'first').replace(/&/g, ' and ').replace(/\bi-(\d+)/g, 'interstate $1').replace(/[^a-z0-9]+/g, ' ').split(' ').filter(w => w && !DUP_STOP.has(w));
+const meshOf = n => (String(n).match(/\b(13|14|18)\b/) || [])[1] || '';
+function buildDups(byVar) {
+  const L = Object.values(byVar).map(s => ({ s, t: new Set(dupTokens(s.name)), m: meshOf(s.name) })), out = {};
+  for (let i = 0; i < L.length; i++) for (let j = i + 1; j < L.length; j++) {
+    const a = L[i], b = L[j];
+    if (!a.t.size || !b.t.size || (a.m && b.m && a.m !== b.m)) continue;
+    if (Math.abs(a.s.price - b.s.price) > Math.max(6, 0.2 * Math.max(a.s.price, b.s.price))) continue;
+    let inter = 0; for (const w of a.t) if (b.t.has(w)) inter++;
+    const small = Math.min(a.t.size, b.t.size);
+    if (!inter || inter !== small || (small < 2 && a.t.size !== b.t.size)) continue;   // one name's words must all appear in the other
+    (out[a.s.var] = out[a.s.var] || []).push(b.s.var); (out[b.s.var] = out[b.s.var] || []).push(a.s.var);
+  }
+  return out;
+}
+const notDup = (a, b) => (((S.counts[a] || {}).notDup) || []).includes(b) || (((S.counts[b] || {}).notDup) || []).includes(a);
+const dupsOf = v => ((S.square && S.square.dups && S.square.dups[v]) || []).filter(o => !notDup(v, o));
 function dupGroups() {
-  if (!S.square) return [];
-  const g = {};
-  for (const s of Object.values(S.square.byVar)) { const k = norm(s.name); if (k) (g[k] = g[k] || []).push(s); }
-  return Object.values(g).filter(a => a.length > 1);
+  if (!S.square || !S.square.dups) return [];
+  const seen = new Set(), out = [];
+  for (const a of Object.keys(S.square.dups)) for (const b of dupsOf(a)) { const k = [a, b].sort().join('|'); if (!seen.has(k)) { seen.add(k); out.push([S.square.byVar[a], S.square.byVar[b]]); } }
+  return out;
+}
+function markNotDup(a, b) {
+  for (const [x, y] of [[a, b], [b, a]]) {
+    const prev = S.counts[x], s = S.square && S.square.byVar[x];
+    const base = prev ? { ...prev } : { name: s ? s.name : '', price: s ? s.price : 0, sq: s ? s.qty : null, count: null, confirmed: false };
+    saveDoc('counts', x, { ...base, notDup: [...new Set([...(base.notDup || []), y])] });
+  }
 }
 
 /* ---------- render ---------- */
@@ -428,7 +455,7 @@ function render() {
   const v = $('#view');
   if (!S.dbReady) { v.innerHTML = `<div class="empty"><strong>Opening your saved counts…</strong></div>`; return; }
   const keep = document.activeElement && document.activeElement.id; const caret = keep && document.activeElement.selectionStart;
-  v.innerHTML = S.tab === 'fix' ? viewFix(all) : S.tab === 'add' ? viewAdd() : S.tab === 'photos' ? viewPhotos(all) : S.tab === 'supplies' ? viewSupplies(all) : viewCount(all);
+  v.innerHTML = S.tab === 'fix' ? viewFix(all) : S.tab === 'add' ? viewAdd() : S.tab === 'photos' ? viewPhotos(all) : S.tab === 'supplies' ? viewSupplies(all) : S.tab === 'review' ? viewReview(all) : viewCount(all);
   if (keep && document.getElementById(keep)) { const el = document.getElementById(keep); el.focus(); try { if (caret != null) el.setSelectionRange(caret, caret); } catch (e) {} }
 }
 function tile(label, val, sub, alert) {
@@ -685,6 +712,51 @@ function classify(name, price, cats, multi) {
   return 'canvas';
 }
 const lineOpen = new Set();
+
+/* ---------- Review all: every Square listing, to check one by one ---------- */
+const REV_FILTERS = [['todo', 'Not checked'], ['dup', 'Possible duplicates'], ['nophoto', 'In stock, not in a photo'], ['low', 'Square says 0 or less'], ['done', 'Checked ✓'], ['all', 'Everything']];
+function viewReview(all) {
+  if (!S.square) return `<div class="empty"><strong>Load Square to review every listing.</strong><span>Every item in Square is listed here so you can check it off against the shop and your photos, with possible duplicates flagged.</span><button class="btn primary" type="button" data-act="load">Load from Square</button></div>`;
+  const byVar = {}; for (const r of all) if (r.coll === 'counts') byVar[r.var] = r;
+  const info = Object.values(S.square.byVar).map(s => byVar[s.var]).filter(Boolean).map(r => ({ r, d: dupsOf(r.var), spots: photoSpots(r.var), sup: classify(r.name, r.price, S.square.byVar[r.var].cats, false) !== 'canvas' }));
+  const test = {
+    todo: x => !x.r.verified, dup: x => x.d.length > 0, done: x => x.r.verified, all: () => true,
+    nophoto: x => !x.spots.length && x.r.sqQty > 0 && !x.r.verified && !x.sup,
+    low: x => x.r.sqQty != null && x.r.sqQty <= 0,
+  };
+  const f = S.revF || 'todo', words = norm(S.revQ || '').split(' ').filter(Boolean), k = skuNorm(S.revQ || '');
+  let list = info.filter(test[f]);
+  if (words.length || k) list = list.filter(x => (words.length && words.every(w => norm(x.r.name).includes(w))) || (k.length >= 3 && skuNorm(x.r.sku).includes(k)));
+  list.sort((a, b) => a.r.name.localeCompare(b.r.name));
+  const done = info.filter(x => x.r.verified).length, total = info.length, shown = S.revN || 100;
+  const lines = (S.square.lines || []).filter(L => (!words.length || words.every(w => norm(L.name).includes(w))) && f === 'all');
+  return `
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-h"><h2>${done} of ${total} Square listings checked</h2><span class="small muted">${Math.round(done / Math.max(1, total) * 100)}%</span></div>
+      <div class="progress"><div style="width:${done / Math.max(1, total) * 100}%"></div></div>
+      <p class="small muted">Go down the list and press <b>✓ Matches</b> when a listing is right: the canvas is in the shop, the name and price are right, and the count matches. Use the photo buttons to see it on the wall. For possible duplicates, look both up and either fix one in Square or press <b>Different canvases</b>.</p>
+    </div>
+    <div class="bar">
+      <input type="search" id="revq" placeholder="Filter by name or SKU" value="${esc(S.revQ || '')}" aria-label="Filter">
+    </div>
+    <div class="chips" role="group" aria-label="Show" style="margin-bottom:12px">${REV_FILTERS.map(([key, l]) => `<button class="chip" type="button" data-revf="${key}" aria-pressed="${f === key}">${l} <span class="num">${info.filter(test[key]).length}</span></button>`).join('')}</div>
+    ${f === 'nophoto' ? `<p class="small muted" style="margin-bottom:10px">Square says these are in stock, but they aren't in any of your photos. Find each one in the shop or back stock, or set it to 0 if it's gone.</p>` : ''}
+    ${!list.length && !lines.length ? `<div class="empty">Nothing here${f === 'todo' ? '. Every listing is checked!' : '.'}</div>` : ''}
+    <div class="list">${list.slice(0, shown).map(x => rowHtml(x.r) + reviewHints(x)).join('')}</div>
+    ${list.length > shown ? `<div class="bar" style="justify-content:center;margin-top:10px"><button class="btn" type="button" data-revmore="1">Show ${Math.min(100, list.length - shown)} more (${list.length - shown} left)</button></div>` : ''}
+    ${lines.length ? `<div class="card" style="margin-top:14px"><h2>Thread lines &amp; multi-size items</h2><p class="small muted">These have many colors or sizes, so they're checked on the Supplies &amp; more tab.</p>
+      <div class="list">${lines.map(L => `<div class="row"><div><div class="name">${esc(L.name)}</div><div class="meta"><span>${L.vars.length} colors/sizes</span><span>${L.vars.reduce((a, v) => a + (v.qty > 0 ? v.qty : 0), 0)} in stock</span></div></div><div class="right"><button class="btn small" type="button" data-opensup="${esc(L.name)}">Open in Supplies</button></div></div>`).join('')}</div></div>` : ''}`;
+}
+function reviewHints(x) {
+  const parts = [];
+  if (x.spots.length) parts.push(x.spots.map(([i, j]) => `<button class="btn small" type="button" data-goto="${i}-${j}">Photo ${i + 1}, #${j + 1}</button>`).join(''));
+  else if (!x.sup) parts.push('<span class="small muted">Not in your photos.</span>');
+  for (const v of x.d) {
+    const s = S.square.byVar[v]; if (!s) continue;
+    parts.push(`<span class="pill warn">Possible duplicate</span><button class="btn small" type="button" data-look="${esc(s.sku || s.name)}">${esc(s.name)} · ${s.sku ? 'SKU ' + esc(s.sku) : 'no SKU'} · ${money(s.price)} · Square ${s.qty ?? '—'}</button><button class="linkbtn small" type="button" data-notdup="${esc(x.r.var)}|${esc(v)}">Different canvases</button>`);
+  }
+  return parts.length ? `<div class="locs">${parts.join('')}</div>` : '';
+}
 function viewSupplies(all) {
   if (!S.square) return `<div class="empty"><strong>Load Square to see your supplies.</strong><span>Threads, needle minders, frames, books, kits and register buttons are listed here, grouped, with what Square has in stock.</span><button class="btn primary" type="button" data-act="load">Load from Square</button></div>`;
   const byVar = {}; for (const r of all) if (r.coll === 'counts') byVar[r.var] = r;
@@ -873,6 +945,11 @@ document.addEventListener('click', e => {
     const ph = document.querySelector('.ph'); if (ph) ph.scrollIntoView({ block: 'start', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
     return;
   }
+  if (t.dataset.revf) { S.revF = t.dataset.revf; S.revN = 100; render(); return; }
+  if (t.dataset.revmore) { S.revN = (S.revN || 100) + 100; render(); return; }
+  if (t.dataset.notdup) { const [a, b] = t.dataset.notdup.split('|'); markNotDup(a, b); toast('Marked as different canvases.'); return; }
+  if (t.dataset.look) { S.sku = t.dataset.look; $('#skuQ').value = S.sku; render(); document.querySelector('.skufind').scrollIntoView({ block: 'start', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }); return; }
+  if (t.dataset.opensup) { S.tab = 'supplies'; S.supQ = t.dataset.opensup; render(); return; }
   if (t.dataset.supf) { S.supF = t.dataset.supf; render(); return; }
   if (t.dataset.hidetags) { S.ph.hide = !S.ph.hide; render(); return; }
   if (t.dataset.tagnav) { S.ph.sel = Math.max(0, Math.min(PHOTOS[S.ph.i].tags.length - 1, S.ph.sel + Number(t.dataset.tagnav))); render(); return; }
@@ -907,6 +984,7 @@ document.addEventListener('input', e => {
   if (t.id === 'q') { S.q = t.value; render(); }
   if (t.id === 'skuQ') { S.sku = t.value; render(); }
   if (t.id === 'supq') { S.supQ = t.value; render(); }
+  if (t.id === 'revq') { S.revQ = t.value; S.revN = 100; render(); }
   if (t.dataset.linkq && S.linking) { S.linking.q = t.value; render(); }
 });
 document.addEventListener('change', e => {
