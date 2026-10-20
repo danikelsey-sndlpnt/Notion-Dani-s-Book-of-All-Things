@@ -392,6 +392,7 @@ function mk(r) {
   const d = r.doc || {};
   r.sku = (r.var && ((S.square && S.square.byVar[r.var] && S.square.byVar[r.var].sku) || SKU_BY_VAR[r.var])) || d.sku || '';
   r.verified = !!d.verified;
+  r.sticker = !!d.stickerTodo && !d.stickerDone; r.priceWas = d.priceWas;
   r.archived = !!(r.var && S.square && S.square.byVar[r.var] && S.square.byVar[r.var].archived);
   r.newPrice = d.newPrice != null && d.newPrice !== '' ? Number(d.newPrice) : null;
   r.spot = d.spot || ''; r.count = d.count ?? null; r.confirmed = !!d.confirmed; r.photo = !!d.photo; r.note = d.note || ''; r.maker = d.maker || '';
@@ -476,13 +477,14 @@ function tile(label, val, sub, alert) {
 const STATUS = {
   ok: ['good', 'Matches Square'], off: ['bad', 'Square is off'], photo: ['info', 'Seen in photo'], todo: ['none', 'Not counted'], missing: ['warn', 'Not in Square'],
 };
-const FILTERS = [['mine', 'My list'], ['photo', 'Seen in photo'], ['off', 'Square is off'], ['missing', 'Not in Square'], ['todo', 'Not counted yet'], ['price', 'Price changes'], ['all', 'Everything']];
+const FILTERS = [['mine', 'My list'], ['photo', 'Seen in photo'], ['off', 'Square is off'], ['missing', 'Not in Square'], ['todo', 'Not counted yet'], ['price', 'Price changes'], ['sticker', 'Stickers to update'], ['all', 'Everything']];
 
 function viewCount(all) {
   let list = all;
   const f = S.filter;
   if (f === 'mine') list = list.filter(r => r.doc);
   else if (f === 'price') list = list.filter(r => r.newPrice != null);
+  else if (f === 'sticker') list = list.filter(r => r.sticker);
   else if (f !== 'all') list = list.filter(r => r.status === f);
   if (S.square) list = list.filter(r => !(r.archived && !r.doc));
   if (S.square) list = list.filter(r => r.doc || !r.var || !S.square.byVar[r.var] || classify(r.name, r.price, S.square.byVar[r.var].cats, false) === 'canvas');   // supplies live on their own tab
@@ -518,7 +520,7 @@ function rowHtml(r) {
   return `<div class="row">
     <div>
       <div class="name">${esc(r.name)}</div>
-      <div class="meta">${r.sku ? `<span class="tag">SKU ${esc(r.sku)}</span>` : ''}${r.price ? `<span class="tag"${r.newPrice != null && r.newPrice !== r.price ? ' style="text-decoration:line-through;opacity:.7"' : ''}>${money(r.price)}</span>` : ''}${r.newPrice != null && r.newPrice !== r.price ? `<span class="pill info">New price ${money(r.newPrice)}</span>` : ''}${r.maker ? `<span>${esc(r.maker)}</span>` : ''}<span class="pill ${k}">${esc(label)}</span>${r.verified ? '<span class="pill good">✓ Checked</span>' : ''}${r.archived ? '<span class="pill warn" title="Archived items can\'t be rung up. Unarchive it in Square if it\'s still in the shop.">Archived in Square</span>' : ''}${r.note ? `<span>${esc(r.note)}</span>` : ''}</div>
+      <div class="meta">${r.sku ? `<span class="tag">SKU ${esc(r.sku)}</span>` : ''}${r.price ? `<span class="tag"${r.newPrice != null && r.newPrice !== r.price ? ' style="text-decoration:line-through;opacity:.7"' : ''}>${money(r.price)}</span>` : ''}${r.newPrice != null && r.newPrice !== r.price ? `<span class="pill info">New price ${money(r.newPrice)}</span>` : ''}${r.maker ? `<span>${esc(r.maker)}</span>` : ''}<span class="pill ${k}">${esc(label)}</span>${r.verified ? '<span class="pill good">✓ Checked</span>' : ''}${r.sticker ? `<span class="pill info">New sticker: ${money(r.price)}</span>` : ''}${r.archived ? '<span class="pill warn" title="Archived items can\'t be rung up. Unarchive it in Square if it\'s still in the shop.">Archived in Square</span>' : ''}${r.note ? `<span>${esc(r.note)}</span>` : ''}</div>
     </div>
     <div class="right">
       <label class="pricebox"><span>New price</span><input type="number" step="0.01" min="0" inputmode="decimal" id="np-${esc(key)}" data-newprice="${esc(key)}" value="${r.newPrice ?? ''}" placeholder="$" aria-label="New price for ${esc(r.name)}"></label>
@@ -865,7 +867,8 @@ async function pushPrices() {
       for (const x of chunk) {
         if (S.square && S.square.byVar[x.var]) S.square.byVar[x.var].price = x.to;
         const d = { ...(S.counts[x.var] || {}) }; delete d.newPrice;
-        saveDoc('counts', x.var, { ...d, price: x.to, priceChangedAt: new Date().toISOString(), priceWas: x.now });
+        delete d.stickerDone;
+        saveDoc('counts', x.var, { ...d, price: x.to, priceChangedAt: new Date().toISOString(), priceWas: x.now, stickerTodo: true });
       }
     }
     S.prv = { state: 'done', done };
@@ -882,7 +885,16 @@ function viewFix(all) {
   const dups = dupGroups();
   const rv = S.review;
   const priced = all.filter(r => r.newPrice != null && r.newPrice !== r.price);
+  const stickers = all.filter(r => r.doc && r.doc.stickerTodo).sort((a, b) => (a.sticker === b.sticker ? a.name.localeCompare(b.name) : a.sticker ? -1 : 1));
+  const stickersLeft = stickers.filter(r => r.sticker).length;
   return `
+    ${stickers.length ? `<div class="card">
+      <div class="card-h"><h2>Price stickers to update</h2><span class="small muted">${stickersLeft ? `${stickersLeft} left` : 'All done'}</span></div>
+      <p class="muted">These prices changed in Square. Put a new sticker on each canvas and tick it off.</p>
+      <div class="table-wrap"><table><thead><tr><th>Done</th><th>Canvas</th><th>SKU</th><th>Where</th><th class="n">Old</th><th class="n">New sticker</th></tr></thead><tbody>
+        ${stickers.map(r => { const spots = r.var ? photoSpots(r.var) : []; return `<tr${r.sticker ? '' : ' style="opacity:.55"'}><td><input type="checkbox" data-stickerdone="${esc(r.coll + ':' + r.id)}" ${r.sticker ? '' : 'checked'} aria-label="Sticker done for ${esc(r.name)}"></td><td>${esc(r.name)}${r.doc.stickerDone ? `<div class="small muted">Done ${new Date(r.doc.stickerDone).toLocaleDateString([], { month: 'short', day: 'numeric' })}</div>` : ''}</td><td>${esc(r.sku)}</td><td>${esc(r.spot || '')}${spots.length ? ` <button class="linkbtn small" type="button" data-goto="${spots[0][0]}-${spots[0][1]}">photo</button>` : ''}</td><td class="n" style="text-decoration:line-through">${r.priceWas != null ? money(r.priceWas) : '—'}</td><td class="n"><b>${money(r.price)}</b></td></tr>`; }).join('')}
+      </tbody></table></div>
+    </div>` : ''}
     <div class="card">
       <div class="card-h"><h2>Price changes</h2><span class="small muted">${priced.length} item${priced.length === 1 ? '' : 's'}</span></div>
       <p class="muted">Type a new price in any item's <b>New price</b> box (on the Count, Photos, Review all or Supplies tabs, or in the lookup). Everything you've marked collects here.</p>
@@ -1043,6 +1055,7 @@ document.addEventListener('click', e => {
   if (t.id === 'priceReview') { startPriceReview(); return; }
   if (t.id === 'priceGo') { pushPrices(); return; }
   if (t.id === 'priceCancel') { S.prv = null; render(); return; }
+  if (t.dataset.stickerdone) { const r = findRow(t.dataset.stickerdone); if (r && r.doc) { const d = { ...r.doc }; if (t.checked) d.stickerDone = new Date().toISOString(); else delete d.stickerDone; saveDoc(r.coll, r.id, d); } return; }
   if (t.dataset.clearprice) { const r = findRow(t.dataset.clearprice); if (r && r.doc) { const d = { ...r.doc }; delete d.newPrice; saveDoc(r.coll, r.id, d); } return; }
   if (t.dataset.supf) { S.supF = t.dataset.supf; render(); return; }
   if (t.dataset.hidetags) { S.ph.hide = !S.ph.hide; render(); return; }
