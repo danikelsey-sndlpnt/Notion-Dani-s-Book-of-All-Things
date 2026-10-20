@@ -83,6 +83,9 @@ header.top .wrap { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-
 .tile strong { font-family: var(--display); font-size: 28px; line-height: 1.05; font-variant-numeric: tabular-nums; }
 .tile.alert strong { color: var(--bad); }
 
+.pricebox { display: grid; gap: 1px; font-size: 11px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+.pricebox input { width: 78px; border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; background: var(--surface); font: 600 14px var(--body); font-variant-numeric: tabular-nums; text-transform: none; letter-spacing: 0; color: var(--ink); }
+.pricebox input:not(:placeholder-shown) { border-color: var(--accent); background: var(--accent-soft); }
 .skufind { margin-top: 16px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; display: grid; gap: 8px; }
 .skubar { display: flex; gap: 8px; align-items: center; }
 .skubar input { flex: 1; min-width: 0; border: 2px solid var(--accent); border-radius: 10px; padding: 9px 12px; background: var(--surface); font-size: 16px; font-weight: 600; letter-spacing: .04em; font-variant-numeric: tabular-nums; }
@@ -390,6 +393,7 @@ function mk(r) {
   const d = r.doc || {};
   r.sku = (r.var && ((S.square && S.square.byVar[r.var] && S.square.byVar[r.var].sku) || SKU_BY_VAR[r.var])) || d.sku || '';
   r.verified = !!d.verified;
+  r.newPrice = d.newPrice != null && d.newPrice !== '' ? Number(d.newPrice) : null;
   r.spot = d.spot || ''; r.count = d.count ?? null; r.confirmed = !!d.confirmed; r.photo = !!d.photo; r.note = d.note || ''; r.maker = d.maker || '';
   if (!r.var) r.status = 'missing';
   else if (r.count != null && !r.confirmed) r.status = 'photo';
@@ -472,12 +476,13 @@ function tile(label, val, sub, alert) {
 const STATUS = {
   ok: ['good', 'Matches Square'], off: ['bad', 'Square is off'], photo: ['info', 'Seen in photo'], todo: ['none', 'Not counted'], missing: ['warn', 'Not in Square'],
 };
-const FILTERS = [['mine', 'My list'], ['photo', 'Seen in photo'], ['off', 'Square is off'], ['missing', 'Not in Square'], ['todo', 'Not counted yet'], ['all', 'Everything']];
+const FILTERS = [['mine', 'My list'], ['photo', 'Seen in photo'], ['off', 'Square is off'], ['missing', 'Not in Square'], ['todo', 'Not counted yet'], ['price', 'Price changes'], ['all', 'Everything']];
 
 function viewCount(all) {
   let list = all;
   const f = S.filter;
   if (f === 'mine') list = list.filter(r => r.doc);
+  else if (f === 'price') list = list.filter(r => r.newPrice != null);
   else if (f !== 'all') list = list.filter(r => r.status === f);
   if (S.square) list = list.filter(r => r.doc || !r.var || !S.square.byVar[r.var] || classify(r.name, r.price, S.square.byVar[r.var].cats, false) === 'canvas');   // supplies live on their own tab
   if (S.spot !== 'all') list = list.filter(r => (r.spot || 'Not placed') === S.spot);
@@ -512,9 +517,10 @@ function rowHtml(r) {
   return `<div class="row">
     <div>
       <div class="name">${esc(r.name)}</div>
-      <div class="meta">${r.sku ? `<span class="tag">SKU ${esc(r.sku)}</span>` : ''}${r.price ? `<span class="tag">${money(r.price)}</span>` : ''}${r.maker ? `<span>${esc(r.maker)}</span>` : ''}<span class="pill ${k}">${esc(label)}</span>${r.verified ? '<span class="pill good">✓ Checked</span>' : ''}${r.note ? `<span>${esc(r.note)}</span>` : ''}</div>
+      <div class="meta">${r.sku ? `<span class="tag">SKU ${esc(r.sku)}</span>` : ''}${r.price ? `<span class="tag"${r.newPrice != null && r.newPrice !== r.price ? ' style="text-decoration:line-through;opacity:.7"' : ''}>${money(r.price)}</span>` : ''}${r.newPrice != null && r.newPrice !== r.price ? `<span class="pill info">New price ${money(r.newPrice)}</span>` : ''}${r.maker ? `<span>${esc(r.maker)}</span>` : ''}<span class="pill ${k}">${esc(label)}</span>${r.verified ? '<span class="pill good">✓ Checked</span>' : ''}${r.note ? `<span>${esc(r.note)}</span>` : ''}</div>
     </div>
     <div class="right">
+      <label class="pricebox"><span>New price</span><input type="number" step="0.01" min="0" inputmode="decimal" id="np-${esc(key)}" data-newprice="${esc(key)}" value="${r.newPrice ?? ''}" placeholder="$" aria-label="New price for ${esc(r.name)}"></label>
       ${r.var ? `<div class="sqq"><span>Square</span><b>${r.sqQty == null ? '—' : r.sqQty}</b>${r.sqLive || r.sqQty == null ? '' : '<span>saved</span>'}</div>` : ''}
       <div class="stepper" aria-label="My count for ${esc(r.name)}">
         <button type="button" data-step="-1" data-key="${esc(key)}" aria-label="One less">−</button>
@@ -678,6 +684,7 @@ function tagPanel(x, total) {
       ${r.status === 'photo' ? `<button class="btn primary" type="button" data-tconfirm="1">Confirm ${r.count}</button>` : ''}
       <button class="btn verify${r.verified ? ' on' : ''}" type="button" data-verify="${esc(t.v)}" data-next="1">${r.verified ? '✓ Checked · undo' : '✓ Matches, next'}</button>
     </div>
+    <label class="pricebox" style="width:max-content"><span>New price</span><input type="number" step="0.01" min="0" inputmode="decimal" id="tnp-${esc(t.v)}" data-newprice="counts:${esc(t.v)}" value="${r.newPrice ?? ''}" placeholder="$" aria-label="New price"></label>
     ${r.note ? `<p class="small muted">${esc(r.note)}</p>` : ''}
     ${linkedNote}
     ${nav}
@@ -722,12 +729,13 @@ function classify(name, price, cats, multi) {
 const lineOpen = new Set();
 
 /* ---------- Review all: every Square listing, to check one by one ---------- */
-const REV_FILTERS = [['todo', 'Not checked'], ['dup', 'Possible duplicates'], ['nophoto', 'In stock, not in a photo'], ['low', 'Square says 0 or less'], ['done', 'Checked ✓'], ['all', 'Everything']];
+const REV_FILTERS = [['todo', 'Not checked'], ['dup', 'Possible duplicates'], ['nophoto', 'In stock, not in a photo'], ['low', 'Square says 0 or less'], ['done', 'Checked ✓'], ['price', 'Price changes'], ['all', 'Everything']];
 function viewReview(all) {
   if (!S.square) return `<div class="empty"><strong>Load Square to review every listing.</strong><span>Every item in Square is listed here so you can check it off against the shop and your photos, with possible duplicates flagged.</span><button class="btn primary" type="button" data-act="load">Load from Square</button></div>`;
   const byVar = {}; for (const r of all) if (r.coll === 'counts') byVar[r.var] = r;
   const info = Object.values(S.square.byVar).map(s => byVar[s.var]).filter(Boolean).map(r => ({ r, d: dupsOf(r.var), spots: photoSpots(r.var), sup: classify(r.name, r.price, S.square.byVar[r.var].cats, false) !== 'canvas' }));
   const test = {
+    price: x => x.r.newPrice != null,
     todo: x => !x.r.verified, dup: x => x.d.length > 0, done: x => x.r.verified, all: () => true,
     nophoto: x => !x.spots.length && x.r.sqQty > 0 && !x.r.verified && !x.sup,
     low: x => x.r.sqQty != null && x.r.sqQty <= 0,
@@ -803,13 +811,82 @@ function viewSupplies(all) {
     ${cards || `<div class="empty">Nothing matches that search.</div>`}`;
 }
 
+function priceReviewHtml(pv) {
+  if (pv.state === 'reading') return `<div class="confirm"><p>Getting Square's current prices…</p></div>`;
+  if (pv.state === 'error') return `<div class="confirm"><p>${esc(pv.msg)}</p><div class="acts"><button class="btn" type="button" id="priceCancel">Back</button></div></div>`;
+  if (pv.state === 'done') return `<div class="confirm"><p><b>Prices updated in Square.</b> ${pv.done} item${pv.done === 1 ? '' : 's'} now ring up at the new price. Remember to change the stickers.</p><div class="acts"><button class="btn" type="button" id="priceCancel">Done</button></div></div>`;
+  const ch = pv.items.filter(i => i.now !== i.to);
+  return `<div class="confirm">
+    <p><b>Change ${ch.length} price${ch.length === 1 ? '' : 's'} in Square?</b> The register and your online store will use the new price right away.</p>
+    <div class="table-wrap"><table><thead><tr><th>Item</th><th class="n">Square now</th><th class="n">Becomes</th></tr></thead><tbody>
+      ${pv.items.map(i => `<tr><td>${esc(i.name)}</td><td class="n">${money(i.now)}</td><td class="n"><b>${i.now === i.to ? 'already ' + money(i.to) : money(i.to)}</b></td></tr>`).join('')}
+    </tbody></table></div>
+    <div class="acts">
+      <button class="btn primary" type="button" id="priceGo" ${ch.length && pv.state !== 'writing' ? '' : 'disabled'}>${pv.state === 'writing' ? 'Updating…' : 'Update prices in Square'}</button>
+      <button class="btn" type="button" id="priceCancel" ${pv.state === 'writing' ? 'disabled' : ''}>Cancel</button>
+    </div>
+  </div>`;
+}
+async function startPriceReview() {
+  if (!mcp) { toast(squareErrorCopy({ code: 'no_mcp' })); return; }
+  const list = rows().filter(r => r.var && r.newPrice != null && r.newPrice !== r.price);
+  S.prv = { state: 'reading' }; render();
+  try {
+    const objs = {};
+    for (let i = 0; i < list.length; i += 500) {
+      const p = await squareCall('catalog', 'batchGetobjects', { object_ids: list.slice(i, i + 500).map(r => r.var), include_related_objects: false });
+      for (const o of p.objects || []) objs[o.id] = o;
+    }
+    const items = list.filter(r => objs[r.var]).map(r => { const o = objs[r.var], vd = o.item_variation_data || {};
+      return { var: r.var, name: r.name, version: o.version, itemId: vd.item_id, now: ((vd.price_money || {}).amount || 0) / 100, to: Math.round(r.newPrice * 100) / 100 }; });
+    S.prv = { state: 'ready', items };
+  } catch (e) { S.prv = { state: 'error', msg: squareErrorCopy(e) }; }
+  render();
+}
+async function pushPrices() {
+  const pv = S.prv; if (!pv || pv.state !== 'ready') return;
+  const ch = pv.items.filter(i => i.now !== i.to);
+  pv.state = 'writing'; render();
+  let done = 0;
+  try {
+    for (let i = 0; i < ch.length; i += 10) {
+      const chunk = ch.slice(i, i + 10);
+      await squareCall('catalog', 'batchUpdateObjects', {
+        sparse_update: true,
+        idempotency_key: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random(),
+        batches: [{ objects: chunk.map(x => ({ type: 'ITEM_VARIATION', id: x.var, version: x.version, item_variation_data: { item_id: x.itemId, pricing_type: 'FIXED_PRICING', price_money: { amount: Math.round(x.to * 100), currency: 'USD' } } })) }],
+      }, true);
+      done += chunk.length;
+      for (const x of chunk) {
+        if (S.square && S.square.byVar[x.var]) S.square.byVar[x.var].price = x.to;
+        const d = { ...(S.counts[x.var] || {}) }; delete d.newPrice;
+        saveDoc('counts', x.var, { ...d, price: x.to, priceChangedAt: new Date().toISOString(), priceWas: x.now });
+      }
+    }
+    S.prv = { state: 'done', done };
+  } catch (e) {
+    S.prv = { state: 'error', msg: (done ? `${done} price${done === 1 ? ' was' : 's were'} updated before Square stopped. ` : '') + squareErrorCopy(e) + ' Press Load from Square to see where things stand before trying again.' };
+  }
+  render();
+}
+
 function viewFix(all) {
   const off = all.filter(r => r.status === 'off');
   const missing = all.filter(r => r.status === 'missing');
   const neg = S.square ? Object.values(S.square.byVar).filter(s => s.qty != null && s.qty < 0).sort((a, b) => a.qty - b.qty) : null;
   const dups = dupGroups();
   const rv = S.review;
+  const priced = all.filter(r => r.newPrice != null && r.newPrice !== r.price);
   return `
+    <div class="card">
+      <div class="card-h"><h2>Price changes</h2><span class="small muted">${priced.length} item${priced.length === 1 ? '' : 's'}</span></div>
+      <p class="muted">Type a new price in any item's <b>New price</b> box (on the Count, Photos, Review all or Supplies tabs, or in the lookup). Everything you've marked collects here.</p>
+      ${!priced.length ? `<div class="empty">No price changes yet.</div>` : S.prv ? priceReviewHtml(S.prv) : `
+        <div class="table-wrap"><table><thead><tr><th>Item</th><th>SKU</th><th class="n">Now</th><th class="n">New</th><th></th></tr></thead><tbody>
+          ${priced.map(r => `<tr><td>${esc(r.name)}${r.var ? '' : ' <span class="pill warn">Not in Square</span>'}</td><td>${esc(r.sku)}</td><td class="n">${r.price ? money(r.price) : '—'}</td><td class="n"><b>${money(r.newPrice)}</b></td><td class="n"><button class="linkbtn small" type="button" data-clearprice="${esc(r.coll + ':' + r.id)}">Remove</button></td></tr>`).join('')}
+        </tbody></table></div>
+        <div class="bar"><button class="btn primary" type="button" id="priceReview" ${priced.some(r => r.var) ? '' : 'disabled'}>Review price update</button><span class="small muted">You'll see Square's current prices before anything changes. Items not in Square need to be added there first.</span></div>`}
+    </div>
     <div class="card">
       <div class="card-h"><h2>Square is off</h2><span class="small muted">${off.length} item${off.length === 1 ? '' : 's'}</span></div>
       <p class="muted">These are canvases you counted where Square shows a different number. Updating sets Square's stock to your count as a physical count, the same as doing a stock count in the Square app.</p>
@@ -958,6 +1035,10 @@ document.addEventListener('click', e => {
   if (t.dataset.notdup) { const [a, b] = t.dataset.notdup.split('|'); markNotDup(a, b); toast('Marked as different canvases.'); return; }
   if (t.dataset.look) { S.sku = t.dataset.look; $('#skuQ').value = S.sku; render(); document.querySelector('.skufind').scrollIntoView({ block: 'start', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }); return; }
   if (t.dataset.opensup) { S.tab = 'supplies'; S.supQ = t.dataset.opensup; render(); return; }
+  if (t.id === 'priceReview') { startPriceReview(); return; }
+  if (t.id === 'priceGo') { pushPrices(); return; }
+  if (t.id === 'priceCancel') { S.prv = null; render(); return; }
+  if (t.dataset.clearprice) { const r = findRow(t.dataset.clearprice); if (r && r.doc) { const d = { ...r.doc }; delete d.newPrice; saveDoc(r.coll, r.id, d); } return; }
   if (t.dataset.supf) { S.supF = t.dataset.supf; render(); return; }
   if (t.dataset.hidetags) { S.ph.hide = !S.ph.hide; render(); return; }
   if (t.dataset.tagnav) { S.ph.sel = Math.max(0, Math.min(PHOTOS[S.ph.i].tags.length - 1, S.ph.sel + Number(t.dataset.tagnav))); render(); return; }
@@ -998,6 +1079,14 @@ document.addEventListener('input', e => {
 document.addEventListener('change', e => {
   const t = e.target;
   if (t.id === 'spot') { S.spot = t.value; pref.set('spot', S.spot); render(); }
+  else if (t.dataset.newprice) {
+    const r = findRow(t.dataset.newprice); if (!r) return;
+    const d = { ...(r.doc || { name: r.name, price: r.price || 0, sq: r.sqQty }) };
+    const v = t.value === '' ? null : Math.round(Number(t.value) * 100) / 100;
+    if (v == null || isNaN(v)) delete d.newPrice; else d.newPrice = v;
+    saveDoc(r.coll, r.id, d);
+    if (v != null && !isNaN(v)) toast(`New price ${money(v)} saved. It's on the Fix in Square tab under Price changes.`);
+  }
   else if (t.dataset.tagnote) { const id = t.dataset.tagnote; saveDoc('links', id, { ...(S.links[id] || {}), note: t.value.slice(0, 300) }); }
   else if (t.dataset.tcount) countTag(t.value === '' ? null : Number(t.value));
   else if (t.matches('.stepper input')) setCount(t.dataset.key, t.value === '' ? null : Number(t.value));
@@ -1107,8 +1196,8 @@ function manualAdd() {
 async function exportCsv() {
   const all = rows().filter(r => r.doc);
   const q = v => '"' + String(v ?? '').replace(/"/g, '""') + '"';
-  const lines = [['Canvas', 'Designer', 'Spot', 'Price', 'My count', 'Square count', 'Status', 'Note'].join(',')]
-    .concat(all.map(r => [r.name, r.maker, r.spot, r.price || '', r.count ?? '', r.sqQty ?? '', STATUS[r.status][1], r.note].map(q).join(',')));
+  const lines = [['Canvas', 'Designer', 'Spot', 'Price', 'New price', 'My count', 'Square count', 'Status', 'Note'].join(',')]
+    .concat(all.map(r => [r.name, r.maker, r.spot, r.price || '', r.newPrice ?? '', r.count ?? '', r.sqQty ?? '', STATUS[r.status][1], r.note].map(q).join(',')));
   const data = lines.join('\n');
   if (downloads) {
     try { await downloads.save({ filename: `canvas-count-${new Date().toISOString().slice(0, 10)}.csv`, data }); toast('Saved.'); return; }
