@@ -334,7 +334,7 @@ async function loadSquare() {
   try {
     const items = []; let cursor = '';
     for (let i = 0; i < 25; i++) {
-      const p = await squareCall('catalog', 'searchItems', cursor ? { limit: 100, cursor } : { limit: 100 });
+      const p = await squareCall('catalog', 'searchItems', cursor ? { limit: 100, cursor, archived_state: 'ARCHIVED_STATE_ALL' } : { limit: 100, archived_state: 'ARCHIVED_STATE_ALL' });
       items.push(...(p.items || []));
       setSq('Loading…', `Read ${items.length} items…`, 'info');
       cursor = p.cursor; if (!cursor) break;
@@ -348,7 +348,6 @@ async function loadSquare() {
     const byVar = {}, lines = []; let threadItems = 0;
     for (const it of items) {
       const d = it.item_data || {}; const vars = d.variations || [];
-      if (d.is_archived) continue;
       const cats = (d.categories || []).map(c => c.id).concat(d.reporting_category ? [d.reporting_category.id] : []);
       if (vars.length !== 1) {   // thread colors and multi-size items: kept as lines, not counted on the Count tab
         threadItems++;
@@ -357,7 +356,7 @@ async function loadSquare() {
         continue;
       }
       const v = vars[0], vd = v.item_variation_data || {};
-      byVar[v.id] = { var: v.id, item: it.id, name: (d.name || '').trim(), price: ((vd.price_money || {}).amount || 0) / 100, cats,
+      byVar[v.id] = { var: v.id, item: it.id, name: (d.name || '').trim(), price: ((vd.price_money || {}).amount || 0) / 100, cats, archived: !!d.is_archived,
         sku: vd.sku || '', qty: v.id in qty ? qty[v.id] : null, track: vd.track_inventory !== false, desc: (d.description_plaintext || '').slice(0, 80) };
     }
     S.square = { byVar, lines, loadedAt: new Date(), threadItems, dups: buildDups(byVar) };
@@ -393,6 +392,7 @@ function mk(r) {
   const d = r.doc || {};
   r.sku = (r.var && ((S.square && S.square.byVar[r.var] && S.square.byVar[r.var].sku) || SKU_BY_VAR[r.var])) || d.sku || '';
   r.verified = !!d.verified;
+  r.archived = !!(r.var && S.square && S.square.byVar[r.var] && S.square.byVar[r.var].archived);
   r.newPrice = d.newPrice != null && d.newPrice !== '' ? Number(d.newPrice) : null;
   r.spot = d.spot || ''; r.count = d.count ?? null; r.confirmed = !!d.confirmed; r.photo = !!d.photo; r.note = d.note || ''; r.maker = d.maker || '';
   if (!r.var) r.status = 'missing';
@@ -412,7 +412,7 @@ function stats(all) {
     photo: all.filter(r => r.status === 'photo').length,
     off: all.filter(r => r.status === 'off').length,
     missing: all.filter(r => r.status === 'missing').length,
-    neg: S.square ? Object.values(S.square.byVar).filter(s => s.qty != null && s.qty < 0).length : null,
+    neg: S.square ? Object.values(S.square.byVar).filter(s => !s.archived && s.qty != null && s.qty < 0).length : null,
   };
 }
 /* Possible duplicate listings: names that share all their meaningful words ("1st" = "first"), similar price, same mesh. */
@@ -420,7 +420,7 @@ const DUP_STOP = new Set('canvas canvases printed needlepoint needle point kcn d
 const dupTokens = name => String(name || '').toLowerCase().replace(/[’']/g, '').replace(/\b1st\b/g, 'first').replace(/&/g, ' and ').replace(/\bi-(\d+)/g, 'interstate $1').replace(/[^a-z0-9]+/g, ' ').split(' ').filter(w => w && !DUP_STOP.has(w));
 const meshOf = n => (String(n).match(/\b(13|14|18)\b/) || [])[1] || '';
 function buildDups(byVar) {
-  const L = Object.values(byVar).map(s => ({ s, t: new Set(dupTokens(s.name)), m: meshOf(s.name) })), out = {};
+  const L = Object.values(byVar).filter(s => !s.archived).map(s => ({ s, t: new Set(dupTokens(s.name)), m: meshOf(s.name) })), out = {};
   for (let i = 0; i < L.length; i++) for (let j = i + 1; j < L.length; j++) {
     const a = L[i], b = L[j];
     if (!a.t.size || !b.t.size || (a.m && b.m && a.m !== b.m)) continue;
@@ -484,6 +484,7 @@ function viewCount(all) {
   if (f === 'mine') list = list.filter(r => r.doc);
   else if (f === 'price') list = list.filter(r => r.newPrice != null);
   else if (f !== 'all') list = list.filter(r => r.status === f);
+  if (S.square) list = list.filter(r => !(r.archived && !r.doc));
   if (S.square) list = list.filter(r => r.doc || !r.var || !S.square.byVar[r.var] || classify(r.name, r.price, S.square.byVar[r.var].cats, false) === 'canvas');   // supplies live on their own tab
   if (S.spot !== 'all') list = list.filter(r => (r.spot || 'Not placed') === S.spot);
   if (S.q) { const q = norm(S.q); list = list.filter(r => norm(r.name + ' ' + r.maker + ' ' + r.sku).includes(q)); }
@@ -517,7 +518,7 @@ function rowHtml(r) {
   return `<div class="row">
     <div>
       <div class="name">${esc(r.name)}</div>
-      <div class="meta">${r.sku ? `<span class="tag">SKU ${esc(r.sku)}</span>` : ''}${r.price ? `<span class="tag"${r.newPrice != null && r.newPrice !== r.price ? ' style="text-decoration:line-through;opacity:.7"' : ''}>${money(r.price)}</span>` : ''}${r.newPrice != null && r.newPrice !== r.price ? `<span class="pill info">New price ${money(r.newPrice)}</span>` : ''}${r.maker ? `<span>${esc(r.maker)}</span>` : ''}<span class="pill ${k}">${esc(label)}</span>${r.verified ? '<span class="pill good">✓ Checked</span>' : ''}${r.note ? `<span>${esc(r.note)}</span>` : ''}</div>
+      <div class="meta">${r.sku ? `<span class="tag">SKU ${esc(r.sku)}</span>` : ''}${r.price ? `<span class="tag"${r.newPrice != null && r.newPrice !== r.price ? ' style="text-decoration:line-through;opacity:.7"' : ''}>${money(r.price)}</span>` : ''}${r.newPrice != null && r.newPrice !== r.price ? `<span class="pill info">New price ${money(r.newPrice)}</span>` : ''}${r.maker ? `<span>${esc(r.maker)}</span>` : ''}<span class="pill ${k}">${esc(label)}</span>${r.verified ? '<span class="pill good">✓ Checked</span>' : ''}${r.archived ? '<span class="pill warn" title="Archived items can\'t be rung up. Unarchive it in Square if it\'s still in the shop.">Archived in Square</span>' : ''}${r.note ? `<span>${esc(r.note)}</span>` : ''}</div>
     </div>
     <div class="right">
       <label class="pricebox"><span>New price</span><input type="number" step="0.01" min="0" inputmode="decimal" id="np-${esc(key)}" data-newprice="${esc(key)}" value="${r.newPrice ?? ''}" placeholder="$" aria-label="New price for ${esc(r.name)}"></label>
@@ -729,22 +730,25 @@ function classify(name, price, cats, multi) {
 const lineOpen = new Set();
 
 /* ---------- Review all: every Square listing, to check one by one ---------- */
-const REV_FILTERS = [['todo', 'Not checked'], ['dup', 'Possible duplicates'], ['nophoto', 'In stock, not in a photo'], ['low', 'Square says 0 or less'], ['done', 'Checked ✓'], ['price', 'Price changes'], ['all', 'Everything']];
+const REV_FILTERS = [['todo', 'Not checked'], ['dup', 'Possible duplicates'], ['nophoto', 'In stock, not in a photo'], ['low', 'Square says 0 or less'], ['done', 'Checked ✓'], ['price', 'Price changes'], ['archived', 'Archived in Square'], ['all', 'Everything']];
 function viewReview(all) {
   if (!S.square) return `<div class="empty"><strong>Load Square to review every listing.</strong><span>Every item in Square is listed here so you can check it off against the shop and your photos, with possible duplicates flagged.</span><button class="btn primary" type="button" data-act="load">Load from Square</button></div>`;
   const byVar = {}; for (const r of all) if (r.coll === 'counts') byVar[r.var] = r;
   const info = Object.values(S.square.byVar).map(s => byVar[s.var]).filter(Boolean).map(r => ({ r, d: dupsOf(r.var), spots: photoSpots(r.var), sup: classify(r.name, r.price, S.square.byVar[r.var].cats, false) !== 'canvas' }));
-  const test = {
+  const base = {
     price: x => x.r.newPrice != null,
     todo: x => !x.r.verified, dup: x => x.d.length > 0, done: x => x.r.verified, all: () => true,
     nophoto: x => !x.spots.length && x.r.sqQty > 0 && !x.r.verified && !x.sup,
     low: x => x.r.sqQty != null && x.r.sqQty <= 0,
   };
+  const test = { archived: x => x.r.archived };
+  for (const [key, fn] of Object.entries(base)) test[key] = x => !x.r.archived && fn(x);
   const f = S.revF || 'todo', words = norm(S.revQ || '').split(' ').filter(Boolean), k = skuNorm(S.revQ || '');
   let list = info.filter(test[f]);
   if (words.length || k) list = list.filter(x => (words.length && words.every(w => norm(x.r.name).includes(w))) || (k.length >= 3 && skuNorm(x.r.sku).includes(k)));
   list.sort((a, b) => a.r.name.localeCompare(b.r.name));
-  const done = info.filter(x => x.r.verified).length, total = info.length, shown = S.revN || 100;
+  const active = info.filter(x => !x.r.archived);
+  const done = active.filter(x => x.r.verified).length, total = active.length, shown = S.revN || 100;
   const lines = (S.square.lines || []).filter(L => (!words.length || words.every(w => norm(L.name).includes(w))) && f === 'all');
   return `
     <div class="card" style="margin-bottom:14px">
@@ -756,6 +760,7 @@ function viewReview(all) {
       <input type="search" id="revq" placeholder="Filter by name or SKU" value="${esc(S.revQ || '')}" aria-label="Filter">
     </div>
     <div class="chips" role="group" aria-label="Show" style="margin-bottom:12px">${REV_FILTERS.map(([key, l]) => `<button class="chip" type="button" data-revf="${key}" aria-pressed="${f === key}">${l} <span class="num">${info.filter(test[key]).length}</span></button>`).join('')}</div>
+    ${f === 'archived' ? `<p class="small muted" style="margin-bottom:10px">Archived items don't show at the register, so they can't be rung up. Most of these were archived on Oct 16–17, many as duplicates. If a canvas is still in the shop and has no other listing, unarchive it in Square (Items → filter by Archived → Unarchive). Watch for ones that still show stock.</p>` : ''}
     ${f === 'nophoto' ? `<p class="small muted" style="margin-bottom:10px">Square says these are in stock, but they aren't in any of your photos. Find each one in the shop or back stock, or set it to 0 if it's gone.</p>` : ''}
     ${!list.length && !lines.length ? `<div class="empty">Nothing here${f === 'todo' ? '. Every listing is checked!' : '.'}</div>` : ''}
     <div class="list">${list.slice(0, shown).map(x => rowHtml(x.r) + reviewHints(x)).join('')}</div>
@@ -779,7 +784,7 @@ function viewSupplies(all) {
   const q = norm(S.supQ || ''), k = skuNorm(S.supQ || ''), f = S.supF || 'all';
   const keep = s => (!q || norm(s.name).includes(q) || (k.length >= 2 && skuNorm(s.sku).includes(k))) && (f === 'all' || (f === 'neg' ? s.qty != null && s.qty < 0 : (s.qty == null || s.qty === 0)));
   const G = {}; for (const [g] of SUP_GROUPS) G[g] = { items: [], lines: [] };
-  for (const s of Object.values(S.square.byVar)) { const g = classify(s.name, s.price, s.cats, false); if (g !== 'canvas') G[g].items.push(s); }
+  for (const s of Object.values(S.square.byVar)) { if (s.archived) continue; const g = classify(s.name, s.price, s.cats, false); if (g !== 'canvas') G[g].items.push(s); }
   for (const L of S.square.lines || []) { const g = classify(L.name, L.vars[0] ? L.vars[0].price : 0, L.cats, true); if (g !== 'canvas') G[g].lines.push(L); }
   const units = arr => arr.reduce((a, x) => a + (x.qty > 0 ? x.qty : 0), 0);
   const value = arr => arr.reduce((a, x) => a + (x.qty > 0 ? x.qty * x.price : 0), 0);
@@ -873,7 +878,7 @@ async function pushPrices() {
 function viewFix(all) {
   const off = all.filter(r => r.status === 'off');
   const missing = all.filter(r => r.status === 'missing');
-  const neg = S.square ? Object.values(S.square.byVar).filter(s => s.qty != null && s.qty < 0).sort((a, b) => a.qty - b.qty) : null;
+  const neg = S.square ? Object.values(S.square.byVar).filter(s => !s.archived && s.qty != null && s.qty < 0).sort((a, b) => a.qty - b.qty) : null;
   const dups = dupGroups();
   const rv = S.review;
   const priced = all.filter(r => r.newPrice != null && r.newPrice !== r.price);
@@ -1234,7 +1239,7 @@ render();
       const snap = await (await fetch('catalog.json')).json();
       if (!S.square) {   // a live load may have finished meanwhile
         const byVar = {};
-        for (const [v, item, name, sku, price, qty, cats] of snap.items) byVar[v] = { var: v, item, name, sku, price, qty, cats, track: true, desc: '' };
+        for (const [v, item, name, sku, price, qty, cats, arch] of snap.items) byVar[v] = { var: v, item, name, sku, price, qty, cats, archived: !!arch, track: true, desc: '' };
         const lines = snap.lines.map(([item, name, cats, vars]) => ({ item, name, cats, vars: vars.map(([v, n, sku, price, qty]) => ({ var: v, name: n, sku, price, qty })) }));
         S.square = { byVar, lines, loadedAt: new Date(snap.asOf + 'T12:00:00'), threadItems: lines.length, dups: buildDups(byVar), snapshot: true };
         const when = S.square.loadedAt.toLocaleDateString([], { month: 'short', day: 'numeric' });
