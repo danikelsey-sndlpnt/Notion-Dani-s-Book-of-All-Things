@@ -267,10 +267,18 @@ function skuResults(all) {
   // Canvases tagged in a photo but not in Square yet (and not linked)
   const tagHits = [];
   PHOTOS.forEach((p, i) => p.tags.forEach((t, j) => { if (!t.v && !(S.links[`p${i}-t${j}`] || {}).v && byWords(norm(t.l))) tagHits.push([i, j, t.l]); }));
-  if (!hits.length && !tagHits.length) return `<p class="small muted">Nothing matches "${esc(raw)}"${S.square ? '.' : '. Press Load from Square to search everything in Square.'}</p>`;
+  // Thread colors and other multi-variation items
+  const lineHits = [];
+  if (S.square) for (const L of S.square.lines || []) for (const v of L.vars) {
+    const hit = v.sku && skuNorm(v.sku) === q ? 3 : (q.length >= 3 && v.sku && skuNorm(v.sku).includes(q)) ? 2 : byWords(norm(L.name + ' ' + v.name)) ? 1 : 0;
+    if (hit) lineHits.push({ L, v, hit });
+  }
+  lineHits.sort((a, b) => b.hit - a.hit || a.L.name.localeCompare(b.L.name) || a.v.name.localeCompare(b.v.name));
+  if (!hits.length && !tagHits.length && !lineHits.length) return `<p class="small muted">Nothing matches "${esc(raw)}"${S.square ? '.' : '. Press Load from Square to search everything in Square.'}</p>`;
   const more = exact.length + near.length + named.length > 25 ? ' Showing the first 25; add another word to narrow it down.' : '';
-  return `<p class="small muted">${exact.length ? 'Found the SKU.' : hits.length ? `${Math.min(25, exact.length + near.length + named.length)} match${hits.length === 1 ? '' : 'es'}.` : ''}${more}</p>
+  return `<p class="small muted">${exact.length || (lineHits[0] && lineHits[0].hit === 3) ? 'Found the SKU.' : hits.length ? `${Math.min(25, exact.length + near.length + named.length)} match${hits.length === 1 ? '' : 'es'}.` : ''}${more}</p>
     ${hits.length ? `<div class="list">${hits.map(r => rowHtml(r) + locsHtml(r)).join('')}</div>` : ''}
+    ${lineHits.length ? `<p class="small muted" style="margin-top:8px">Thread colors &amp; sizes${lineHits.length > 15 ? ` (first 15 of ${lineHits.length})` : ''}:</p><div class="table-wrap"><table><thead><tr><th>Item</th><th>Color / size</th><th>SKU</th><th class="n">Price</th><th class="n">Square</th><th></th></tr></thead><tbody>${lineHits.slice(0, 15).map(({ L, v }) => `<tr><td>${esc(L.name)}</td><td>${esc(v.name)}</td><td>${esc(v.sku)}</td><td class="n">${money(v.price)}</td><td class="n" ${v.qty != null && v.qty <= 0 ? 'style="color:var(--bad);font-weight:700"' : ''}>${v.qty ?? '—'}</td><td class="n"><button class="linkbtn small" type="button" data-opensup="${esc(L.name)}">Open</button></td></tr>`).join('')}</tbody></table></div>` : ''}
     ${tagHits.length ? `<p class="small muted" style="margin-top:8px">In your photos, not in Square:</p><div class="locs" style="margin-left:0">${tagHits.slice(0, 12).map(([i, j, l]) => `<button class="btn small" type="button" data-goto="${i}-${j}">${esc(l)} · photo ${i + 1}, #${j + 1}</button>`).join('')}</div>` : ''}`;
 }
 
@@ -351,7 +359,7 @@ async function loadSquare() {
     }
     S.square = { byVar, lines, loadedAt: new Date(), threadItems, dups: buildDups(byVar) };
     S.sqState = 'ready';
-    setSq('Square loaded', `${Object.keys(byVar).length} items, as of ${S.square.loadedAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}. Thread colors are left out.`, 'good');
+    setSq('Square loaded', `${Object.keys(byVar).length} items, plus ${lines.reduce((a, L) => a + L.vars.length, 0)} thread colors and sizes, live as of ${S.square.loadedAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.`, 'good');
   } catch (e) {
     S.sqState = 'error'; setSq('Square not loaded', squareErrorCopy(e), 'bad');
   }
@@ -371,11 +379,11 @@ function rows() {
   const seen = new Set();
   for (const [id, c] of Object.entries(S.counts)) {
     const s = sqv[id];
-    out.push(mk({ id, coll: 'counts', var: id, name: s ? s.name : c.name, price: s ? s.price : c.price, sqQty: s ? s.qty : c.sq, sqLive: !!s, doc: c }));
+    out.push(mk({ id, coll: 'counts', var: id, name: s ? s.name : c.name, price: s ? s.price : c.price, sqQty: s ? s.qty : c.sq, sqLive: !!s && !S.square.snapshot, doc: c }));
     seen.add(id);
   }
   for (const [id, x] of Object.entries(S.extras)) out.push(mk({ id, coll: 'extras', var: null, name: x.name, price: x.price, sqQty: null, doc: x }));
-  for (const [id, s] of Object.entries(sqv)) if (!seen.has(id)) out.push(mk({ id, coll: 'counts', var: id, name: s.name, price: s.price, sqQty: s.qty, sqLive: true, doc: null }));
+  for (const [id, s] of Object.entries(sqv)) if (!seen.has(id)) out.push(mk({ id, coll: 'counts', var: id, name: s.name, price: s.price, sqQty: s.qty, sqLive: !S.square.snapshot, doc: null }));
   return out;
 }
 function mk(r) {
@@ -1132,6 +1140,19 @@ render();
     S.dbReady = true; render();
   }
   if (sample) { try { const lim = await sample.limits(); if (!lim.images) sample = null; } catch (e) { sample = null; } render(); }
-  if (!mcp) setSq('Square not loaded', 'Square can be reached when this page is open on claude.ai.', 'none');
+  if (!S.square) {
+    try {
+      const snap = await (await fetch('catalog.json')).json();
+      if (!S.square) {   // a live load may have finished meanwhile
+        const byVar = {};
+        for (const [v, item, name, sku, price, qty, cats] of snap.items) byVar[v] = { var: v, item, name, sku, price, qty, cats, track: true, desc: '' };
+        const lines = snap.lines.map(([item, name, cats, vars]) => ({ item, name, cats, vars: vars.map(([v, n, sku, price, qty]) => ({ var: v, name: n, sku, price, qty })) }));
+        S.square = { byVar, lines, loadedAt: new Date(snap.asOf + 'T12:00:00'), threadItems: lines.length, dups: buildDups(byVar), snapshot: true };
+        const when = S.square.loadedAt.toLocaleDateString([], { month: 'short', day: 'numeric' });
+        setSq('Saved copy', `Everything in Square as of ${when}. ${mcp ? 'Press Load from Square for live numbers.' : 'Live numbers work when this page is open on claude.ai.'}`, 'info');
+        render();
+      }
+    } catch (e) { if (!mcp) setSq('Square not loaded', 'Square can be reached when this page is open on claude.ai.', 'none'); }
+  }
 })();
 </script>
