@@ -46,6 +46,7 @@
   --shadow: 0 1px 2px rgba(0,0,0,.3), 0 4px 16px rgba(0,0,0,.25);
 }
 * { box-sizing: border-box; }
+.ph, .skufind, .tilepanel { scroll-margin-top: 76px; }
 [hidden] { display: none !important; }
 body { background: var(--bg); color: var(--ink); font: 15px/1.5 var(--body);
   padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 0 56px; }
@@ -251,6 +252,7 @@ td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; white-space:
       <input id="skuQ" type="search" placeholder="SKU or keywords, like 762765K or moon charm" autocomplete="off" autocapitalize="characters" spellcheck="false" enterkeyhint="search">
       <button class="btn small" id="skuClear" type="button">Clear</button>
     </div>
+    <p class="small muted" style="margin-top:-2px">Type a SKU and you'll jump to it on the wall photo. For a name, press Search or Enter to go to the first one on a wall.</p>
     <div id="skuRes"></div>
   </section>
   <section class="tiles" id="tiles" aria-label="Summary"></section>
@@ -734,6 +736,22 @@ function doLink(v) {
   toast(`Linked to ${c.n} in Square. Check the count and press Confirm.`);
 }
 
+/* Searching a SKU that's tagged in a wall photo jumps straight to that tag. Enter jumps to the first match that's on a wall. */
+function jumpToWall(raw, force) {
+  const q = skuNorm(raw); if (q.length < 3) return false;
+  const all = rows().filter(r => r.var);
+  let r = all.find(r => r.sku && skuNorm(r.sku) === q && photoSpots(r.var).length);
+  if (!r && force) {
+    const words = norm(raw).split(' ').filter(Boolean);
+    r = all.filter(r => (r.sku && skuNorm(r.sku).includes(q)) || (words.length && words.every(w => norm(r.name).includes(w)))).sort((a, b) => a.name.localeCompare(b.name)).find(r => photoSpots(r.var).length);
+  }
+  if (!r) { if (force) toast('That one isn\'t in any wall photo yet.'); return false; }
+  const [i, j] = photoSpots(r.var)[0], n = photoSpots(r.var).length;
+  S.tab = 'photos'; pref.set('tab2', 'photos'); S.ph = { i, sel: j, hide: S.ph.hide }; pref.set('ph', i); S.jumped = q; render();
+  const ph = document.querySelector('.ph'); if (ph) ph.scrollIntoView({ block: 'start' });
+  toast(`${r.name} is on ${PHOTOS[i].title}, tag #${j + 1}.${n > 1 ? ` It's in ${n} photos.` : ''} Tap Home to search again.`);
+  return true;
+}
 function photoSpots(v) {
   const out = [];
   PHOTOS.forEach((p, i) => p.tags.forEach((t, j) => { const L = S.links[`p${i}-t${j}`]; if (t.v === v || (!t.v && L && L.v === v)) out.push([i, j]); }));
@@ -1243,11 +1261,14 @@ document.addEventListener('toggle', e => {
 document.addEventListener('input', e => {
   const t = e.target;
   if (t.id === 'q') { S.q = t.value; render(); }
-  if (t.id === 'skuQ') { S.sku = t.value; render(); }
+  if (t.id === 'skuQ') { S.sku = t.value; const q = skuNorm(t.value); if (q !== S.jumped && jumpToWall(t.value, false)) return; render(); }
   if (t.id === 'supq') { S.supQ = t.value; render(); }
   if (t.id === 'revq') { S.revQ = t.value; S.revN = 100; render(); }
   if (t.id === 'arq') { S.arQ = t.value; S.arN = 60; render(); }
   if (t.dataset.linkq && S.linking) { S.linking.q = t.value; render(); }
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && e.target.id === 'skuQ') { e.preventDefault(); jumpToWall(e.target.value, true); }
 });
 document.addEventListener('change', e => {
   const t = e.target;
