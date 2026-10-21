@@ -1,3 +1,4 @@
+<meta charset="utf-8">
 <title>Canvas Count</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -45,6 +46,7 @@
   --shadow: 0 1px 2px rgba(0,0,0,.3), 0 4px 16px rgba(0,0,0,.25);
 }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 body { background: var(--bg); color: var(--ink); font: 15px/1.5 var(--body);
   padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 0 56px; }
 .wrap { max-width: 1080px; margin: 0 auto; }
@@ -98,10 +100,36 @@ header.top .wrap { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-
 .linkpick { display: grid; gap: 2px; text-align: left; border: 1px solid var(--line); background: var(--surface); border-radius: 10px; padding: 8px 10px; cursor: pointer; }
 .linkpick:hover { border-color: var(--accent); }
 #skuRes .list { gap: 6px; }
-nav.tabs { display: flex; gap: 4px; overflow-x: auto; margin: 22px 0 16px; border-bottom: 1px solid var(--line); scrollbar-width: none; }
-nav.tabs button { border: 0; background: none; padding: 10px 14px; cursor: pointer; font-weight: 600; color: var(--muted); border-bottom: 3px solid transparent; margin-bottom: -1px; white-space: nowrap; }
-nav.tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
-nav.tabs .count { display: inline-block; min-width: 20px; padding: 0 6px; margin-left: 4px; border-radius: 999px; background: var(--bad-soft); color: var(--bad); font-size: 12px; }
+nav.tabs { position: sticky; top: 0; z-index: 10; display: flex; gap: 8px; overflow-x: auto; margin: 0 calc(-1 * max(16px, env(safe-area-inset-left, 0px))) 16px; padding: 10px max(16px, env(safe-area-inset-left, 0px)); background: var(--bg); border-bottom: 1px solid var(--line); scrollbar-width: none; }
+nav.tabs::-webkit-scrollbar { display: none; }
+nav.tabs button { flex: none; min-height: 44px; border: 1px solid var(--line); background: var(--surface); padding: 8px 16px; border-radius: 999px; cursor: pointer; font-weight: 600; font-size: 15px; color: var(--ink-2); white-space: nowrap; box-shadow: var(--shadow); }
+nav.tabs button:hover { border-color: var(--accent); color: var(--accent); }
+nav.tabs button:active { transform: scale(.97); }
+nav.tabs button[aria-selected="true"] { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+nav.tabs .count { display: inline-block; min-width: 20px; padding: 0 6px; margin-left: 6px; border-radius: 999px; background: var(--bad-soft); color: var(--bad); font-size: 12px; }
+nav.tabs button[aria-selected="true"] .count { background: var(--on-accent); color: var(--accent); }
+@media (prefers-reduced-motion: reduce) { nav.tabs button:active { transform: none; } }
+.home-h { margin: 6px 2px 14px; display: grid; gap: 4px; }
+.hgrid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); }
+.hcard { display: grid; gap: 6px; text-align: left; background: var(--surface); border: 1px solid var(--line); border-left: 6px solid var(--accent); border-radius: 14px; padding: 16px 18px; cursor: pointer; box-shadow: var(--shadow); min-height: 108px; }
+.hcard:hover { border-color: var(--accent); }
+.hcard:active { transform: scale(.98); }
+@media (prefers-reduced-motion: reduce) { .hcard:active { transform: none; } }
+.hcard .ht { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-family: var(--display); font-size: 20px; font-weight: 700; }
+.hcard .hb { min-width: 30px; padding: 2px 10px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font: 700 14px var(--body); text-align: center; font-variant-numeric: tabular-nums; }
+.hcard .hb.bad { background: var(--bad-soft); color: var(--bad); }
+.hcard .hb.ok { background: var(--good-soft); color: var(--good); }
+.hcard p { color: var(--ink-2); font-size: 14px; }
+details.fold { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); }
+details.fold + details.fold { margin-top: 12px; }
+details.fold > summary { list-style: none; display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 14px 16px; min-height: 56px; cursor: pointer; }
+details.fold > summary::-webkit-details-marker { display: none; }
+details.fold > summary h2 { font-size: 18px; }
+details.fold > summary::after { content: '▾'; color: var(--muted); font-size: 18px; transition: transform .15s; }
+details.fold[open] > summary::after { transform: rotate(180deg); }
+@media (prefers-reduced-motion: reduce) { details.fold > summary::after { transition: none; } }
+details.fold > summary .sum-r { margin-left: auto; }
+details.fold > .fbody { padding: 0 16px 16px; display: grid; gap: 10px; }
 
 .bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
 .bar input[type=search], .bar select, .field input, .field select { border: 1px solid var(--line); background: var(--surface); border-radius: 10px; padding: 8px 10px; min-width: 0; }
@@ -201,8 +229,17 @@ td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; white-space:
 </header>
 
 <main class="wrap">
-  <section class="tiles" id="tiles" aria-label="Summary"></section>
-  <section class="skufind" aria-label="Look up a SKU or name">
+  <nav class="tabs" role="tablist" aria-label="Sections" id="tabs">
+    <button role="tab" data-tab="home" type="button">Home</button>
+    <button role="tab" data-tab="count" type="button">Count</button>
+    <button role="tab" data-tab="photos" type="button">Wall photos</button>
+    <button role="tab" data-tab="fix" type="button">To-do</button>
+    <button role="tab" data-tab="archive" type="button">Archived &amp; sold</button>
+    <button role="tab" data-tab="supplies" type="button">Supplies</button>
+    <button role="tab" data-tab="review" type="button">Check listings</button>
+    <button role="tab" data-tab="add" type="button">Add from photo</button>
+  </nav>
+  <section class="skufind" id="lookup" aria-label="Look up a SKU or name">
     <label class="label" for="skuQ">Look up a SKU or name</label>
     <div class="skubar">
       <input id="skuQ" type="search" placeholder="SKU or keywords, like 762765K or moon charm" autocomplete="off" autocapitalize="characters" spellcheck="false" enterkeyhint="search">
@@ -210,14 +247,7 @@ td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; white-space:
     </div>
     <div id="skuRes"></div>
   </section>
-  <nav class="tabs" role="tablist" aria-label="Sections" id="tabs">
-    <button role="tab" data-tab="count" type="button">Count</button>
-    <button role="tab" data-tab="photos" type="button">Photos</button>
-    <button role="tab" data-tab="review" type="button">Review all</button>
-    <button role="tab" data-tab="supplies" type="button">Supplies &amp; more</button>
-    <button role="tab" data-tab="fix" type="button">Fix in Square</button>
-    <button role="tab" data-tab="add" type="button">Add from photo</button>
-  </nav>
+  <section class="tiles" id="tiles" aria-label="Summary"></section>
   <section id="view"></section>
 </main>
 <div class="toast" id="toast" hidden></div>
@@ -243,7 +273,7 @@ const pref = {
 
 /* ---------- state ---------- */
 const S = {
-  tab: pref.get('tab', 'count'),
+  tab: pref.get('tab2', 'home'),
   q: '', spot: pref.get('spot', 'all'), filter: pref.get('filter', 'mine'),
   counts: {}, extras: {}, links: {}, dbReady: false, dbMode: 'none',
   linking: null,          // { key: 'extras:<id>' | 'tag:p<photo>-t<tag>', q }
@@ -452,24 +482,84 @@ function markNotDup(a, b) {
 /* ---------- render ---------- */
 function render() {
   const all = rows(); const st = stats(all);
-  $('#skuRes').innerHTML = S.dbReady ? skuResults(all) : '';
-  $('#tiles').innerHTML = [
+  const home = S.tab === 'home';
+  $('#lookup').hidden = !home;
+  $('#skuRes').innerHTML = S.dbReady && home ? skuResults(all) : '';
+  $('#tiles').hidden = true;
+  const tilesHtml = !home ? '' : [
     tile('Canvases counted', st.units, 'confirmed on the floor'),
     tile('Retail value counted', money(st.value), 'at the price in Square'),
-    tile('Seen in photos', st.photo, 'waiting for you to confirm'),
     tile('Square is off', st.off, 'your count ≠ Square', st.off > 0),
-    tile('Not in Square', st.missing, 'on the wall, no listing', st.missing > 0),
     tile('Below zero in Square', st.neg == null ? '—' : st.neg, st.neg == null ? 'load Square to check' : 'sold more than received', st.neg > 0),
   ].join('');
+  const todo = todoCount(all, st);
   for (const b of document.querySelectorAll('#tabs button')) {
     b.setAttribute('aria-selected', String(b.dataset.tab === S.tab));
-    if (b.dataset.tab === 'fix') b.innerHTML = 'Fix in Square' + (st.off + st.missing ? `<span class="count">${st.off + st.missing}</span>` : '');
+    if (b.dataset.tab === 'fix') b.innerHTML = 'To-do' + (todo ? `<span class="count">${todo}</span>` : '');
   }
   const v = $('#view');
   if (!S.dbReady) { v.innerHTML = `<div class="empty"><strong>Opening your saved counts…</strong></div>`; return; }
   const keep = document.activeElement && document.activeElement.id; const caret = keep && document.activeElement.selectionStart;
-  v.innerHTML = S.tab === 'fix' ? viewFix(all) : S.tab === 'add' ? viewAdd() : S.tab === 'photos' ? viewPhotos(all) : S.tab === 'supplies' ? viewSupplies(all) : S.tab === 'review' ? viewReview(all) : viewCount(all);
+  v.innerHTML = home ? viewHome(all, st, todo, tilesHtml) : S.tab === 'fix' ? viewFix(all) : S.tab === 'archive' ? viewArchive(all) : S.tab === 'add' ? viewAdd() : S.tab === 'photos' ? viewPhotos(all) : S.tab === 'supplies' ? viewSupplies(all) : S.tab === 'review' ? viewReview(all) : viewCount(all);
   if (keep && document.getElementById(keep)) { const el = document.getElementById(keep); el.focus(); try { if (caret != null) el.setSelectionRange(caret, caret); } catch (e) {} }
+}
+function todoCount(all, st) {
+  return all.filter(r => r.sticker).length + all.filter(r => r.newPrice != null && r.newPrice !== r.price).length + st.off + st.missing;
+}
+function soldAndArchived() {
+  if (!S.square) return null;
+  const items = Object.values(S.square.byVar);
+  return { sold: items.filter(s => !s.archived && s.qty != null && s.qty <= 0 && classify(s.name, s.price, s.cats, false) === 'canvas').length, archived: items.filter(s => s.archived).length };
+}
+function viewHome(all, st, todo, tilesHtml) {
+  const sa = soldAndArchived();
+  const photo = all.filter(r => r.status === 'photo').length;
+  const stickers = all.filter(r => r.sticker).length;
+  const card = (tab, title, text, badge, kind) => `<button class="hcard" type="button" data-go="${tab}"><span class="ht">${esc(title)}${badge != null ? `<span class="hb${kind ? ' ' + kind : ''}">${esc(badge)}</span>` : ''}</span><p>${text}</p></button>`;
+  return `
+    <div class="home-h"><h2>What do you want to do?</h2><p class="small muted">Tap a box to open it. The buttons across the top take you anywhere, and Home brings you back here.</p></div>
+    <div class="hgrid">
+      ${card('fix', 'To-do', stickers ? `${stickers} price sticker${stickers === 1 ? '' : 's'} to change, plus counts and prices to send to Square.` : 'Counts and prices waiting to go to Square.', todo || '✓', todo ? 'bad' : 'ok')}
+      ${card('count', 'Count canvases', photo ? `${photo} seen in your photos are waiting for you to confirm.` : 'Tap + and − to count what\'s on each wall.', photo || null)}
+      ${card('photos', 'Wall photos', 'Your wall pictures with numbered tags. Tap a tag to check it against Square.', PHOTOS.length)}
+      ${card('archive', 'Archived & sold', 'Canvases that are sold out and listings you archived in Square.', sa ? sa.sold + sa.archived : null)}
+      ${card('supplies', 'Supplies', 'Threads, needle minders, frames, books and kits.', null)}
+      ${card('review', 'Check listings', 'Go through every Square listing and tick off the ones that are right.', null)}
+      ${card('add', 'Add from photo', 'Take a picture of a wall and Claude reads the canvases for you.', null)}
+    </div>
+    <h2 style="margin:24px 2px 0">Shop at a glance</h2>
+    <div class="tiles" style="margin-top:10px">${tilesHtml}</div>`;
+}
+const AR_FILTERS = [['sold', 'Sold out'], ['archived', 'Archived'], ['stock', 'Archived but still has stock']];
+function viewArchive(all) {
+  if (!S.square) return `<div class="empty"><strong>Load Square to see sold and archived items.</strong><button class="btn primary" type="button" data-act="load">Load from Square</button></div>`;
+  const byVar = {}; for (const r of all) if (r.coll === 'counts') byVar[r.var] = r;
+  const f = S.arF || 'sold', sup = !!S.arSup;
+  const words = norm(S.arQ || '').split(' ').filter(Boolean), k = skuNorm(S.arQ || '');
+  const pool = Object.values(S.square.byVar).filter(s => sup || classify(s.name, s.price, s.cats, false) === 'canvas');
+  const test = { sold: s => !s.archived && s.qty != null && s.qty <= 0, archived: s => s.archived, stock: s => s.archived && s.qty > 0 };
+  let list = pool.filter(test[f]);
+  if (words.length || k) list = list.filter(s => (words.length && words.every(w => norm(s.name).includes(w))) || (k.length >= 3 && skuNorm(s.sku).includes(k)));
+  list.sort((a, b) => a.name.localeCompare(b.name));
+  const shown = S.arN || 60;
+  const help = {
+    sold: 'Square shows 0 or less for these, so they\'re sold out. Reorder the ones you want back, or archive the ones you won\'t carry again. Below zero means more were rung up than Square had in stock.',
+    archived: 'Archived items are hidden at the register and online. Many were duplicate listings. If a canvas is back in the shop, unarchive it in Square (Items → filter by Archived → Unarchive).',
+    stock: 'These are archived but Square still shows stock. Check the shop: if the canvas is there, unarchive it so it can be sold; if not, set its count to 0.',
+  }[f];
+  const row = s => { const r = byVar[s.var]; const spots = photoSpots(s.var); const q = s.qty;
+    return `<div class="row"><div><div class="name">${esc(s.name)}</div>
+      <div class="meta">${s.sku ? `<span>SKU ${esc(s.sku)}</span>` : ''}<span class="tag">${s.price ? money(s.price) : 'no price'}</span>${s.archived ? '<span class="pill none">Archived</span>' : ''}${r && r.note ? `<span>📝 ${esc(r.note)}</span>` : ''}</div></div>
+      <div class="right"><span class="pill ${q == null ? 'none' : q < 0 ? 'bad' : q === 0 ? 'warn' : 'good'}">Square ${q ?? '—'}</span>${spots.length ? `<button class="btn small" type="button" data-goto="${spots[0][0]}-${spots[0][1]}">See on wall</button>` : ''}</div></div>`; };
+  return `
+    <div class="chips" role="group" aria-label="Show" style="margin-bottom:10px">${AR_FILTERS.map(([key, l]) => `<button class="chip" type="button" data-arf="${key}" aria-pressed="${f === key}" style="min-height:40px;padding:6px 14px;font-size:14px">${l} <span class="num">${pool.filter(test[key]).length}</span></button>`).join('')}</div>
+    <div class="bar">
+      <input type="search" id="arq" placeholder="Search by name or SKU" value="${esc(S.arQ || '')}" aria-label="Search">
+      <label class="small" style="display:inline-flex;gap:6px;align-items:center"><input type="checkbox" data-arsup="1" ${sup ? 'checked' : ''}> Include supplies</label>
+    </div>
+    <p class="small muted" style="margin-bottom:12px">${help}</p>
+    ${list.length ? `<div class="list">${list.slice(0, shown).map(row).join('')}</div>` : `<div class="empty">Nothing here.</div>`}
+    ${list.length > shown ? `<div class="bar" style="justify-content:center;margin-top:10px"><button class="btn" type="button" data-armore="1">Show more (${list.length - shown} left)</button></div>` : ''}`;
 }
 function tile(label, val, sub, alert) {
   return `<div class="tile${alert ? ' alert' : ''}"><span class="label">${esc(label)}</span><strong>${esc(val)}</strong><span class="small muted">${esc(sub)}</span></div>`;
@@ -730,6 +820,8 @@ function classify(name, price, cats, multi) {
   return 'canvas';
 }
 const lineOpen = new Set();
+const foldState = {};
+const foldOpen = (k, d) => (k in foldState ? foldState[k] : d);
 
 /* ---------- Review all: every Square listing, to check one by one ---------- */
 const REV_FILTERS = [['todo', 'Not checked'], ['dup', 'Possible duplicates'], ['nophoto', 'In stock, not in a photo'], ['low', 'Square says 0 or less'], ['done', 'Checked ✓'], ['price', 'Price changes'], ['archived', 'Archived in Square'], ['all', 'Everything']];
@@ -767,7 +859,7 @@ function viewReview(all) {
     ${!list.length && !lines.length ? `<div class="empty">Nothing here${f === 'todo' ? '. Every listing is checked!' : '.'}</div>` : ''}
     <div class="list">${list.slice(0, shown).map(x => rowHtml(x.r) + reviewHints(x)).join('')}</div>
     ${list.length > shown ? `<div class="bar" style="justify-content:center;margin-top:10px"><button class="btn" type="button" data-revmore="1">Show ${Math.min(100, list.length - shown)} more (${list.length - shown} left)</button></div>` : ''}
-    ${lines.length ? `<div class="card" style="margin-top:14px"><h2>Thread lines &amp; multi-size items</h2><p class="small muted">These have many colors or sizes, so they're checked on the Supplies &amp; more tab.</p>
+    ${lines.length ? `<div class="card" style="margin-top:14px"><h2>Thread lines &amp; multi-size items</h2><p class="small muted">These have many colors or sizes, so they're checked on the Supplies tab.</p>
       <div class="list">${lines.map(L => `<div class="row"><div><div class="name">${esc(L.name)}</div><div class="meta"><span>${L.vars.length} colors/sizes</span><span>${L.vars.reduce((a, v) => a + (v.qty > 0 ? v.qty : 0), 0)} in stock</span></div></div><div class="right"><button class="btn small" type="button" data-opensup="${esc(L.name)}">Open in Supplies</button></div></div>`).join('')}</div></div>` : ''}`;
 }
 function reviewHints(x) {
@@ -888,33 +980,33 @@ function viewFix(all) {
   const stickers = all.filter(r => r.doc && r.doc.stickerTodo).sort((a, b) => (a.sticker === b.sticker ? a.name.localeCompare(b.name) : a.sticker ? -1 : 1));
   const stickersLeft = stickers.filter(r => r.sticker).length;
   return `
-    ${stickers.length ? `<div class="card">
-      <div class="card-h"><h2>Price stickers to update</h2><span class="small muted">${stickersLeft ? `${stickersLeft} left` : 'All done'}</span></div>
+    ${stickers.length ? `<details class="fold" data-fold="stk" ${foldOpen("stk", stickersLeft > 0) ? 'open' : ''}>
+      <summary><h2>Price stickers to update</h2><span class="sum-r small muted">${stickersLeft ? `${stickersLeft} left` : 'All done'}</span></summary><div class="fbody">
       <p class="muted">These prices changed in Square. Put a new sticker on each canvas and tick it off.</p>
       <div class="table-wrap"><table><thead><tr><th>Done</th><th>Canvas</th><th>SKU</th><th>Where</th><th class="n">Old</th><th class="n">New sticker</th></tr></thead><tbody>
         ${stickers.map(r => { const spots = r.var ? photoSpots(r.var) : []; return `<tr${r.sticker ? '' : ' style="opacity:.55"'}><td><input type="checkbox" data-stickerdone="${esc(r.coll + ':' + r.id)}" ${r.sticker ? '' : 'checked'} aria-label="Sticker done for ${esc(r.name)}"></td><td>${esc(r.name)}${r.doc.stickerDone ? `<div class="small muted">Done ${new Date(r.doc.stickerDone).toLocaleDateString([], { month: 'short', day: 'numeric' })}</div>` : ''}</td><td>${esc(r.sku)}</td><td>${esc(r.spot || '')}${spots.length ? ` <button class="linkbtn small" type="button" data-goto="${spots[0][0]}-${spots[0][1]}">photo</button>` : ''}</td><td class="n" style="text-decoration:line-through">${r.priceWas != null ? money(r.priceWas) : '—'}</td><td class="n"><b>${money(r.price)}</b></td></tr>`; }).join('')}
       </tbody></table></div>
-    </div>` : ''}
-    <div class="card">
-      <div class="card-h"><h2>Price changes</h2><span class="small muted">${priced.length} item${priced.length === 1 ? '' : 's'}</span></div>
-      <p class="muted">Type a new price in any item's <b>New price</b> box (on the Count, Photos, Review all or Supplies tabs, or in the lookup). Everything you've marked collects here.</p>
+    </div></details>` : ''}
+    <details class="fold" data-fold="price" ${foldOpen("price", priced.length > 0) ? 'open' : ''}>
+      <summary><h2>Price changes</h2><span class="sum-r small muted">${priced.length} item${priced.length === 1 ? '' : 's'}</span></summary><div class="fbody">
+      <p class="muted">Type a new price in any item's <b>New price</b> box (on the Count, Wall photos, Check listings or Supplies tabs, or in the lookup). Everything you've marked collects here.</p>
       ${!priced.length ? `<div class="empty">No price changes yet.</div>` : S.prv ? priceReviewHtml(S.prv) : `
         <div class="table-wrap"><table><thead><tr><th>Item</th><th>SKU</th><th class="n">Now</th><th class="n">New</th><th></th></tr></thead><tbody>
           ${priced.map(r => `<tr><td>${esc(r.name)}${r.var ? '' : ' <span class="pill warn">Not in Square</span>'}</td><td>${esc(r.sku)}</td><td class="n">${r.price ? money(r.price) : '—'}</td><td class="n"><b>${money(r.newPrice)}</b></td><td class="n"><button class="linkbtn small" type="button" data-clearprice="${esc(r.coll + ':' + r.id)}">Remove</button></td></tr>`).join('')}
         </tbody></table></div>
         <div class="bar"><button class="btn primary" type="button" id="priceReview" ${priced.some(r => r.var) ? '' : 'disabled'}>Review price update</button><span class="small muted">You'll see Square's current prices before anything changes. Items not in Square need to be added there first.</span></div>`}
-    </div>
-    <div class="card">
-      <div class="card-h"><h2>Square is off</h2><span class="small muted">${off.length} item${off.length === 1 ? '' : 's'}</span></div>
+    </div></details>
+    <details class="fold" data-fold="off" ${foldOpen("off", off.length > 0) ? 'open' : ''}>
+      <summary><h2>Square is off</h2><span class="sum-r small muted">${off.length} item${off.length === 1 ? '' : 's'}</span></summary><div class="fbody">
       <p class="muted">These are canvases you counted where Square shows a different number. Updating sets Square's stock to your count as a physical count, the same as doing a stock count in the Square app.</p>
       ${!off.length ? `<div class="empty">Nothing to fix yet. Counts you confirm on the Count tab show up here when they don't match Square.</div>` : rv ? reviewHtml(rv) : `
         <div class="table-wrap"><table><thead><tr><th><input type="checkbox" id="offAll" checked aria-label="Select all"></th><th>Canvas</th><th class="n">Square</th><th class="n">Your count</th></tr></thead><tbody>
           ${off.map(r => `<tr><td><input type="checkbox" data-pick="${esc(r.id)}" checked aria-label="Include ${esc(r.name)}"></td><td>${esc(r.name)}</td><td class="n">${r.sqQty ?? '—'}</td><td class="n"><b>${r.count}</b></td></tr>`).join('')}
         </tbody></table></div>
         <div class="bar"><button class="btn primary" id="review" type="button">Review update</button><span class="small muted">You'll see Square's latest numbers before anything changes.</span></div>`}
-    </div>
-    <div class="card">
-      <div class="card-h"><h2>On the wall, not in Square</h2><span class="small muted">${missing.length}</span></div>
+    </div></details>
+    <details class="fold" data-fold="miss" ${foldOpen("miss", false) ? 'open' : ''}>
+      <summary><h2>On the wall, not in Square</h2><span class="sum-r small muted">${missing.length}</span></summary><div class="fbody">
       <p class="muted">If one is in Square under another name or SKU, press <b>In Square as…</b> to link it and its count moves over. If it's truly missing, add it in the Square app (Items → Create item). Use the note for anything else.</p>
       ${missing.length ? `<div class="list">
         ${missing.map(r => { const key = 'extras:' + r.id; return `<div class="row">
@@ -926,21 +1018,21 @@ function viewFix(all) {
           <div class="edit" style="grid-column:1/-1;margin-top:0">${linkForm(key)}</div>
         </div>`; }).join('')}
       </div>` : `<div class="empty">Everything you've counted is in Square.</div>`}
-    </div>
-    <div class="card">
-      <div class="card-h"><h2>Below zero in Square</h2><span class="small muted">${neg ? neg.length : 'Load Square to check'}</span></div>
+    </div></details>
+    <details class="fold" data-fold="neg" ${foldOpen("neg", false) ? 'open' : ''}>
+      <summary><h2>Below zero in Square</h2><span class="sum-r small muted">${neg ? neg.length : 'Load Square to check'}</span></summary><div class="fbody">
       <p class="muted">A number below zero means Square recorded more sales than stock received. Most are catch-all buttons (like In Store Canvas or Adhoc) or threads sold by the skein. Count the real ones and they'll move to "Square is off".</p>
       ${neg ? `<div class="table-wrap"><table><thead><tr><th>Item</th><th class="n">Price</th><th class="n">Square</th><th></th></tr></thead><tbody>
         ${neg.map(s => `<tr><td>${esc(s.name)}</td><td class="n">${s.price ? money(s.price) : '—'}</td><td class="n" style="color:var(--bad)"><b>${s.qty}</b></td><td class="n"><button class="linkbtn" type="button" data-countit="${esc(s.var)}">${S.counts[s.var] ? 'Counted' : 'Count it'}</button></td></tr>`).join('')}
       </tbody></table></div>` : `<button class="btn" type="button" data-act="load">Load from Square</button>`}
-    </div>
-    <div class="card">
-      <div class="card-h"><h2>Look like duplicates</h2><span class="small muted">${S.square ? dups.length + ' pairs' : 'Load Square to check'}</span></div>
+    </div></details>
+    <details class="fold" data-fold="dup" ${foldOpen("dup", false) ? 'open' : ''}>
+      <summary><h2>Look like duplicates</h2><span class="sum-r small muted">${S.square ? dups.length + ' pairs' : 'Load Square to check'}</span></summary><div class="fbody">
       <p class="muted">Two listings for one canvas split its stock, so one shows 0 while the other shows what you have. Keep one in the Square app and archive the other, then count the one you kept.</p>
       ${dups.length ? `<div class="table-wrap"><table><thead><tr><th>Listings</th><th class="n">Square counts</th><th class="n">Prices</th></tr></thead><tbody>
         ${dups.map(g => `<tr><td>${g.map(s => esc(s.name)).join('<br>')}</td><td class="n">${g.map(s => s.qty ?? '—').join('<br>')}</td><td class="n">${g.map(s => money(s.price)).join('<br>')}</td></tr>`).join('')}
       </tbody></table></div>` : ''}
-    </div>`;
+    </div></details>`;
 }
 function reviewHtml(rv) {
   if (rv.state === 'reading') return `<div class="confirm"><p>Getting Square's latest numbers…</p></div>`;
@@ -1026,7 +1118,15 @@ function setCount(key, n, extra = {}) {
 }
 document.addEventListener('click', e => {
   const t = e.target.closest('button, input[type=checkbox]'); if (!t) return;
-  if (t.matches('#tabs button')) { S.tab = t.dataset.tab; pref.set('tab', S.tab); S.review = null; render(); return; }
+  if (t.matches('#tabs button') || t.dataset.go) {
+    S.tab = t.dataset.tab || t.dataset.go; pref.set('tab2', S.tab); S.review = null; render();
+    const sel = document.querySelector('#tabs [aria-selected="true"]'); if (sel) sel.scrollIntoView({ inline: 'nearest', block: 'nearest' });
+    if (t.dataset.go) window.scrollTo({ top: 0, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+    return;
+  }
+  if (t.dataset.arf) { S.arF = t.dataset.arf; S.arN = 60; render(); return; }
+  if (t.dataset.armore) { S.arN = (S.arN || 60) + 60; render(); return; }
+  if (t.dataset.arsup) { S.arSup = t.checked; render(); return; }
   if (t.id === 'sqLoad' || t.dataset.act === 'load') { loadSquare(); return; }
   if (t.id === 'skuClear') { S.sku = ''; $('#skuQ').value = ''; $('#skuQ').focus(); render(); return; }
   if (t.dataset.ph) { S.ph = { i: Number(t.dataset.ph), sel: null, hide: S.ph.hide }; pref.set('ph', S.ph.i); render(); return; }
@@ -1043,14 +1143,14 @@ document.addEventListener('click', e => {
   }
   if (t.dataset.goto) {
     const [i, j] = t.dataset.goto.split('-').map(Number);
-    S.tab = 'photos'; pref.set('tab', 'photos'); S.ph = { i, sel: j, hide: S.ph.hide }; pref.set('ph', i); render();
+    S.tab = 'photos'; pref.set('tab2', 'photos'); S.ph = { i, sel: j, hide: S.ph.hide }; pref.set('ph', i); render();
     const ph = document.querySelector('.ph'); if (ph) ph.scrollIntoView({ block: 'start', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
     return;
   }
   if (t.dataset.revf) { S.revF = t.dataset.revf; S.revN = 100; render(); return; }
   if (t.dataset.revmore) { S.revN = (S.revN || 100) + 100; render(); return; }
   if (t.dataset.notdup) { const [a, b] = t.dataset.notdup.split('|'); markNotDup(a, b); toast('Marked as different canvases.'); return; }
-  if (t.dataset.look) { S.sku = t.dataset.look; $('#skuQ').value = S.sku; render(); document.querySelector('.skufind').scrollIntoView({ block: 'start', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }); return; }
+  if (t.dataset.look) { S.tab = 'home'; pref.set('tab2', 'home'); S.sku = t.dataset.look; $('#skuQ').value = S.sku; render(); document.querySelector('.skufind').scrollIntoView({ block: 'start', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }); return; }
   if (t.dataset.opensup) { S.tab = 'supplies'; S.supQ = t.dataset.opensup; render(); return; }
   if (t.id === 'priceReview') { startPriceReview(); return; }
   if (t.id === 'priceGo') { pushPrices(); return; }
@@ -1066,7 +1166,7 @@ document.addEventListener('click', e => {
   if (t.dataset.filter) { S.filter = t.dataset.filter; pref.set('filter', S.filter); render(); return; }
   if (t.dataset.step) { const r = findRow(t.dataset.key); setCount(t.dataset.key, (r.count ?? (Number(t.dataset.step) > 0 ? 0 : 1)) + Number(t.dataset.step)); return; }
   if (t.dataset.confirm) { const r = findRow(t.dataset.confirm); setCount(t.dataset.confirm, r.count); return; }
-  if (t.id === 'confirmAll') { for (const r of rows().filter(r => r.status === 'photo')) setCount(r.coll + ':' + r.id, r.count); toast('Confirmed. Any that differ from Square are on the Fix in Square tab.'); return; }
+  if (t.id === 'confirmAll') { for (const r of rows().filter(r => r.status === 'photo')) setCount(r.coll + ':' + r.id, r.count); toast('Confirmed. Any that differ from Square are on the To-do tab.'); return; }
   if (t.dataset.remove) { const [coll, id] = t.dataset.remove.split(':'); deleteDoc(coll, id); return; }
   if (t.dataset.countit) { const s = S.square.byVar[t.dataset.countit]; S.tab = 'count'; S.filter = 'all'; S.spot = 'all'; S.q = s.name; render(); return; }
   if (t.id === 'csv') { exportCsv(); return; }
@@ -1081,7 +1181,8 @@ document.addEventListener('click', e => {
   if (t.id === 'mAdd') { manualAdd(); return; }
 });
 document.addEventListener('toggle', e => {
-  const d = e.target; if (!d.dataset || !d.dataset.line) return;
+  const d = e.target; if (d.dataset && d.dataset.fold) { foldState[d.dataset.fold] = d.open; return; }
+  if (!d.dataset || !d.dataset.line) return;
   const had = lineOpen.has(d.dataset.line);
   if (d.open && !had) { lineOpen.add(d.dataset.line); render(); }
   else if (!d.open && had) { lineOpen.delete(d.dataset.line); }
@@ -1092,6 +1193,7 @@ document.addEventListener('input', e => {
   if (t.id === 'skuQ') { S.sku = t.value; render(); }
   if (t.id === 'supq') { S.supQ = t.value; render(); }
   if (t.id === 'revq') { S.revQ = t.value; S.revN = 100; render(); }
+  if (t.id === 'arq') { S.arQ = t.value; S.arN = 60; render(); }
   if (t.dataset.linkq && S.linking) { S.linking.q = t.value; render(); }
 });
 document.addEventListener('change', e => {
@@ -1103,7 +1205,7 @@ document.addEventListener('change', e => {
     const v = t.value === '' ? null : Math.round(Number(t.value) * 100) / 100;
     if (v == null || isNaN(v)) delete d.newPrice; else d.newPrice = v;
     saveDoc(r.coll, r.id, d);
-    if (v != null && !isNaN(v)) toast(`New price ${money(v)} saved. It's on the Fix in Square tab under Price changes.`);
+    if (v != null && !isNaN(v)) toast(`New price ${money(v)} saved. It's on the To-do tab under Price changes.`);
   }
   else if (t.dataset.tagnote) { const id = t.dataset.tagnote; saveDoc('links', id, { ...(S.links[id] || {}), note: t.value.slice(0, 300) }); }
   else if (t.dataset.tcount) countTag(t.value === '' ? null : Number(t.value));
@@ -1208,7 +1310,7 @@ function manualAdd() {
   const s = S.square && Object.values(S.square.byVar).find(x => x.name.toLowerCase() === name.toLowerCase());
   if (s) saveDoc('counts', s.var, { ...(S.counts[s.var] || {}), name: s.name, price: s.price, sq: s.qty, count, confirmed: true, spot, maker, countedAt: new Date().toISOString() });
   else saveDoc('extras', 'x' + Date.now().toString(36), { name, maker, price, count, spot, confirmed: true });
-  toast(s ? `Counted ${count} of ${s.name}.` : `Added ${name}. It's on the Fix in Square list until it's listed.`);
+  toast(s ? `Counted ${count} of ${s.name}.` : `Added ${name}. It's on the To-do list until it's listed.`);
   for (const id of ['mName', 'mMaker', 'mPrice']) $('#' + id).value = '';
 }
 async function exportCsv() {
