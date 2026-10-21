@@ -81,7 +81,13 @@ header.top .wrap { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-
 .linkbtn { border: 0; background: none; padding: 0; color: var(--accent); font-weight: 600; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
 
 .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr)); gap: 12px; margin-top: 20px; }
-.tile { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: grid; gap: 2px; }
+.tile { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: grid; gap: 2px; text-align: left; cursor: pointer; box-shadow: var(--shadow); position: relative; }
+.tile:hover { border-color: var(--accent); }
+.tile::after { content: 'Tap for details ▾'; font-size: 12px; font-weight: 600; color: var(--accent); margin-top: 4px; }
+.tile[aria-expanded="true"] { border: 2px solid var(--accent); background: var(--accent-soft); }
+.tile[aria-expanded="true"]::after { content: 'Close ▴'; }
+.tilepanel { margin-top: 12px; }
+.tilepanel .sumrow td { font-weight: 700; border-top: 2px solid var(--line); border-bottom: 0; }
 .tile strong { font-family: var(--display); font-size: 28px; line-height: 1.05; font-variant-numeric: tabular-nums; }
 .tile.alert strong { color: var(--bad); }
 
@@ -486,12 +492,14 @@ function render() {
   $('#lookup').hidden = !home;
   $('#skuRes').innerHTML = S.dbReady && home ? skuResults(all) : '';
   $('#tiles').hidden = true;
+  const sqv = sqRetail();
   const tilesHtml = !home ? '' : [
-    tile('Canvases counted', st.units, 'confirmed on the floor'),
-    tile('Retail value counted', money(st.value), 'at the price in Square'),
-    tile('Square is off', st.off, 'your count ≠ Square', st.off > 0),
-    tile('Below zero in Square', st.neg == null ? '—' : st.neg, st.neg == null ? 'load Square to check' : 'sold more than received', st.neg > 0),
-  ].join('');
+    tile('Canvases counted', st.units, 'confirmed on the floor', false, 'units'),
+    tile('Retail value counted', money(st.value), 'what you counted × price', false, 'value'),
+    tile('Retail value in Square', sqv ? money(sqv.total) : '—', sqv ? `${sqv.units} canvases Square says are in stock` : 'load Square to see', false, 'sqvalue'),
+    tile('Square is off', st.off, 'your count ≠ Square', st.off > 0, 'off'),
+    tile('Below zero in Square', st.neg == null ? '—' : st.neg, st.neg == null ? 'load Square to check' : 'sold more than received', st.neg > 0, 'neg'),
+  ].join('') + `</div><div class="tilepanel">${S.tileOpen ? tilePanel(S.tileOpen, all, sqv) : ''}`;
   const todo = todoCount(all, st);
   for (const b of document.querySelectorAll('#tabs button')) {
     b.setAttribute('aria-selected', String(b.dataset.tab === S.tab));
@@ -528,6 +536,7 @@ function viewHome(all, st, todo, tilesHtml) {
       ${card('add', 'Add from photo', 'Take a picture of a wall and Claude reads the canvases for you.', null)}
     </div>
     <h2 style="margin:24px 2px 0">Shop at a glance</h2>
+    <p class="small muted" style="margin:2px 2px 0">Tap a box to see the numbers behind it.</p>
     <div class="tiles" style="margin-top:10px">${tilesHtml}</div>`;
 }
 const AR_FILTERS = [['sold', 'Sold out'], ['archived', 'Archived'], ['stock', 'Archived but still has stock']];
@@ -561,8 +570,51 @@ function viewArchive(all) {
     ${list.length ? `<div class="list">${list.slice(0, shown).map(row).join('')}</div>` : `<div class="empty">Nothing here.</div>`}
     ${list.length > shown ? `<div class="bar" style="justify-content:center;margin-top:10px"><button class="btn" type="button" data-armore="1">Show more (${list.length - shown} left)</button></div>` : ''}`;
 }
-function tile(label, val, sub, alert) {
-  return `<div class="tile${alert ? ' alert' : ''}"><span class="label">${esc(label)}</span><strong>${esc(val)}</strong><span class="small muted">${esc(sub)}</span></div>`;
+function tile(label, val, sub, alert, key) {
+  return `<button type="button" class="tile${alert ? ' alert' : ''}" data-tile="${key}" aria-expanded="${S.tileOpen === key}"><span class="label">${esc(label)}</span><strong>${esc(val)}</strong><span class="small muted">${esc(sub)}</span></button>`;
+}
+const SUBCATS = {"ABIPJASY7DGUXIOSXRM26ZSA":"Christmas & Winter","G56XURCFEXGN4UEJMQYA7L2G":"Pop Culture & Celebrities","B5QLGJ7BB3X6X536YVOVNN43":"Charms & Bag Tags","WZ3IDQ55JO4KMRM47S5OAYUD":"Food & Drink","FGLPFD5POLRQOKO7DEGGSZBC":"Florals & Garden","ICI2EHUQ3REIYN3HON344GFF":"Angels","CUJDCE5AP7RXMQT4XERE7KSZ":"Coastal & Fishing","K7357GGQYSMEL6GSOC63T4F3":"Animals & Pets","HE577GVIBIHTSIIU7D44ROIR":"Sayings & Signs","O2YOEDG2ZBMAJ3IEG5LMR5F6":"Sports, Texas & College","RYFWNVCO6TZTHHNNCYAJ2DTL":"Cars, Travel & Places","DWSUPOMFOZV5CC4W3VHK2T3Q":"Weddings, Babies & Celebrations","L37N3ER6EDCSUFEPCTQJCOZX":"Thanksgiving & Fall","ONQ75WTSAREAUA7TJZDYZQMT":"Halloween"};
+function sqRetail() {
+  if (!S.square) return null;
+  const items = Object.values(S.square.byVar).filter(s => !s.archived && s.qty > 0 && classify(s.name, s.price, s.cats, false) === 'canvas');
+  return { items, units: items.reduce((a, s) => a + s.qty, 0), total: items.reduce((a, s) => a + s.qty * (s.price || 0), 0) };
+}
+function tilePanel(key, all, sqv) {
+  const wrap = (title, note, head, body, foot) => `<div class="card"><div class="card-h"><h2>${title}</h2><button class="btn small" type="button" data-tile="${key}">Close</button></div>${note ? `<p class="small muted">${note}</p>` : ''}<div class="table-wrap"><table><thead><tr>${head}</tr></thead><tbody>${body}${foot || ''}</tbody></table></div></div>`;
+  const counted = all.filter(r => r.count != null && (r.confirmed || r.coll === 'extras'));
+  if (key === 'units' || key === 'value') {
+    if (!counted.length) return `<div class="card"><div class="card-h"><h2>Nothing counted yet</h2><button class="btn small" type="button" data-tile="${key}">Close</button></div><p class="muted">Confirm counts on the Count or Wall photos tab and they add up here.</p></div>`;
+    const list = counted.map(r => ({ r, v: r.count * (r.price || 0) })).sort((a, b) => key === 'value' ? b.v - a.v : b.r.count - a.r.count || a.r.name.localeCompare(b.r.name));
+    const bySpot = {}; for (const x of list) { const k = x.r.spot || 'Not placed'; bySpot[k] = bySpot[k] || { n: 0, v: 0 }; bySpot[k].n += x.r.count; bySpot[k].v += x.v; }
+    const spots = Object.entries(bySpot).sort((a, b) => b[1].v - a[1].v).map(([k, o]) => `<span class="pill info">${esc(k)}: ${o.n} · ${money(o.v)}</span>`).join(' ');
+    const tn = list.reduce((a, x) => a + x.r.count, 0), tv = list.reduce((a, x) => a + x.v, 0);
+    return wrap(key === 'value' ? 'Retail value counted' : 'Canvases counted', `By wall: ${spots}`, '<th>Canvas</th><th>Where</th><th class="n">Count</th><th class="n">Price</th><th class="n">Value</th>',
+      list.map(x => `<tr><td>${esc(x.r.name)}</td><td>${esc(x.r.spot || '')}</td><td class="n">${x.r.count}</td><td class="n">${x.r.price ? money(x.r.price) : '—'}</td><td class="n"><b>${money(x.v)}</b></td></tr>`).join(''),
+      `<tr class="sumrow"><td colspan="2">Total · ${list.length} listings</td><td class="n">${tn}</td><td></td><td class="n">${money(tv)}</td></tr>`);
+  }
+  if (key === 'sqvalue') {
+    if (!sqv) return '';
+    const by = {};
+    for (const s of sqv.items) { const subs = (s.cats || []).map(c => SUBCATS[c]).filter(Boolean); const k = subs[0] || 'No subcategory'; by[k] = by[k] || { n: 0, u: 0, v: 0 }; by[k].n++; by[k].u += s.qty; by[k].v += s.qty * (s.price || 0); }
+    const rowsH = Object.entries(by).sort((a, b) => b[1].v - a[1].v).map(([k, o]) => `<tr><td>${esc(k)}</td><td class="n">${o.n}</td><td class="n">${o.u}</td><td class="n"><b>${money(o.v)}</b></td><td class="n">${Math.round(o.v / Math.max(1, sqv.total) * 100)}%</td></tr>`).join('');
+    const top = [...sqv.items].sort((a, b) => b.qty * b.price - a.qty * a.price).slice(0, 10);
+    return wrap('Retail value in Square', 'Canvases only, at Square\'s price × Square\'s stock count. Each canvas is listed under its first subcategory so nothing is counted twice.', '<th>Subcategory</th><th class="n">Listings</th><th class="n">In stock</th><th class="n">Retail</th><th class="n">Share</th>', rowsH,
+      `<tr class="sumrow"><td>Total</td><td class="n">${sqv.items.length}</td><td class="n">${sqv.units}</td><td class="n">${money(sqv.total)}</td><td class="n">100%</td></tr>`)
+      + `<div class="card"><h2>Top 10 by retail value</h2><div class="table-wrap"><table><thead><tr><th>Canvas</th><th class="n">In stock</th><th class="n">Price</th><th class="n">Value</th></tr></thead><tbody>${top.map(s => `<tr><td>${esc(s.name)}</td><td class="n">${s.qty}</td><td class="n">${money(s.price)}</td><td class="n"><b>${money(s.qty * s.price)}</b></td></tr>`).join('')}</tbody></table></div></div>`;
+  }
+  if (key === 'off') {
+    const off = all.filter(r => r.status === 'off');
+    if (!off.length) return `<div class="card"><div class="card-h"><h2>Square matches everything you've counted</h2><button class="btn small" type="button" data-tile="${key}">Close</button></div></div>`;
+    return wrap('Square is off', 'To fix these, open To-do → Square is off.', '<th>Canvas</th><th class="n">Square</th><th class="n">Your count</th><th class="n">Difference</th>',
+      off.map(r => `<tr><td>${esc(r.name)}</td><td class="n">${r.sqQty ?? '—'}</td><td class="n"><b>${r.count}</b></td><td class="n">${r.sqQty == null ? '—' : (r.count - r.sqQty > 0 ? '+' : '') + (r.count - r.sqQty)}</td></tr>`).join(''));
+  }
+  if (key === 'neg') {
+    if (!S.square) return '';
+    const neg = Object.values(S.square.byVar).filter(s => !s.archived && s.qty != null && s.qty < 0).sort((a, b) => a.qty - b.qty);
+    return wrap('Below zero in Square', 'More were rung up than Square had in stock. Most are register buttons or threads sold by the skein; count the real canvases to fix them.', '<th>Item</th><th class="n">Price</th><th class="n">Square</th>',
+      neg.map(s => `<tr><td>${esc(s.name)}</td><td class="n">${s.price ? money(s.price) : '—'}</td><td class="n" style="color:var(--bad)"><b>${s.qty}</b></td></tr>`).join(''));
+  }
+  return '';
 }
 const STATUS = {
   ok: ['good', 'Matches Square'], off: ['bad', 'Square is off'], photo: ['info', 'Seen in photo'], todo: ['none', 'Not counted'], missing: ['warn', 'Not in Square'],
@@ -1124,6 +1176,7 @@ document.addEventListener('click', e => {
     if (t.dataset.go) window.scrollTo({ top: 0, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
     return;
   }
+  if (t.dataset.tile) { S.tileOpen = S.tileOpen === t.dataset.tile ? null : t.dataset.tile; render(); return; }
   if (t.dataset.arf) { S.arF = t.dataset.arf; S.arN = 60; render(); return; }
   if (t.dataset.armore) { S.arN = (S.arN || 60) + 60; render(); return; }
   if (t.dataset.arsup) { S.arSup = t.checked; render(); return; }
