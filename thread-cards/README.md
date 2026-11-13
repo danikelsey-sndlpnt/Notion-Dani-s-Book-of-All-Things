@@ -1,18 +1,18 @@
-# Collectible animal thread cards (3D print)
+# Thread cards (3D print)
 
-Dainty thread cards for the beginner kit: an animal head on top with a carabiner hole,
-a collar band with the raised "Sookie's" logo, slit dividers for tucking thread ends,
-and a scalloped bottom. Single-colour print — the face, ears and logo are raised 0.6 mm.
+Dainty thread cards for the beginner kit: rounded top tab with a 5.5 mm carabiner hole,
+raised "Sookie's" logo high on the top panel (about 5 mm clear of the thread slits),
+slit dividers for tucking thread ends, and a scalloped bottom. Single-colour print.
 
 | File | Threads | Size (mm) |
 |---|---|---|
-| `stl/dog_thread_card_2_threads.stl` | 2 | 46 × 101 × 1.8 |
-| `stl/dog_thread_card_3_threads.stl` | 3 | 46 × 124 × 1.8 |
-| `stl/dog_thread_card_4_threads.stl` | 4 | 46 × 147 × 1.8 |
+| `stl/thread_card_2_threads.stl` | 2 | 46 × 88 × 1.8 |
+| `stl/thread_card_3_threads.stl` | 3 | 46 × 111 × 1.8 |
+| `stl/thread_card_4_threads.stl` | 4 | 46 × 134 × 1.8 |
 
-Card is 1.2 mm thick (1.8 mm at raised details). Carabiner hole is 5.5 mm.
+Card is 1.2 mm thick (1.8 mm at the raised logo).
 
 **Printing:** lay flat, no supports, 0.2 mm layers, 100% infill, PLA or PETG.
 
-**Adding animals:** write a new function next to `dog()` in `make_thread_cards.py`,
-add it to `ANIMAL_FUNCS` and `ANIMALS`, then run `python3 make_thread_cards.py`.
+Settings (logo size/position, thickness, etc.) are at the top of `make_thread_cards.py`;
+run `python3 make_thread_cards.py` to rebuild.

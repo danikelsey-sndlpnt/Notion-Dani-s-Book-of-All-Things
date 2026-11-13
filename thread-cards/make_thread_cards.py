@@ -20,7 +20,7 @@ THICK = 1.2          # card thickness
 RAISE = 0.6          # height of raised details (logo, face, ears)
 WIDE = 46.0          # width of collar / dividers / footer
 NARROW = 36.0        # width where the thread is wound
-COLLAR_H = 18.0      # band under the animal head that carries the logo
+COLLAR_H = 25.0      # top panel that carries the logo
 ZONE_H = 17.0        # height of each thread-winding section
 DIVIDER_H = 6.0
 FOOTER_H = 10.0
@@ -29,12 +29,13 @@ SCALLOP_DEPTH = 3.5
 HOLE_D = 5.5         # carabiner hole
 LOGO_FILE = "sookies_logo.png"
 LOGO_CROP_ROWS = 800  # keep only artwork above this pixel row (drops "NEEDLEPOINT")
-LOGO_W = 28.0
+LOGO_W = 34.0
+LOGO_TOP_GAP = 2.5   # logo sits this far below the top edge (keeps it clear of the slits)
 LOGO_MIN = 0.12      # thickens hairlines so they print
 SLIT_W, SLIT_L = 0.9, 4.0
 OUTER_R, INNER_R = 1.2, 1.2
 COUNTS = [2, 3, 4]
-ANIMALS = ["dog"]
+ANIMALS = ["plain"]
 # ---------------------------------------------------------------------------
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -65,7 +66,13 @@ def dog():
     return sil, details, hole
 
 
-ANIMAL_FUNCS = {"dog": dog}
+def plain():
+    """Simple rounded tab on top for a carabiner."""
+    sil = unary_union([Point(0, 3.5).buffer(6.0, quad_segs=48), box(-6, -1, 6, 3.5)])
+    return sil, shapely.Polygon(), (0, 3.5)
+
+
+ANIMAL_FUNCS = {"dog": dog, "plain": plain}
 # ---------------------------------------------------------------------------
 
 
@@ -93,7 +100,7 @@ def logo_shape():
     k = LOGO_W / (x1 - x0)
     g = aff.scale(g, k, -k, origin=(0, 0))
     x0, y0, x1, y1 = g.bounds
-    g = aff.translate(g, -(x0 + x1) / 2, -(COLLAR_H - 4.5) / 2 - (y0 + y1) / 2)
+    g = aff.translate(g, -(x0 + x1) / 2, -LOGO_TOP_GAP - y1)
     return g.buffer(LOGO_MIN, quad_segs=8).simplify(0.02)
 
 
@@ -168,21 +175,21 @@ def main():
             mesh = trimesh.boolean.union([extrude(shape, THICK), extrude(raised, RAISE, THICK)],
                                          engine="manifold")
             assert mesh.is_watertight
-            path = os.path.join(OUT, f"{animal}_thread_card_{n}_threads.stl")
+            path = os.path.join(OUT, (f"{animal}_" if animal != "plain" else "") + f"thread_card_{n}_threads.stl")
             mesh.export(path)
             e = mesh.extents
             print(f"{animal} {n} threads: {e[0]:.1f} x {e[1]:.1f} x {e[2]:.1f} mm -> {path}")
             draw(ax, shape, raised)
-            ax.set_title(f"{animal}, {n} threads\n{e[0]:.0f} x {e[1]:.0f} mm")
+            ax.set_title(f"{n} threads\n{e[0]:.0f} x {e[1]:.0f} mm")
             ax.set_aspect("equal"); ax.axis("off")
-            ax.set_ylim(-130, 34); ax.set_xlim(-26, 26)
+            ax.set_ylim(-130, 12); ax.set_xlim(-26, 26)
         plt.tight_layout()
         plt.savefig(os.path.join(HERE, f"preview_{animal}.png"), dpi=130, facecolor="white")
         # close-up of the head
         fig, ax = plt.subplots(figsize=(7, 7))
         shape, details = outline(2, animal)
         draw(ax, shape, unary_union([details, logo]))
-        ax.set_xlim(-25, 25); ax.set_ylim(-20, 33); ax.set_aspect("equal"); ax.axis("off")
+        ax.set_xlim(-25, 25); ax.set_ylim(-34, 12); ax.set_aspect("equal"); ax.axis("off")
         plt.savefig(os.path.join(HERE, f"closeup_{animal}.png"), dpi=150, facecolor="white")
 
 
