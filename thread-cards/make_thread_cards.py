@@ -35,7 +35,7 @@ LOGO_MIN = 0.12      # thickens hairlines so they print
 SLIT_W, SLIT_L = 0.9, 4.0
 OUTER_R, INNER_R = 1.2, 1.2
 COUNTS = [2, 3, 4]
-ANIMALS = ["plain", "pup", "rose"]
+ANIMALS = ["plain", "pup", "sunflower", "daisy", "mum", "tulip"]
 # ---------------------------------------------------------------------------
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -139,13 +139,90 @@ def rose():
     return sil, details, c
 
 
+def petal(length, width, pointed, base_r, angle, c):
+    """One petal pointing outward at `angle` degrees, its inner end at base_r from centre."""
+    if pointed:
+        r = (length ** 2 / 4 + width ** 2 / 4) / width
+        d = r - width / 2
+        g = Point(0, d).buffer(r, quad_segs=48).intersection(Point(0, -d).buffer(r, quad_segs=48))
+    else:
+        g = ellipse(0, 0, length / 2, width / 2)
+    g = aff.translate(g, base_r + length / 2, 0)
+    g = aff.rotate(g, angle, origin=(0, 0))
+    return aff.translate(g, *c)
+
+
+def with_leaves(bloom, details, c, spread=14.0, y=3.6):
+    lf_l, vein_l = leaf(-spread, y, 15.0, 6.6, 162)
+    lf_r, vein_r = leaf(spread, y, 15.0, 6.6, 18)
+    filler = box(-8.0, -1.0, 8.0, 5.0)
+    sil = unary_union([bloom, lf_l, lf_r, filler]).buffer(0.6, quad_segs=24).buffer(-0.6, quad_segs=24)
+    det = unary_union([details, vein_l, vein_r]).intersection(sil.buffer(-0.45))
+    return sil, det, c
+
+
+def spokes(n, r0, r1, c, offset, w=0.6):
+    out = []
+    for k in range(n):
+        a = np.radians(offset + 360 * k / n)
+        out.append(shapely.LineString([(c[0] + r0 * np.cos(a), c[1] + r0 * np.sin(a)),
+                                       (c[0] + r1 * np.cos(a), c[1] + r1 * np.sin(a))]).buffer(w / 2))
+    return unary_union(out)
+
+
+def sunflower():
+    c = (0.0, 15.0)
+    disc = 7.2
+    bloom = unary_union([petal(8.6, 3.7, True, disc - 1.2, 90 + k * (360 / 14), c) for k in range(14)]
+                        + [Point(*c).buffer(disc, quad_segs=64)])
+    ring = Point(*c).buffer(disc).difference(Point(*c).buffer(disc - 0.8))
+    seeds = unary_union([Point(c[0] + 5.0 * np.cos(np.radians(a)), c[1] + 5.0 * np.sin(np.radians(a)))
+                         .buffer(0.55, quad_segs=12) for a in range(0, 360, 30)])
+    veins = spokes(14, disc + 1.0, disc + 4.8, c, 90, 0.5)
+    return with_leaves(bloom, unary_union([ring, seeds, veins]), c)
+
+
+def daisy():
+    c = (0.0, 15.5)
+    disc = 5.4
+    bloom = unary_union([petal(9.6, 3.2, False, disc - 1.0, 90 + k * 30, c) for k in range(12)]
+                        + [Point(*c).buffer(disc, quad_segs=64)])
+    centre = Point(*c).buffer(disc - 0.2).difference(Point(*c).buffer(HOLE_D / 2 + 0.9))
+    mids = spokes(12, disc + 1.6, disc + 6.6, c, 90, 0.5)
+    return with_leaves(bloom, unary_union([centre, mids]), c)
+
+
+def mum():
+    c = (0.0, 15.0)
+    outer = [petal(8.0, 3.0, False, 4.2, 90 + k * (360 / 18), c) for k in range(18)]
+    bloom = unary_union(outer + [Point(*c).buffer(6.0, quad_segs=64)])
+    inner = unary_union([petal(5.4, 2.5, False, 3.6, 90 + 10 + k * 30, c) for k in range(12)])
+    inner = inner.difference(Point(*c).buffer(HOLE_D / 2 + 0.8))
+    return with_leaves(bloom, inner, c)
+
+
+def tulip():
+    c = (0.0, 16.0)
+    cup = ellipse(0, 15.0, 10.0, 9.5).intersection(box(-11, 0, 11, 18.0))
+    tips = [shapely.Polygon([(-10.0, 17.0), (-8.6, 27.5), (-2.8, 19.0)]),
+            shapely.Polygon([(-5.0, 18.0), (0.0, 29.5), (5.0, 18.0)]),
+            shapely.Polygon([(10.0, 17.0), (8.6, 27.5), (2.8, 19.0)])]
+    bloom = unary_union([cup] + tips).buffer(1.2, quad_segs=24).buffer(-1.2, quad_segs=24)
+    stem = box(-1.4, -1.0, 1.4, 7.0)
+    u = arc(0, 16.0, 4.7, 200, 340, 0.7)
+    sides = unary_union([shapely.LineString([(-4.4, 14.4), (-4.9, 22.0)]).buffer(0.35),
+                         shapely.LineString([(4.4, 14.4), (4.9, 22.0)]).buffer(0.35)])
+    sil, det, _ = with_leaves(unary_union([bloom, stem]), unary_union([u, sides]), c, spread=13.0, y=4.0)
+    return sil, det, c
+
+
 def plain():
     """Simple rounded tab on top for a carabiner."""
     sil = unary_union([Point(0, 3.5).buffer(6.0, quad_segs=48), box(-6, -1, 6, 3.5)])
     return sil, shapely.Polygon(), (0, 3.5)
 
 
-ANIMAL_FUNCS = {"dog": dog, "plain": plain, "pup": pup, "rose": rose}
+ANIMAL_FUNCS = {"dog": dog, "plain": plain, "pup": pup, "rose": rose, "sunflower": sunflower, "daisy": daisy, "mum": mum, "tulip": tulip}
 # ---------------------------------------------------------------------------
 
 
@@ -232,6 +309,9 @@ def draw(ax, shape, raised):
         ax.fill(*g.exterior.xy, color="#e3d3c3", ec="#b39a85", lw=0.4)
         for h in g.interiors:
             ax.fill(*h.xy, color="#f6efe6", lw=0)
+    for g in getattr(shape, "geoms", [shape]):
+        for h in g.interiors:
+            ax.fill(*h.xy, color="white", ec="#8a6f5a", lw=0.8)
 
 
 def main():
@@ -262,7 +342,7 @@ def main():
         fig, ax = plt.subplots(figsize=(7, 7))
         shape, details = outline(2, animal)
         draw(ax, shape, unary_union([details, logo]))
-        ax.set_xlim(-25, 25); ax.set_ylim(-34, 34); ax.set_aspect("equal"); ax.axis("off")
+        ax.set_xlim(-25, 25); ax.set_ylim(-34, 36); ax.set_aspect("equal"); ax.axis("off")
         plt.savefig(os.path.join(HERE, f"closeup_{animal}.png"), dpi=150, facecolor="white")
 
 
