@@ -21,8 +21,8 @@ DIVIDER_H = 6.0
 FOOTER_H = 10.0
 SCALLOPS = 5         # bumps across the bottom edge
 SCALLOP_DEPTH = 3.5  # how far the scallops hang below the footer
-HOLE_D = 4.0         # hanging hole (0 to remove)
-LABEL = (32.0, 7.0, 0.4)   # recessed label panel w, h, depth (sticker spot)
+HOLE_D = 0           # no hanging hole
+LABEL = (32.0, 10.0, 0)   # flat name area on the header (depth 0 = no recess)
 SLIT_W, SLIT_L = 0.9, 4.0  # thread-catch slits cut into the ears
 OUTER_R, INNER_R = 2.0, 1.2
 # ---------------------------------------------------------------------------
@@ -86,7 +86,7 @@ def card(n):
     body = extrude(poly, THICK)
     lw, lh, ld = LABEL
     if ld:
-        lab = box(-lw / 2, -HEADER_H + 3.0, lw / 2, -HEADER_H + 3.0 + lh)
+        lab = box(-lw / 2, -HEADER_H + 5.0, lw / 2, -HEADER_H + 5.0 + lh)
         lab = lab.buffer(-1.5).buffer(1.5, quad_segs=16)
         body = body.difference(extrude(lab, ld + 0.1, THICK - ld), engine="manifold")
     return poly, body
@@ -97,7 +97,7 @@ def main():
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
-    counts = [2, 3, 4, 5]
+    counts = [2, 3, 4]
     fig, axes = plt.subplots(1, len(counts), figsize=(12, 7))
     for ax, n in zip(axes, counts):
         poly, mesh = card(n)
@@ -111,7 +111,7 @@ def main():
             for hole in geom.interiors:
                 ax.fill(*hole.xy, color="white", ec="#8a6f5a", lw=1)
         lw, lh, _ = LABEL
-        ax.add_patch(plt.Rectangle((-lw / 2, -HEADER_H + 3), lw, lh, fill=False,
+        ax.add_patch(plt.Rectangle((-lw / 2, -HEADER_H + 5), lw, lh, fill=False,
                                    ls="--", ec="#b9a08c"))
         ax.set_title(f"{n} threads\n{ext[0]:.0f} x {ext[1]:.0f} mm")
         ax.set_aspect("equal"); ax.axis("off")
