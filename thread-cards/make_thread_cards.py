@@ -35,7 +35,7 @@ LOGO_MIN = 0.12      # thickens hairlines so they print
 SLIT_W, SLIT_L = 0.9, 4.0
 OUTER_R, INNER_R = 1.2, 1.2
 COUNTS = [2, 3, 4]
-ANIMALS = ["plain"]
+ANIMALS = ["plain", "pup"]
 # ---------------------------------------------------------------------------
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -66,13 +66,46 @@ def dog():
     return sil, details, hole
 
 
+def arc(cx, cy, r, a0, a1, w):
+    t = np.radians(np.linspace(a0, a1, 40))
+    return shapely.LineString(np.c_[cx + r * np.cos(t), cy + r * np.sin(t)]).buffer(w / 2, quad_segs=8)
+
+
+def pup():
+    """Chibi sitting puppy perched on top; its curly tail is the carabiner loop."""
+    body = ellipse(-0.5, 6.0, 8.0, 7.0)
+    chest = ellipse(4.0, 9.0, 5.0, 6.0)
+    head = Point(5.5, 19.0).buffer(6.8, quad_segs=64)
+    snout = ellipse(11.3, 16.8, 3.8, 3.0)
+    nose = Point(14.4, 17.6).buffer(1.9, quad_segs=24)
+    leg = box(4.5, -1.0, 8.6, 8.0)
+    paw = ellipse(7.4, 0.9, 3.0, 1.9)
+    tail_c = (-11.5, 11.5)
+    tail = Point(*tail_c).buffer(5.3, quad_segs=48)
+    stem = shapely.LineString([(-5.5, 7.5), (-9.0, 9.5)]).buffer(2.6)
+    base = box(-9.0, -1.0, 9.0, 2.0)
+    sil = unary_union([body, chest, head, snout, nose, leg, paw, tail, stem, base])
+    sil = sil.buffer(1.4, quad_segs=24).buffer(-1.4, quad_segs=24)    # smooth soft curves
+    ear = ellipse(2.6, 18.0, 2.9, 5.4, 18)
+    eye = ellipse(9.0, 20.3, 1.15, 1.45)
+    nose_d = ellipse(14.2, 17.8, 1.4, 1.15)
+    collar = shapely.LineString([(-1.0, 13.4), (10.5, 11.2)]).buffer(0.75).intersection(sil.buffer(-0.6))
+    tag = Point(6.3, 10.0).buffer(1.3, quad_segs=24)
+    thigh = arc(-1.2, 4.6, 4.6, 15, 125, 0.7)
+    leg_line = shapely.LineString([(4.6, 1.0), (4.6, 6.0)]).buffer(0.35)
+    details = unary_union([ear, eye, nose_d, collar, tag, thigh, leg_line]).intersection(sil.buffer(-0.4))
+    k = 1.2   # overall pup size
+    sil, details = (aff.scale(g, k, k, origin=(0, 0)) for g in (sil, details))
+    return sil, details, (tail_c[0] * k, tail_c[1] * k)
+
+
 def plain():
     """Simple rounded tab on top for a carabiner."""
     sil = unary_union([Point(0, 3.5).buffer(6.0, quad_segs=48), box(-6, -1, 6, 3.5)])
     return sil, shapely.Polygon(), (0, 3.5)
 
 
-ANIMAL_FUNCS = {"dog": dog, "plain": plain}
+ANIMAL_FUNCS = {"dog": dog, "plain": plain, "pup": pup}
 # ---------------------------------------------------------------------------
 
 
@@ -182,14 +215,14 @@ def main():
             draw(ax, shape, raised)
             ax.set_title(f"{n} threads\n{e[0]:.0f} x {e[1]:.0f} mm")
             ax.set_aspect("equal"); ax.axis("off")
-            ax.set_ylim(-130, 12); ax.set_xlim(-26, 26)
+            ax.set_ylim(-130, 34); ax.set_xlim(-26, 26)
         plt.tight_layout()
         plt.savefig(os.path.join(HERE, f"preview_{animal}.png"), dpi=130, facecolor="white")
         # close-up of the head
         fig, ax = plt.subplots(figsize=(7, 7))
         shape, details = outline(2, animal)
         draw(ax, shape, unary_union([details, logo]))
-        ax.set_xlim(-25, 25); ax.set_ylim(-34, 12); ax.set_aspect("equal"); ax.axis("off")
+        ax.set_xlim(-25, 25); ax.set_ylim(-34, 34); ax.set_aspect("equal"); ax.axis("off")
         plt.savefig(os.path.join(HERE, f"closeup_{animal}.png"), dpi=150, facecolor="white")
 
 
