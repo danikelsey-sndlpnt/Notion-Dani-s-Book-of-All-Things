@@ -1,16 +1,18 @@
-# Thread cards (3D print)
+# Collectible animal thread cards (3D print)
 
-Dainty bobbin-style thread cards with a scalloped bottom edge, for the beginner kit.
+Dainty thread cards for the beginner kit: an animal head on top with a carabiner hole,
+a collar band with the raised "Sookie's" logo, slit dividers for tucking thread ends,
+and a scalloped bottom. Single-colour print — the face, ears and logo are raised 0.6 mm.
 
 | File | Threads | Size (mm) |
 |---|---|---|
-| `stl/thread_card_2_threads.stl` | 2 | 46 × 95 × 1.8 |
-| `stl/thread_card_3_threads.stl` | 3 | 46 × 118 × 1.8 |
-| `stl/thread_card_4_threads.stl` | 4 | 46 × 141 × 1.8 |
+| `stl/dog_thread_card_2_threads.stl` | 2 | 46 × 101 × 1.8 |
+| `stl/dog_thread_card_3_threads.stl` | 3 | 46 × 124 × 1.8 |
+| `stl/dog_thread_card_4_threads.stl` | 4 | 46 × 147 × 1.8 |
 
-Features: rounded top tab with a 5.5 mm carabiner hole, Sookie's Needlepoint logo raised 0.6 mm (single colour; sits on the top panel, clear of the thread area) on a 1.2 mm card (40 mm wide), and thread-catch slits with a V lead-in on every divider to tuck the thread ends.
+Card is 1.2 mm thick (1.8 mm at raised details). Carabiner hole is 5.5 mm.
 
-**Printing:** lay flat, no supports, 0.2 mm layers, 100% infill (thin part), PLA or PETG.
+**Printing:** lay flat, no supports, 0.2 mm layers, 100% infill, PLA or PETG.
 
-To change sizes (thickness, number of scallops, etc.) edit the constants at the top of
-`make_thread_cards.py` and run `python3 make_thread_cards.py`.
+**Adding animals:** write a new function next to `dog()` in `make_thread_cards.py`,
+add it to `ANIMAL_FUNCS` and `ANIMALS`, then run `python3 make_thread_cards.py`.
