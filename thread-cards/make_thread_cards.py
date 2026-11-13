@@ -22,7 +22,9 @@ DIVIDER_H = 6.0
 FOOTER_H = 10.0
 SCALLOPS = 5         # bumps across the bottom edge
 SCALLOP_DEPTH = 3.5  # how far the scallops hang below the footer
-HOLE_D = 0           # no hanging hole
+HOLE_D = 5.5         # carabiner hole in the top tab (0 to remove)
+TAB_R = 6.0          # radius of the rounded tab that holds the hole
+TAB_Y = 3.5          # how far the hole centre sits above the card top
 LABEL = (32.0, 10.0, 0)   # flat name area on the header (depth 0 = no recess)
 LOGO_FILE = "sookies_logo.png"
 LOGO_W = 40.0        # logo width on the header
@@ -59,6 +61,9 @@ def outline(n):
     for k in range(SCALLOPS):
         cx = -WIDE / 2 + r + 2 * r * k
         parts.append(Point(cx, cy).buffer(r, quad_segs=48))
+    if HOLE_D:  # rounded tab on top for the carabiner
+        parts.append(Point(0, TAB_Y).buffer(TAB_R, quad_segs=48))
+        parts.append(box(-TAB_R, -1, TAB_R, TAB_Y))
     shape = unary_union(parts)
     # soften: round convex corners, fillet inside corners
     shape = shape.buffer(-OUTER_R, quad_segs=24).buffer(OUTER_R, quad_segs=24)
@@ -76,7 +81,7 @@ def outline(n):
                                          (s * (WIDE / 2 - 1.0), sy),
                                          (s * (WIDE / 2 + 0.5), sy - 1.0)]))
     if HOLE_D:
-        cuts.append(Point(0, -4.5).buffer(HOLE_D / 2, quad_segs=32))
+        cuts.append(Point(0, TAB_Y).buffer(HOLE_D / 2, quad_segs=48))
     return shape.difference(unary_union(cuts))
 
 
@@ -159,7 +164,7 @@ def main():
                 ax.fill(*hole.xy, color="#f6efe6", lw=0)
         ax.set_title(f"{n} threads\n{ext[0]:.0f} x {ext[1]:.0f} mm")
         ax.set_aspect("equal"); ax.axis("off")
-        ax.set_ylim(-130, 3); ax.set_xlim(-26, 26)
+        ax.set_ylim(-130, 12); ax.set_xlim(-26, 26)
     plt.tight_layout()
     plt.savefig(os.path.join(HERE, "preview.png"), dpi=130, facecolor="white")
 
