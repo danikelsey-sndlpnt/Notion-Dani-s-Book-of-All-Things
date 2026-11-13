@@ -35,7 +35,7 @@ LOGO_MIN = 0.12      # thickens hairlines so they print
 SLIT_W, SLIT_L = 0.9, 4.0
 OUTER_R, INNER_R = 1.2, 1.2
 COUNTS = [2, 3, 4]
-ANIMALS = ["plain", "pup", "sunflower", "daisy", "mum", "tulip"]
+ANIMALS = ["plain", "mum"]
 # ---------------------------------------------------------------------------
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -193,12 +193,14 @@ def daisy():
 
 
 def mum():
-    c = (0.0, 15.0)
-    outer = [petal(8.0, 3.0, False, 4.2, 90 + k * (360 / 18), c) for k in range(18)]
-    bloom = unary_union(outer + [Point(*c).buffer(6.0, quad_segs=64)])
-    inner = unary_union([petal(5.4, 2.5, False, 3.6, 90 + 10 + k * 30, c) for k in range(12)])
-    inner = inner.difference(Point(*c).buffer(HOLE_D / 2 + 0.8))
-    return with_leaves(bloom, inner, c)
+    """Chrysanthemum bloom (no leaves); the carabiner hole is its centre."""
+    c = (0.0, 11.0)
+    outer = [petal(10.6, 3.9, False, 5.6, 90 + k * (360 / 18), c) for k in range(18)]
+    bloom = unary_union(outer + [Point(*c).buffer(7.8, quad_segs=64)])
+    sil = bloom.buffer(0.6, quad_segs=24).buffer(-0.6, quad_segs=24)
+    inner = unary_union([petal(7.0, 3.2, False, 4.3, 90 + 10 + k * 30, c) for k in range(12)])
+    inner = inner.difference(Point(*c).buffer(HOLE_D / 2 + 0.8)).intersection(sil.buffer(-0.45))
+    return sil, inner, c
 
 
 def tulip():

@@ -13,14 +13,13 @@ slit dividers for tucking thread ends, and a scalloped bottom. Single-colour pri
 | `stl/pup_thread_card_3_threads.stl` | 3 (puppy) | 46 × 132.5 × 1.8 |
 | `stl/pup_thread_card_4_threads.stl` | 4 (puppy) | 46 × 155.5 × 1.8 |
 
-| `stl/sunflower_…`, `stl/daisy_…`, `stl/mum_…`, `stl/tulip_…` | 2 / 3 / 4 (flowers) | 46 × ~102–152 × 1.8 |
+| `stl/mum_thread_card_2_threads.stl` | 2 (mum) | 46 × 105.5 × 1.8 |
+| `stl/mum_thread_card_3_threads.stl` | 3 (mum) | 46 × 128.5 × 1.8 |
+| `stl/mum_thread_card_4_threads.stl` | 4 (mum) | 46 × 151.5 × 1.8 |
 
-Flower versions: a flower with two leaves on top; the carabiner hole is the flower's centre.
-See `flower_options.png` for a side-by-side.
+Mum version: a chrysanthemum bloom sits on top; the carabiner hole is its centre.
 
-Puppy version: a sitting pup perches on top; its curly tail is the carabiner loop.
-
-Card is 1.2 mm thick (1.8 mm at the raised logo).
+Card is 1.2 mm thick (1.8 mm at raised details).
 
 **Printing:** lay flat, no supports, 0.2 mm layers, 100% infill, PLA or PETG.
 
