@@ -35,7 +35,7 @@ LOGO_MIN = 0.12      # thickens hairlines so they print
 SLIT_W, SLIT_L = 0.9, 4.0
 OUTER_R, INNER_R = 1.2, 1.2
 COUNTS = [2, 3, 4]
-ANIMALS = ["plain", "pup"]
+ANIMALS = ["plain", "pup", "rose"]
 # ---------------------------------------------------------------------------
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -99,13 +99,53 @@ def pup():
     return sil, details, (tail_c[0] * k, tail_c[1] * k)
 
 
+def leaf(cx, cy, length, width, rot):
+    """Pointed leaf (vesica) with a raised centre vein."""
+    r = (length ** 2 / 4 + width ** 2 / 4) / width
+    d = r - width / 2
+    shape = Point(0, d).buffer(r, quad_segs=64).intersection(Point(0, -d).buffer(r, quad_segs=64))
+    vein = shapely.LineString([(-length / 2 + 1.5, 0), (length / 2 - 1.8, 0)]).buffer(0.35)
+    veins = [vein] + [shapely.LineString([(x, 0), (x + 2.0, s * 1.6)]).buffer(0.3)
+                      for x in (-3.5, -0.5, 2.5) for s in (-1, 1)]
+    out = []
+    for g in (shape, unary_union(veins)):
+        g = aff.rotate(g, rot, origin=(0, 0))
+        out.append(aff.translate(g, cx, cy))
+    return out[0], out[1]
+
+
+def rose():
+    """Garden rose bloom on top; the carabiner hole is the heart of the rose."""
+    c = (0.0, 14.0)
+    PR, PD = 6.0, 7.6          # petal radius, petal distance from centre
+    petals = [Point(c[0] + PD * np.sin(np.radians(a)), c[1] + PD * np.cos(np.radians(a))).buffer(PR, quad_segs=48)
+              for a in range(0, 360, 72)]
+    bloom = unary_union(petals + [Point(*c).buffer(9.5, quad_segs=64)])
+    lf_l, vein_l = leaf(-14.0, 3.6, 16.0, 7.0, 162)
+    lf_r, vein_r = leaf(14.0, 3.6, 16.0, 7.0, 18)
+    filler = box(-9.0, -1.0, 9.0, 5.0)
+    sil = unary_union([bloom, lf_l, lf_r, filler]).buffer(0.8, quad_segs=24).buffer(-0.8, quad_segs=24)
+    # raised spiral petals swirling out from the hole
+    t = np.linspace(0, 1.75 * 2 * np.pi, 400)
+    r = 4.1 + 4.6 * t / t[-1]
+    spiral = shapely.LineString(np.c_[c[0] + r * np.cos(t + 1.2), c[1] + r * np.sin(t + 1.2)]).buffer(0.38)
+    # outer petal edges: a soft arc inside each scallop
+    arcs = []
+    for a in range(0, 360, 72):
+        pc = (c[0] + PD * np.sin(np.radians(a)), c[1] + PD * np.cos(np.radians(a)))
+        ang = 90 - a
+        arcs.append(arc(pc[0], pc[1], PR - 1.9, ang - 60, ang + 60, 0.7))
+    details = unary_union([spiral, vein_l, vein_r] + arcs).intersection(sil.buffer(-0.5))
+    return sil, details, c
+
+
 def plain():
     """Simple rounded tab on top for a carabiner."""
     sil = unary_union([Point(0, 3.5).buffer(6.0, quad_segs=48), box(-6, -1, 6, 3.5)])
     return sil, shapely.Polygon(), (0, 3.5)
 
 
-ANIMAL_FUNCS = {"dog": dog, "plain": plain, "pup": pup}
+ANIMAL_FUNCS = {"dog": dog, "plain": plain, "pup": pup, "rose": rose}
 # ---------------------------------------------------------------------------
 
 

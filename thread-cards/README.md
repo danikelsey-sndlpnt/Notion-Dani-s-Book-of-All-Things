@@ -13,6 +13,12 @@ slit dividers for tucking thread ends, and a scalloped bottom. Single-colour pri
 | `stl/pup_thread_card_3_threads.stl` | 3 (puppy) | 46 × 132.5 × 1.8 |
 | `stl/pup_thread_card_4_threads.stl` | 4 (puppy) | 46 × 155.5 × 1.8 |
 
+| `stl/rose_thread_card_2_threads.stl` | 2 (rose) | 46 × 106 × 1.8 |
+| `stl/rose_thread_card_3_threads.stl` | 3 (rose) | 46 × 129 × 1.8 |
+| `stl/rose_thread_card_4_threads.stl` | 4 (rose) | 46 × 152 × 1.8 |
+
+Rose version: a rose bloom with two leaves on top; the carabiner hole is the heart of the rose.
+
 Puppy version: a sitting pup perches on top; its curly tail is the carabiner loop.
 
 Card is 1.2 mm thick (1.8 mm at the raised logo).
