@@ -12,7 +12,7 @@ from shapely.ops import unary_union
 import trimesh
 
 # ---- design settings -------------------------------------------------------
-THICK = 1.6          # card thickness
+THICK = 1.2          # card thickness
 WIDE = 46.0          # width of header / dividers / footer
 NARROW = 36.0        # width where the thread is wound
 HEADER_H = 18.0
@@ -110,9 +110,6 @@ def main():
             ax.fill(*geom.exterior.xy, color="#f6efe6", ec="#8a6f5a", lw=1.2)
             for hole in geom.interiors:
                 ax.fill(*hole.xy, color="white", ec="#8a6f5a", lw=1)
-        lw, lh, _ = LABEL
-        ax.add_patch(plt.Rectangle((-lw / 2, -HEADER_H + 5), lw, lh, fill=False,
-                                   ls="--", ec="#b9a08c"))
         ax.set_title(f"{n} threads\n{ext[0]:.0f} x {ext[1]:.0f} mm")
         ax.set_aspect("equal"); ax.axis("off")
         ax.set_ylim(-150, 3); ax.set_xlim(-26, 26)
