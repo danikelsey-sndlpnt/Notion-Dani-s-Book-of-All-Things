@@ -122,6 +122,7 @@ h1 span { color: var(--accent); }
 .textbar .tbinfo { flex-basis: 100%; text-align: center; color: #BCB2C8; font: 500 11px var(--mono); }
 .stage.full { position: fixed; inset: 0; z-index: 40; background: var(--bg); padding-top: calc(env(safe-area-inset-top, 0px) + 8px); padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 8px); padding-left: max(8px, env(safe-area-inset-left, 0px)); padding-right: max(8px, env(safe-area-inset-right, 0px)); grid-template-rows: auto minmax(0, 1fr); margin: 0; }
 .stage.full .screen { height: auto !important; min-height: 0; }
+#vDesignOn[aria-pressed=true] { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
 #fullBtn[aria-pressed=true] { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
 .bigmove { position: absolute; right: calc(12px + env(safe-area-inset-right, 0px)); bottom: 44px; width: 64px; height: 64px; border-radius: 50%; border: 2px solid rgba(255,255,255,.75); background: rgba(23,18,28,.85); color: #fff; display: grid; place-items: center; align-content: center; gap: 0; cursor: pointer; box-shadow: 0 4px 14px rgba(0,0,0,.4); z-index: 2; }
 .bigmove svg { width: 26px; height: 26px; }
@@ -246,6 +247,7 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
           <button id="vPrev" aria-pressed="false">Preview</button>
         </div>
         <span class="spacer"></span>
+        <button class="btn small" id="vDesignOn" hidden aria-pressed="false">Show design</button>
         <button class="btn small thread" id="vNext" hidden>Next to check</button>
         <div class="seg" role="group" aria-label="Zoom">
           <button id="zOut" aria-label="Zoom out">−</button>
@@ -526,6 +528,7 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
           <button class="btn thread wide" id="autoFix">Fix them automatically</button>
           <button class="btn wide" id="nextCheck">Next to check</button>
           <p class="hint">Amber and red points are spots where the scan was faint (tape, a shadow, a fold). <b>Fix them automatically</b> looks closely at the scan around each one and snaps it onto the real crossing. Only points inside your design matter for printing; ones outside are ignored.</p>
+          <p class="hint"><b>Show design</b> (above the picture, on the Map) puts your design's colors on the canvas so you can see where each stitch lands while you move points.</p>
           <p class="hint">Drag any point onto its intersection. Arrow keys move the selected point by one pixel. Drag the purple corner dots if the app missed one.</p>
           <div class="row">
             <button class="btn small" id="pickCenter" aria-pressed="false">Pick center intersection</button>
@@ -3205,7 +3208,9 @@ function draw() {
     if (mv[0] || mv[1]) stat.push(`moving ${mv[0] > 0 ? "+" : ""}${mv[0]}, ${mv[1] > 0 ? "+" : ""}${mv[1]}`);
   } else {
     if (!S.scan) { vctx.fillStyle = "#BCB2C8"; vctx.font = "600 15px Figtree, sans-serif"; vctx.textAlign = "center"; vctx.fillText("Load a scan on step 2, or try the example scan.", cw / 2, ch / 2); return; }
-    const src = S.view === "prev" ? (previewStale ? buildPreview() : previewCanvas) : S.scan.canvas;
+    // On the Map, the design can be shown on the canvas so points can be moved while seeing where each stitch lands.
+    const withDesign = S.view === "prev" || (S.view === "map" && S.mapDesign && S.design && S.grid);
+    const src = withDesign ? (previewStale ? buildPreview() : previewCanvas) : S.scan.canvas;
     vctx.save(); vctx.translate(V.tx, V.ty); vctx.scale(V.s, V.s);
     vctx.imageSmoothingEnabled = V.s < 2; vctx.drawImage(src, 0, 0);
     vctx.restore();
@@ -3408,7 +3413,7 @@ function setView(v) {
   if (v !== "design" && v !== "orig" && !S.scan && v !== "snap") v = "snap";
   S.view = v;
   $("qbar").hidden = v !== "design"; $("bigMove").hidden = v !== "design";
-  $("vNext").hidden = !(v === "map" && S.grid);
+  $("vNext").hidden = !(v === "map" && S.grid); $("vDesignOn").hidden = !(v === "map" && S.grid);
   [["vDesign", "design"], ["vOrig", "orig"], ["vSnap", "snap"], ["vMap", "map"], ["vPrev", "prev"]].forEach(([id, k]) => $(id).setAttribute("aria-pressed", k === v));
   fitView();
 }
@@ -3444,7 +3449,7 @@ function updateUI() {
   ["vSnap", "vMap", "vPrev"].forEach(id => $(id).disabled = !has);
   $("mapGroup").hidden = !S.grid;
   $("printNeed").hidden = !!S.grid;
-  $("vNext").hidden = !(S.view === "map" && S.grid);
+  $("vNext").hidden = !(S.view === "map" && S.grid); $("vDesignOn").hidden = !(S.view === "map" && S.grid);
   updateCounts(); updateFit();
 }
 function renderAll() { renderLayers(); renderPalette(); syncSizeInputs(); updateUI(); renderView(); }
@@ -3672,6 +3677,8 @@ const setFull = on => {
 };
 $("fullBtn").onclick = () => setFull(!document.querySelector(".stage").classList.contains("full"));
 window.addEventListener("keydown", e => { if (e.key === "Escape" && document.querySelector(".stage").classList.contains("full") && S.tool !== "text") setFull(false); });
+$("vDesignOn").onclick = () => { S.mapDesign = !S.mapDesign; $("vDesignOn").setAttribute("aria-pressed", S.mapDesign); $("vDesignOn").textContent = S.mapDesign ? "Hide design" : "Show design"; store.set("ccp-mapdesign", S.mapDesign); renderView(); };
+{ const md = store.get("ccp-mapdesign"); if (md) { S.mapDesign = true; $("vDesignOn").setAttribute("aria-pressed", "true"); $("vDesignOn").textContent = "Hide design"; } }
 $("libSave").onclick = () => saveToLibrary(false); $("libSaveNew").onclick = () => saveToLibrary(true);
 $("libBackup").onclick = backupLibrary;
 $("libRestore").onchange = e => { const f = e.target.files[0]; e.target.value = ""; if (f) restoreLibrary(f); };
