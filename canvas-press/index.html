@@ -512,7 +512,9 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
             <div class="stat"><b id="nMoved">0</b><span><i class="dot" style="background:#E86FD0"></i>Moved</span></div>
           </div>
           <p class="hint" id="meshNote"></p>
+          <button class="btn thread wide" id="autoFix">Fix them automatically</button>
           <button class="btn wide" id="nextCheck">Next to check</button>
+          <p class="hint">Amber and red points are spots where the scan was faint (tape, a shadow, a fold). <b>Fix them automatically</b> looks closely at the scan around each one and snaps it onto the real crossing. Only points inside your design matter for printing; ones outside are ignored.</p>
           <p class="hint">Drag any point onto its intersection. Arrow keys move the selected point by one pixel. Drag the purple corner dots if the app missed one.</p>
           <div class="row">
             <button class="btn small" id="pickCenter" aria-pressed="false">Pick center intersection</button>
@@ -1703,6 +1705,37 @@ function updateMeshWarn() {
   const d = S.design, f = n => (n / S.canvasMesh).toFixed(2), g = n => (n / S.mesh).toFixed(2);
   const msg = `Mesh doesn't match: this canvas is ${S.canvasMesh} mesh, but your design is set for ${S.mesh} mesh. It will still print one stitch per intersection, so it comes out ${f(d.w)} × ${f(d.h)} in instead of ${g(d.w)} × ${g(d.h)} in. If you want the planned size, use a ${S.mesh} mesh canvas or resize the design on step 1.`;
   els.forEach(e => { e.textContent = msg; e.hidden = false; });
+}
+// Looks again at the scan around each doubtful point: the threads' brightness around the guess pulls it onto the
+// center of the crossing. Points with enough thread contrast become found; the rest stay as neighbor guesses.
+async function autoFixChecks() {
+  const G = S.grid; if (!G || !S.scan) return;
+  busy(true, "Looking closely at the faint spots…", 0.3); await tick();
+  const w = S.scan.canvas.width, h = S.scan.canvas.height, p = G.pitch;
+  let g = S.scan.gray; if (S.darkThreads) { const inv = new Float32Array(g.length); for (let i = 0; i < g.length; i++) inv[i] = 255 - g[i]; g = inv; }
+  const r1 = Math.max(1, Math.round(p * 0.16)); let b = filter2d(g, w, h, r1, 0); b = filter2d(b, w, h, r1, 0);
+  busy(true, null, 0.7); await tick();
+  const R = Math.max(2, Math.round(p * 0.42));
+  const contrastAt = (x, y) => { let mx = -1, mn = 1e9; for (let yy = Math.round(y) - R; yy <= Math.round(y) + R; yy++) for (let xx = Math.round(x) - R; xx <= Math.round(x) + R; xx++) { if (xx < 0 || yy < 0 || xx >= w || yy >= h) continue; const v = b[yy * w + xx]; if (v > mx) mx = v; if (v < mn) mn = v; } return [mx, mn]; };
+  // Typical contrast at clearly found crossings.
+  const samp = []; for (let k = 0; k < G.gx * G.gy && samp.length < 400; k += 7) if (G.ST[k] === 1) { const [mx, mn] = contrastAt(G.X[k], G.Y[k]); samp.push(mx - mn); }
+  samp.sort((a, c) => a - c); const typical = samp[samp.length >> 1] || 40;
+  const targets = checkList(); let fixed = 0, kept = 0;
+  for (const k of targets) {
+    let x = G.X[k], y = G.Y[k];
+    for (let it = 0; it < 3; it++) {
+      const [mx, mn] = contrastAt(x, y); let sx = 0, sy = 0, sw = 0;
+      for (let yy = Math.round(y) - R; yy <= Math.round(y) + R; yy++) for (let xx = Math.round(x) - R; xx <= Math.round(x) + R; xx++) {
+        if (xx < 0 || yy < 0 || xx >= w || yy >= h) continue; const t = (b[yy * w + xx] - mn) / Math.max(1, mx - mn), wt = t * t * t; sx += xx * wt; sy += yy * wt; sw += wt;
+      }
+      if (sw) { x = sx / sw; y = sy / sw; }
+    }
+    const [mx, mn] = contrastAt(x, y), moved = Math.hypot(x - G.X[k], y - G.Y[k]);
+    if (mx - mn > typical * 0.35 && moved < p * 0.45) { G.X[k] = x; G.Y[k] = y; G.ST[k] = 1; fixed++; }
+    else { S.checked.add(k); kept++; }
+  }
+  refitGuessed(); computeCorners(); previewDirty(); updateCounts(); busy(false); renderView();
+  toast(targets.length ? `Fixed ${fixed} of ${targets.length} points in the design area.` + (kept ? ` ${kept} stay as guesses from their neighbors, which is fine for printing. Zoom in on the Map if you want to check them.` : "") : "Nothing to fix in the design area.", 6000);
 }
 function nearestNode(x, y) {
   const G = S.grid; let best = -1, bd = 1e18;
@@ -3226,11 +3259,10 @@ function updateCounts() {
   for (let k = 0; k < G.gx * G.gy; k++) { const st = G.ST[k]; if ((st === 2 || st === 3) && S.checked.has(k)) continue; c[st]++; }
   $("nFound").textContent = c[1]; $("nCheck").textContent = c[2]; $("nMiss").textContent = c[3]; $("nMoved").textContent = c[4];
   const left = checkList().filter(k => !S.checked.has(k)).length;
-  const outside = left ? 0 : checkList(true).filter(k => !S.checked.has(k)).length;
-  $("nextCheck").textContent = left ? `Next to check (${left} in the design area)` : outside ? `Design area done. Next outside it (${outside})` : "Nothing left to check";
-  $("nextCheck").disabled = !left && !outside;
-  $("vNext").textContent = left ? `Next to check · ${left}` : outside ? `Next outside · ${outside}` : "All checked";
-  $("vNext").disabled = !left && !outside;
+  $("nextCheck").textContent = left ? `Next to check (${left} in the design area)` : "Nothing left to check in the design area";
+  $("nextCheck").disabled = !left;
+  $("vNext").textContent = left ? `Next to check · ${left}` : "All checked";
+  $("vNext").disabled = !left;
 }
 function checkList(all) {
   const G = S.grid, out = []; if (!G) return out;
@@ -3423,7 +3455,7 @@ $("refit").onclick = () => { if (!S.grid) return; refitGuessed(); computeCorners
 $("vNext").onclick = () => $("nextCheck").click();
 $("nextCheck").onclick = () => {
   let list = checkList().filter(k => !S.checked.has(k));
-  if (!list.length) list = checkList(true).filter(k => !S.checked.has(k));
+
   if (!list.length) { updateCounts(); return; }
   // Nearest unchecked point to the current one keeps the walk local.
   const G = S.grid, cur = S.selNode >= 0 ? [G.X[S.selNode], G.Y[S.selNode]] : null;
@@ -3464,6 +3496,7 @@ $("tbDone").onclick = () => { if (!S.stamp) return; if (!S.stampPos) { toast("Cl
 $("showCanvasArea").onchange = e => { S.showArea = e.target.checked; store.set("ccp-area", { on: S.showArea, b: S.canvasBorder }); fitView(); };
 $("canvasBorder").onchange = e => { S.canvasBorder = clamp(+e.target.value || 2, 0.25, 6); store.set("ccp-area", { on: S.showArea, b: S.canvasBorder }); syncSizeInputs(); fitView(); };
 { const a = store.get("ccp-area"); if (a) { S.showArea = !!a.on; S.canvasBorder = a.b || 2; $("showCanvasArea").checked = S.showArea; $("canvasBorder").value = S.canvasBorder; } }
+$("autoFix").onclick = autoFixChecks;
 $("libSave").onclick = () => saveToLibrary(false); $("libSaveNew").onclick = () => saveToLibrary(true);
 $("libBackup").onclick = backupLibrary;
 $("libRestore").onchange = e => { const f = e.target.files[0]; e.target.value = ""; if (f) restoreLibrary(f); };
