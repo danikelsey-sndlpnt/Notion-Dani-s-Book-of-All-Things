@@ -149,6 +149,10 @@ input:focus-visible, select:focus-visible, button:focus-visible { outline: 2px s
 .nudge { display: grid; grid-template-columns: repeat(3, 36px); grid-template-rows: repeat(3, 32px); gap: 4px; }
 .nudge button { border: 1px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 8px; cursor: pointer; font-size: 14px; }
 .nudge span { display: grid; place-items: center; font: 500 11px var(--mono); color: var(--muted); }
+.more { border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; display: grid; gap: 10px; }
+.more summary { cursor: pointer; font-weight: 700; color: var(--ink-2); }
+.more[open] summary { margin-bottom: 4px; }
+.steps { margin: 0; padding-left: 20px; display: grid; gap: 6px; color: var(--ink-2); font-size: 14px; }
 .toast { position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom, 0px) + 20px); transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 10px; font-weight: 600; font-size: 14px; z-index: 20; max-width: calc(100vw - 32px); }
 .badge { display: inline-block; font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; padding: 2px 8px; border-radius: 999px; background: var(--warn-soft); color: var(--warn); }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
@@ -349,70 +353,73 @@ input:focus-visible, select:focus-visible, button:focus-visible { outline: 2px s
 
       <!-- 3 PRINT -->
       <div class="sec" id="pane3" hidden>
+        <div class="status err" id="printNeed">First scan your canvas on step 2 (Scan). Then come back here.</div>
         <div class="group">
-          <h3>Practice on paper</h3>
-          <p class="hint">Prints the design you're working on at its true size for the chosen mesh, centered on plain letter paper, with the color settings below. No scan needed. Use it to check size and colors.</p>
-          <label class="tog"><input type="checkbox" id="practiceGrid" checked> Draw the stitch grid</label>
-          <button class="btn thread wide" id="practicePdf">Practice print on paper (PDF)</button>
-          <div class="status" id="practiceStatus" hidden></div>
-        </div>
-        <div class="status err" id="printNeed">To print on canvas, load a scan and find its intersections on the Scan step first.</div>
-        <div class="group">
-          <h3>Test first</h3>
-          <p class="hint">A grid of one-stitch lines every 5 stitches, with a blue center cross. Printed on scrap canvas, each line should sit on exactly one row of intersections. Your own design is kept and comes back with one click.</p>
+          <h3>Print your canvas</h3>
+          <ol class="steps">
+            <li>Look at the <b>Preview</b> on the left. Your colors should sit on your canvas threads.</li>
+            <li>Click <b>Save print file</b> below.</li>
+            <li>Open that PDF on your computer and print it at <b>100% / Actual Size</b>, <b>Best</b> quality, Letter paper.</li>
+            <li>Put the Carrier with your canvas in the printer by itself, text edge first.</li>
+          </ol>
+          <button class="btn primary wide" id="makePdf">Save print file (PDF)</button>
+          <div class="status" id="fitStatus"></div>
+          <div class="status" id="printStatus" hidden></div>
           <div class="row">
-            <button class="btn small" id="testPattern">Use the test pattern</button>
+            <button class="btn small" id="testPattern">Print a test pattern instead</button>
             <button class="btn small" id="backToMine" hidden>Back to my design</button>
           </div>
+          <p class="hint">First time? The test pattern is a grid of lines that shows right away whether the ink lands on the threads. Then switch back to your design and print it on a fresh canvas.</p>
         </div>
-        <div class="group">
-          <h3>Place the design</h3>
+
+        <p class="hint" style="margin:0">Everything below is optional.</p>
+        <details class="more">
+          <summary>Move the design on the canvas</summary>
           <div class="row">
             <label class="f">Move right <small>stitches</small><input type="number" id="ox" value="0" step="1"></label>
             <label class="f">Move down <small>stitches</small><input type="number" id="oy" value="0" step="1"></label>
             <button class="btn small" id="recenter">Center</button>
           </div>
-          <div class="status" id="fitStatus"></div>
-        </div>
-        <div class="group">
-          <h3>Color on canvas</h3>
+        </details>
+        <details class="more">
+          <summary>Adjust colors for canvas</summary>
           <p class="hint">Ink on canvas looks lighter and duller than on screen. These push it back. Watch the Preview.</p>
           <label class="f">Richness <small id="satOut"></small><input type="range" id="sat" min="80" max="180" value="125"></label>
           <label class="f">Deepen <small id="deepOut"></small><input type="range" id="deepen" min="0" max="30" value="8"></label>
           <label class="f">Contrast <small id="conOut"></small><input type="range" id="contrast" min="80" max="140" value="105"></label>
           <label class="f">Ink reach past each stitch <small id="bleedOut"></small><input type="range" id="bleed" min="0" max="30" value="8"></label>
           <label class="tog"><input type="checkbox" id="rawColors"> Print my exact colors (no adjusting)</label>
-        </div>
-        <div class="group">
-          <h3>Printer nudge</h3>
+        </details>
+        <details class="more">
+          <summary>Practice on plain paper (no scan needed)</summary>
+          <p class="hint">Prints your design at its true size for the chosen mesh, centered on plain letter paper, with the color settings above. Use it to check size and colors.</p>
+          <label class="tog"><input type="checkbox" id="practiceGrid" checked> Draw the stitch grid</label>
+          <button class="btn thread wide" id="practicePdf">Practice print on paper (PDF)</button>
+          <div class="status" id="practiceStatus" hidden></div>
+        </details>
+        <details class="more">
+          <summary>If a print lands off the threads</summary>
           <div class="row" style="align-items:center">
             <div class="nudge">
               <span></span><button id="nU" aria-label="Nudge up">↑</button><span></span>
               <button id="nL" aria-label="Nudge left">←</button><span id="nudgeOut">0,0</span><button id="nR" aria-label="Nudge right">→</button>
               <span></span><button id="nD" aria-label="Nudge down">↓</button><span></span>
             </div>
-            <p class="hint" style="flex:1 1 160px">Each tap moves the print 1/200 inch. Only needed if a print lands off. Your nudge is remembered on this device.</p>
+            <p class="hint" style="flex:1 1 160px">Each tap moves the print 1/200 inch. Your nudge is remembered on this device.</p>
           </div>
           <button class="btn small" id="testPage">Test page for plain paper (PDF)</button>
-          <p class="hint">Print it on plain paper, lay it on the Carrier and hold both up to a window. The crosshairs should sit on the four dots and the outline on your canvas.</p>
-        </div>
-        <div class="group">
-          <h3>Make the print file</h3>
+          <p class="hint">Print it on plain paper, lay it on the Carrier and hold both up to a window. The crosshairs should sit on the four dots. If part of a print goes missing, turn off paper width detection in your printer settings.</p>
+        </details>
+        <details class="more">
+          <summary>Other file types</summary>
           <div class="row">
             <label class="f">Print resolution<select id="printDpi"><option value="300" selected>300 dpi</option><option value="600">600 dpi (large file)</option></select></label>
           </div>
-          <button class="btn primary wide" id="makePdf">Save print file (PDF)</button>
           <div class="row">
             <button class="btn small" id="makePng">Save print image (PNG)</button>
             <button class="btn small" id="savePrev">Save preview (PNG)</button>
           </div>
-          <ul class="checklist">
-            <li>Print at 100% / Actual Size, Best quality</li>
-            <li>Load the Carrier alone with the paper guides snug</li>
-            <li>Turn off paper width detection if part of the print goes missing</li>
-          </ul>
-          <div class="status" id="printStatus" hidden></div>
-        </div>
+        </details>
       </div>
     </section>
   </div>
