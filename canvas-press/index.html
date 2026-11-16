@@ -229,7 +229,8 @@ input:focus-visible, select:focus-visible, button:focus-visible { outline: 2px s
           </div>
           <label class="tog"><input type="checkbox" id="dither"> Blend shades with speckles (for photos)</label>
           <button class="btn thread wide" id="convert">Convert to stitches</button>
-          <p class="hint" id="convHint">Converting again replaces hand edits. Undo brings them back.</p>
+          <div class="status err" id="redoBar" hidden>You've edited stitches by hand, so this setting wasn't applied yet. Applying it reads the picture again and replaces your edits (Undo brings them back). <button class="btn small" id="redoGo" style="margin-top:6px">Apply and replace my edits</button></div>
+          <p class="hint" id="convHint">Converting again replaces hand edits. Undo brings them back. Right-click erases with any tool. Right-click with Fill erases a whole area.</p>
         </div>
 
         <div class="group">
@@ -739,6 +740,17 @@ function convert() {
 }
 
 /* ---------------- design editing ---------------- */
+// Once stitches are edited by hand, settings changes no longer re-read the picture on their own.
+function startEditing() {
+  S.edited = true;
+  if (S.origAlpha > 0) { S.origAlpha = 0; $("origAlpha").value = 0; $("origOut").textContent = "0%"; toast("Original hidden while you edit. Slide it back up to compare, or use the Original view."); }
+}
+function redoFromSource() {
+  const run = () => { S.edited = false; $("redoBar").hidden = true; if (S.layers.length) convert(); else if (S.importFile) importPainted(S.importFile); };
+  if (!S.layers.length && !S.importFile) return;
+  if (!S.edited) { run(); return; }
+  $("redoBar").hidden = false; $("redoGo").onclick = run;
+}
 const snap = () => ({ w: S.design.w, h: S.design.h, pal: S.design.pal.map(c => c.slice()), px: S.design.px.slice(), sx: S.design.sx || 0, sy: S.design.sy || 0 });
 function pushUndo() {
   if (!S.design) return;
@@ -804,18 +816,22 @@ function renderPalette() {
     b.onclick = () => { S.sel = i; if (S.tool === "erase" || S.tool === "pick" || S.tool === "pan") setTool("paint"); renderPalette(); };
     box.appendChild(b);
   });
+  const ub = document.createElement("button"); ub.className = "sw"; ub.setAttribute("aria-pressed", S.tool === "erase");
+  ub.title = "Unprinted (bare canvas)"; ub.innerHTML = `<i style="background:repeating-linear-gradient(45deg,#EEECE7 0 4px,#D9D4DE 4px 8px)"></i>${empty} bare`;
+  ub.onclick = () => { setTool("erase"); renderPalette(); };
+  box.appendChild(ub);
   const sb = $("selbox"); sb.textContent = "";
   if (!d.pal.length) { sb.innerHTML = `<span class="hint">No colors yet. Add one below.</span>`; return; }
   const c = d.pal[S.sel] || d.pal[0];
   const picker = document.createElement("input"); picker.type = "color"; picker.value = hex(c); picker.id = "selColor"; picker.setAttribute("aria-label", "Change this color");
   picker.oninput = () => { d.pal[S.sel] = unhex(picker.value); designDirty(); renderView(); };
   picker.onchange = () => {};
-  picker.onfocus = () => pushUndo();
+  picker.onfocus = () => { pushUndo(); S.edited = true; };
   const lbl = document.createElement("span"); lbl.innerHTML = `<b>${hex(c)}</b> · ${counts[S.sel] || 0} stitches · ${empty} unprinted`;
   const sel = document.createElement("select"); sel.id = "mergeInto"; sel.setAttribute("aria-label", "Replace with");
   sel.innerHTML = `<option value="">Replace all with…</option><option value="-1">Unprinted (no ink)</option>` + d.pal.map((p, i) => i === S.sel ? "" : `<option value="${i}">${hex(p)}</option>`).join("");
   sel.onchange = () => {
-    if (sel.value === "") return; const to = +sel.value; pushUndo();
+    if (sel.value === "") return; const to = +sel.value; pushUndo(); S.edited = true;
     d.px = d.px.map(v => v === S.sel ? to : v);
     const cp = compactPalette(d); d.pal = cp.pal; d.px = cp.px; S.sel = 0; designDirty(); renderView();
   };
@@ -825,7 +841,7 @@ function syncSizeInputs() {
   $("wSt").value = S.wSt; $("hSt").value = S.hSt;
   $("wIn").textContent = (S.wSt / S.mesh).toFixed(2) + " in"; $("hIn").textContent = (S.hSt / S.mesh).toFixed(2) + " in";
 }
-function setTool(t) { S.tool = t; document.querySelectorAll("[data-tool]").forEach(b => b.setAttribute("aria-pressed", b.dataset.tool === t)); }
+function setTool(t) { S.tool = t; document.querySelectorAll("[data-tool]").forEach(b => b.setAttribute("aria-pressed", b.dataset.tool === t)); if (S.design) renderPalette(); }
 
 function renderLayers() {
   const box = $("layers"); box.textContent = "";
@@ -844,7 +860,7 @@ function renderLayers() {
       const k = inp.dataset.k;
       const apply = () => { L[k] = inp.type === "checkbox" ? inp.checked : inp.tagName === "SELECT" ? inp.value : +inp.value; };
       inp.addEventListener("input", () => { apply(); const lb = inp.closest("label"); if (lb && inp.type === "range") lb.firstChild.textContent = lb.firstChild.textContent.replace(/-?\d+%?$/, inp.value + (k === "opacity" || k === "scale" ? "%" : "")); });
-      inp.addEventListener("change", () => { apply(); convert(); });
+      inp.addEventListener("change", () => { apply(); redoFromSource(); });
     });
     el.querySelectorAll("[data-a]").forEach(b => b.onclick = () => {
       const a = b.dataset.a;
@@ -1774,16 +1790,20 @@ view.addEventListener("pointerdown", e => {
   ptrs.set(e.pointerId, [sx, sy]);
   if (ptrs.size === 2) { const [a, b] = [...ptrs.values()]; drag = { type: "pinch", d: Math.hypot(a[0] - b[0], a[1] - b[1]), c: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2] }; return; }
   const [wx, wy] = toWorld(sx, sy);
-  const panReq = e.button === 1 || e.button === 2 || spaceDown;
-  if (S.view === "design" && S.design && !panReq && S.tool !== "pan") {
+  // Right-click erases in the design, whatever tool is picked (with Fill it erases the whole connected area).
+  const rightErase = e.button === 2 && S.view === "design" && !!S.design && !spaceDown;
+  const panReq = e.button === 1 || spaceDown || (e.button === 2 && !rightErase);
+  const tool = rightErase ? (S.tool === "fill" ? "fill" : "erase") : S.tool;
+  if (S.view === "design" && S.design && !panReq && tool !== "pan") {
     const cell = [Math.floor(wx), Math.floor(wy)];
-    if (S.tool !== "move" && (cell[0] < 0 || cell[1] < 0 || cell[0] >= S.design.w || cell[1] >= S.design.h)) { drag = { type: "pan", last: [sx, sy] }; return; }
+    if (tool !== "move" && (cell[0] < 0 || cell[1] < 0 || cell[0] >= S.design.w || cell[1] >= S.design.h)) { drag = rightErase ? null : { type: "pan", last: [sx, sy] }; return; }
     const i = cell[1] * S.design.w + cell[0];
-    if (S.tool === "move") { drag = { type: "move", start: [wx, wy], delta: [0, 0] }; return; }
-    if (S.tool === "pick") { const v = S.design.px[i]; if (v >= 0) { S.sel = v; setTool("paint"); renderPalette(); } return; }
+    if (tool === "move") { drag = { type: "move", start: [wx, wy], delta: [0, 0] }; return; }
+    if (tool === "pick") { const v = S.design.px[i]; if (v >= 0) { S.sel = v; setTool("paint"); renderPalette(); } return; }
+    startEditing();
     pushUndo();
-    if (S.tool === "fill") { floodFill(i, S.sel); designDirty(); renderView(); return; }
-    drag = { type: "paint", v: S.tool === "erase" ? -1 : S.sel, last: cell };
+    if (tool === "fill") { floodFill(i, rightErase ? -1 : S.sel); designDirty(); renderView(); return; }
+    drag = { type: "paint", v: tool === "erase" ? -1 : S.sel, last: cell };
     paintLine(cell, cell, drag.v); return;
   }
   if (S.view === "map" && S.grid && !panReq) {
@@ -1905,11 +1925,11 @@ document.querySelectorAll("[data-tool]").forEach(b => b.onclick = () => setTool(
 $("undo").onclick = () => restore(S.undo, S.redo); $("redo").onclick = () => restore(S.redo, S.undo);
 $("showGrid").onchange = e => { S.showGrid = e.target.checked; renderView(); };
 $("nColors").oninput = e => { S.nColors = +e.target.value; $("ncOut").textContent = S.nColors; };
-$("nColors").onchange = () => { if (S.layers.length) convert(); else if (S.importFile) importPainted(S.importFile); };
-$("dither").onchange = e => { S.dither = e.target.checked; if (S.layers.length) convert(); };
-$("bgMode").onchange = e => { S.bgMode = e.target.value; $("bgColor").hidden = S.bgMode !== "color"; if (S.layers.length) convert(); };
-$("bgColor").onchange = e => { S.bg = e.target.value; if (S.layers.length) convert(); };
-$("convert").onclick = convert;
+$("nColors").onchange = redoFromSource;
+$("dither").onchange = e => { S.dither = e.target.checked; redoFromSource(); };
+$("bgMode").onchange = e => { S.bgMode = e.target.value; $("bgColor").hidden = S.bgMode !== "color"; redoFromSource(); };
+$("bgColor").onchange = e => { S.bg = e.target.value; redoFromSource(); };
+$("convert").onclick = () => { S.edited = false; $("redoBar").hidden = true; convert(); };
 function setMesh(m) { S.mesh = m; $("mesh").value = m; $("mesh2").value = m; syncSizeInputs(); renderView(); }
 $("mesh").onchange = e => setMesh(+e.target.value);
 $("mesh2").onchange = e => setMesh(+e.target.value);
@@ -1940,8 +1960,8 @@ $("addArt").onchange = async e => {
   if (firstReal) { if (S.wSt < 20) S.wSt = 60; const a = S.layers[0].img.height / S.layers[0].img.width; S.hSt = clamp(Math.round(S.wSt * a), 4, 400); }
   setTab(1); renderLayers(); convert();
 };
-$("readPainted").onchange = e => { const f = e.target.files[0]; e.target.value = ""; if (!f) return; S.importFile = f; if (S.nColors < 12) { S.nColors = 12; $("nColors").value = 12; $("ncOut").textContent = 12; } importPainted(f); };
-$("bareEmpty").onchange = () => { if (S.importFile && !S.layers.length) importPainted(S.importFile); };
+$("readPainted").onchange = e => { const f = e.target.files[0]; e.target.value = ""; if (!f) return; S.importFile = f; S.edited = false; $("redoBar").hidden = true; if (S.nColors < 12) { S.nColors = 12; $("nColors").value = 12; $("ncOut").textContent = 12; } importPainted(f); };
+$("bareEmpty").onchange = redoFromSource;
 $("openStitch").onchange = async e => {
   const f = e.target.files[0]; e.target.value = ""; if (!f) return;
   try {
