@@ -2581,9 +2581,9 @@ function stampText(cell) {
   }
   const cp = compactPalette(d); d.pal = cp.pal; d.px = cp.px; S.sel = Math.max(0, d.pal.findIndex(c => hex(c) === selHex));
   designDirty(); renderView();
-  if (st.clip) { toast(n < st.cells.cells.reduce((a, b) => a + b, 0) ? "Copy placed. Part of it went past 400 stitches and was cut off." : "Copy placed." + (padL || padT || W !== S.undo[S.undo.length - 1].w || H !== S.undo[S.undo.length - 1].h ? " The design frame grew to fit it." : "") + " Paste places another."); fitView(); return; }
+  if (st.clip) { toast(n < st.cells.cells.reduce((a, b) => a + b, 0) ? "Copy placed. Part of it went past 400 stitches and was cut off." : "Copy placed." + (padL || padT || W !== S.undo[S.undo.length - 1].w || H !== S.undo[S.undo.length - 1].h ? " The design frame grew to fit it." : "") + " Paste places another."); softFit(padL, padT); return; }
   toast(n < st.cells.cells.reduce((a, b) => a + b, 0) ? "Text stitched in. Part of it went past 400 stitches and was cut off." : "Text stitched in." + (padL || padT || W !== S.undo[S.undo.length - 1].w || H !== S.undo[S.undo.length - 1].h ? " The design frame grew to fit it." : ""));
-  fitView();
+  softFit(padL, padT);
 }
 /* ---- Select, copy, cut, paste ---- */
 S.selection = null; S.clipboard = null;
@@ -2596,7 +2596,7 @@ function selCount() { const r = S.selection, d = S.design; let n = 0; if (!r || 
 function syncSelUI() {
   const on = S.tool === "select" && !!S.selection && !!S.design;
   const was = $("qselRow").hidden; $("qselRow").hidden = !on;
-  if (was === on && S.view === "design") setTimeout(fitView, 0);
+  if (was === on && S.view === "design") setTimeout(() => softFit(), 0);
   if (on) { const r = S.selection; $("selInfo").textContent = `${r.x1 - r.x0} × ${r.y1 - r.y0} · ${selCount()} stitches`; }
   document.querySelectorAll("[data-paste]").forEach(b => { b.disabled = !S.clipboard; if (b.classList.contains("qpaste")) b.hidden = !S.clipboard; });
 }
@@ -3004,7 +3004,7 @@ function shiftDesign(dx, dy) {
   for (let i = 0; i < d.px.length; i++) { if (d.px[i] < 0) continue; const X = i % d.w + dx + padL, Y = ((i / d.w) | 0) + dy + padT; if (X >= 0 && Y >= 0 && X < W && Y < H) px[Y * W + X] = d.px[i]; }
   pushUndo();
   setDesign(d.pal, px, W, H, true, (d.sx || 0) + dx + padL, (d.sy || 0) + dy + padT);
-  if (padL || padT || W !== d.w || H !== d.h) fitView();
+  if (padL || padT || W !== d.w || H !== d.h) softFit(padL, padT);
   renderView();
 }
 function cropDesign(a, b) {
@@ -3202,7 +3202,14 @@ function resize() {
   view.width = Math.round(r.width * dpr); view.height = Math.round(r.height * dpr);
   renderView();
 }
+// After you zoom or move the view yourself, toolbar changes keep your view instead of zooming back out.
+function softFit(padL, padT) {
+  if (!V.user) { fitView(); return; }
+  if (padL || padT) { V.tx -= (padL || 0) * V.s; V.ty -= (padT || 0) * V.s; }
+  renderView();
+}
 function fitView() {
+  V.user = false;
   const r = view.getBoundingClientRect(), [w, h] = worldSize();
   let target = [0, 0, w, h];
   if (S.view === "design" && S.showArea && S.design) { const m = Math.round(S.canvasBorder * S.mesh) + 2; target = [-m, -m, w + 2 * m, h + 2 * m]; }
@@ -3223,7 +3230,7 @@ function fitView() {
 function zoomAt(f, cx, cy) {
   const r = view.getBoundingClientRect(); if (cx == null) { cx = r.width / 2; cy = r.height / 2; }
   const ns = clamp(V.s * f, 0.02, 200); f = ns / V.s;
-  V.tx = cx - (cx - V.tx) * f; V.ty = cy - (cy - V.ty) * f; V.s = ns; renderView();
+  V.tx = cx - (cx - V.tx) * f; V.ty = cy - (cy - V.ty) * f; V.s = ns; V.user = true; renderView();
 }
 const toWorld = (sx, sy) => [(sx - V.tx) / V.s, (sy - V.ty) / V.s];
 let raf = 0;
@@ -3482,12 +3489,12 @@ view.addEventListener("pointermove", e => {
     if (!drag && (String(prev) !== String(hover.cell))) renderView();
   }
   if (!drag) return;
-  if (drag.type === "pinch" && ptrs.size === 2) {
+  if (drag.type === "pinch" && ptrs.size === 2) { V.user = true;
     const [a, b] = [...ptrs.values()], d = Math.hypot(a[0] - b[0], a[1] - b[1]), c = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
     V.tx += c[0] - drag.c[0]; V.ty += c[1] - drag.c[1]; zoomAt(d / drag.d, c[0], c[1]); drag.d = d; drag.c = c; return;
   }
   const [wx, wy] = toWorld(sx, sy);
-  if (drag.type === "pan") { V.tx += sx - drag.last[0]; V.ty += sy - drag.last[1]; drag.last = [sx, sy]; renderView(); }
+  if (drag.type === "pan") { V.user = true; V.tx += sx - drag.last[0]; V.ty += sy - drag.last[1]; drag.last = [sx, sy]; renderView(); }
   else if (drag.type === "textmove") { if (!drag.moved && Math.hypot(sx - drag.s0[0], sy - drag.s0[1]) < 6) return; drag.moved = true; const c = [Math.round(wx + drag.off[0]), Math.round(wy + drag.off[1])]; if (c[0] !== S.stampPos[0] || c[1] !== S.stampPos[1]) { S.stampPos = c; renderView(); } }
   else if (drag.type === "select") { const c = [Math.floor(wx), Math.floor(wy)]; if (c[0] !== drag.b[0] || c[1] !== drag.b[1]) { drag.b = c; renderView(); } }
   else if (drag.type === "crop") { const c = [Math.floor(wx), Math.floor(wy)]; if (c[0] !== drag.b[0] || c[1] !== drag.b[1]) { drag.b = c; renderView(); } }
@@ -3533,7 +3540,7 @@ function paintLine(a, b, v) {
 }
 function brushToolSize() { return S.tool === "erase" ? S.brush.erase : S.brush.paint; }
 function syncBrushUI() {
-  clearTimeout(syncBrushUI.t); syncBrushUI.t = setTimeout(() => { const h = $("qbar").getBoundingClientRect().height; if (S.view === "design" && syncBrushUI.h && Math.abs(h - syncBrushUI.h) > 4 && !drag) fitView(); syncBrushUI.h = h; }, 30);
+  clearTimeout(syncBrushUI.t); syncBrushUI.t = setTimeout(() => { const h = $("qbar").getBoundingClientRect().height; if (S.view === "design" && syncBrushUI.h && Math.abs(h - syncBrushUI.h) > 4 && !drag) softFit(); syncBrushUI.h = h; }, 30);
   const sz = n => n === 1 ? "1 stitch" : `${n} stitches across`;
   $("brushPaint").value = S.brush.paint; $("brushErase").value = S.brush.erase;
   $("bpOut").textContent = sz(S.brush.paint); $("beOut").textContent = sz(S.brush.erase);
