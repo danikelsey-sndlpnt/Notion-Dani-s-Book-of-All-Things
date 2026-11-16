@@ -242,6 +242,7 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
             <button data-tool="paint" aria-pressed="true">Paint</button>
             <button data-tool="fill" aria-pressed="false">Fill</button>
             <button data-tool="erase" aria-pressed="false">Erase</button>
+            <button data-tool="wand" aria-pressed="false">Magic erase</button>
             <button data-tool="pick" aria-pressed="false">Pick</button>
             <button data-tool="pan" aria-pressed="false">Move view</button>
             <span class="qsep"></span>
@@ -324,6 +325,7 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
             <button data-tool="move" aria-pressed="false">Move stitches</button>
             <button data-tool="crop" aria-pressed="false">Crop</button>
             <button data-tool="text" aria-pressed="false">Text</button>
+            <button data-tool="wand" aria-pressed="false">Magic erase</button>
             <button data-tool="pan" aria-pressed="false">Move view</button>
           </div>
           <div class="row">
@@ -339,9 +341,13 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
             <button class="btn small" id="trim">Trim empty edges</button>
             <button class="btn small" id="removeBg">Remove background</button>
           </div>
+          <div class="row" style="align-items:center">
+            <label class="f">Background strength <small id="bgTolOut">18</small><input type="range" id="bgTol" min="4" max="45" value="18"></label>
+            <label class="tog" style="flex:1 1 180px"><input type="checkbox" id="bgGaps"> Also clear gaps inside the design</label>
+          </div>
           <label class="f" id="origRow">Original picture on top <small id="origOut">0%</small><small>You can keep editing with it on. Slide to 0% to see your stitches' true colors.</small><input type="range" id="origAlpha" min="0" max="100" value="0"></label>
           <p class="hint"><b>Text</b>: pick the words, font, size and color, then click on the design where the text goes. It becomes regular stitches you can edit. Press Esc to stop placing.</p>
-          <p class="hint"><b>Crop</b>: drag a box over the part you want to keep. <b>Remove background</b> clears the color around the outside edge of the design (and colors very close to it) so those stitches print as bare canvas. Undo brings either one back.</p>
+          <p class="hint"><b>Crop</b>: drag a box over the part you want to keep. <b>Remove background</b> clears every color that runs along the outside edge, plus the blurry fringe and loose specks, so those stitches print as bare canvas. Raise <b>Background strength</b> to clear more shades, lower it to protect colors close to the background. <b>Magic erase</b>: tap any leftover patch to clear it and everything touching it in a similar color. Undo brings any of these back.</p>
           <p class="hint"><b>Move stitches</b>: drag the design to shift it. The original picture moves with it, so you can see what you moved. The frame grows if stitches go past the edge.</p>
           <div class="pal" id="pal"></div>
           <div class="selbox" id="selbox"></div>
@@ -2352,18 +2358,116 @@ function cropDesign(a, b) {
   const cp = compactPalette(S.design); S.design.pal = cp.pal; S.design.px = cp.px; if (S.sel >= cp.pal.length) S.sel = 0;
   designDirty(); fitView(); toast(`Cropped to ${W} × ${H} stitches. Undo brings the rest back.`);
 }
-// Background = the most common color along the outer edge. Clear it (and colors within a small color distance) inward from the edges.
+// Background = every color that makes up a real share of the outer edge. Cleared inward from the edges with a color tolerance,
+// then the soft fringe next to the cleared area and leftover specks go too.
+const labOfPal = d => d.pal.map(c => rgb2lab(c[0], c[1], c[2]));
+const dE = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+function removeSpecks(d, maxSize) {
+  const W = d.w, H = d.h, seen = new Uint8Array(W * H); let n = 0;
+  for (let s0 = 0; s0 < W * H; s0++) {
+    if (seen[s0] || d.px[s0] < 0) continue;
+    const comp = [], st = [s0]; seen[s0] = 1; let edge = false;
+    while (st.length) {
+      const i = st.pop(); comp.push(i); const x = i % W, y = (i / W) | 0;
+      if (x === 0 || y === 0 || x === W - 1 || y === H - 1) edge = true;
+      for (const j of [x > 0 ? i - 1 : -1, x < W - 1 ? i + 1 : -1, y > 0 ? i - W : -1, y < H - 1 ? i + W : -1]) if (j >= 0 && !seen[j] && d.px[j] >= 0) { seen[j] = 1; st.push(j); }
+      if (comp.length > maxSize) break;
+    }
+    // Drain the rest of a big component so it's not revisited piece by piece.
+    while (st.length) { const i = st.pop(); const x = i % W, y = (i / W) | 0; for (const j of [x > 0 ? i - 1 : -1, x < W - 1 ? i + 1 : -1, y > 0 ? i - W : -1, y < H - 1 ? i + W : -1]) if (j >= 0 && !seen[j] && d.px[j] >= 0) { seen[j] = 1; st.push(j); } }
+    if (comp.length <= maxSize) { comp.forEach(i => d.px[i] = -1); n += comp.length; }
+  }
+  return n;
+}
+// Leftover pieces (bits of a border, corner marks) are small groups away from the main subject. Keep the biggest group
+// and anything that sits inside or right next to its outline; drop small far-off groups.
+function keepMainSubject(d) {
+  const W = d.w, H = d.h, lab = new Int32Array(W * H).fill(-1), comps = [];
+  for (let s0 = 0; s0 < W * H; s0++) {
+    if (lab[s0] >= 0 || d.px[s0] < 0) continue;
+    const id = comps.length, st = [s0], c = { n: 0, x0: W, y0: H, x1: 0, y1: 0, cells: [] }; lab[s0] = id;
+    while (st.length) {
+      const i = st.pop(), x = i % W, y = (i / W) | 0; c.n++; c.cells.push(i);
+      c.x0 = Math.min(c.x0, x); c.x1 = Math.max(c.x1, x); c.y0 = Math.min(c.y0, y); c.y1 = Math.max(c.y1, y);
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const X = x + dx, Y = y + dy; if (X < 0 || Y < 0 || X >= W || Y >= H) continue;
+        const j = Y * W + X; if (lab[j] < 0 && d.px[j] >= 0) { lab[j] = id; st.push(j); }
+      }
+    }
+    comps.push(c);
+  }
+  if (comps.length < 2) return;
+  comps.sort((a, b) => b.n - a.n);
+  const m = comps[0], pad = Math.max(2, Math.round(Math.max(m.x1 - m.x0, m.y1 - m.y0) * 0.08));
+  for (const c of comps.slice(1)) {
+    const near = c.x1 >= m.x0 - pad && c.x0 <= m.x1 + pad && c.y1 >= m.y0 - pad && c.y0 <= m.y1 + pad;
+    if (!near && c.n < m.n * 0.25) c.cells.forEach(i => d.px[i] = -1);
+  }
+}
 function removeBackground() {
-  const d = S.design, W = d.w, H = d.h, cnt = new Map(), edge = [];
-  for (let x = 0; x < W; x++) edge.push(x, (H - 1) * W + x);
-  for (let y = 0; y < H; y++) edge.push(y * W, y * W + W - 1);
-  for (const i of edge) { const v = d.px[i]; if (v >= 0) cnt.set(v, (cnt.get(v) || 0) + 1); }
-  if (!cnt.size) { toast("The edges are already bare canvas."); return; }
-  const bg = [...cnt.entries()].sort((a, b) => b[1] - a[1])[0][0], L = rgb2lab(...d.pal[bg]);
-  const like = d.pal.map(c => { const l = rgb2lab(...c); return Math.hypot(l[0] - L[0], l[1] - L[1], l[2] - L[2]) < 8; });
+  const d = S.design, W = d.w, H = d.h, tol = +$("bgTol").value, gaps = $("bgGaps").checked;
+  const edge = []; for (let x = 0; x < W; x++) edge.push(x, (H - 1) * W + x); for (let y = 1; y < H - 1; y++) edge.push(y * W, y * W + W - 1);
+  const cnt = new Map(); let filled = 0;
+  for (const i of edge) { const v = d.px[i]; if (v >= 0) { cnt.set(v, (cnt.get(v) || 0) + 1); filled++; } }
+  if (!filled) { toast("The edges are already bare canvas. Use Magic erase on anything left."); return; }
+  const labs = labOfPal(d), bgIdx = [...cnt.entries()].filter(([, n]) => n >= Math.max(2, filled * 0.08)).map(([v]) => v);
+  // Colors spread across nearly the whole picture (stripes, patterns, a backdrop behind a border) are background too.
+  const box = d.pal.map(() => [W, H, -1, -1, 0]);
+  for (let i = 0; i < W * H; i++) { const v = d.px[i]; if (v < 0) continue; const b = box[v], x = i % W, y = (i / W) | 0; b[0] = Math.min(b[0], x); b[1] = Math.min(b[1], y); b[2] = Math.max(b[2], x); b[3] = Math.max(b[3], y); b[4]++; }
+  const spread = [];
+  box.forEach((b, v) => { if (b[4] >= W * H * 0.08 && (b[2] - b[0] + 1) >= W * 0.75 && (b[3] - b[1] + 1) >= H * 0.75 && !bgIdx.includes(v)) { bgIdx.push(v); spread.push(v); } });
+  const bgLabs = bgIdx.map(v => labs[v]);
+  const dist = v => Math.min(...bgLabs.map(l => dE(labs[v], l)));
+  const like = d.pal.map((c, v) => dist(v) < tol);
+  pushUndo(); S.edited = true;
+  const before = d.px.filter(v => v >= 0).length;
   const seen = new Uint8Array(W * H), st = edge.filter(i => d.px[i] >= 0 && like[d.px[i]]);
-  if (!st.length) { toast("No background color found along the edges."); return; }
-  pushUndo(); S.edited = true; let n = 0;
+  while (st.length) {
+    const i = st.pop(); if (seen[i]) continue; seen[i] = 1;
+    const v = d.px[i]; if (v < 0 || !like[v]) continue;
+    d.px[i] = -1;
+    const x = i % W, y = (i / W) | 0;
+    if (x > 0) st.push(i - 1); if (x < W - 1) st.push(i + 1); if (y > 0) st.push(i - W); if (y < H - 1) st.push(i + W);
+  }
+  // Whole-picture colors go everywhere they appear; edge colors only inside the design when asked.
+  const spreadLike = d.pal.map((c, v) => spread.length && Math.min(...spread.map(u => dE(labs[v], labs[u]))) < tol);
+  for (let i = 0; i < W * H; i++) { const v = d.px[i]; if (v >= 0 && (spreadLike[v] || (gaps && like[v]))) d.px[i] = -1; }
+  // Fringe: a stitch touching the cleared area whose color is a mix of the background and the design color beside it
+  // (a blurry outline). Solid design colors are not mixes, so thin leaves and lines stay.
+  const bgL = bgIdx.map(v => labs[v]);
+  for (let pass = 0; pass < 2; pass++) {
+    const kill = [];
+    for (let i = 0; i < W * H; i++) {
+      const v = d.px[i]; if (v < 0) continue; const x = i % W, y = (i / W) | 0;
+      let touches = false; const others = new Set();
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const X = x + dx, Y = y + dy; if (X < 0 || Y < 0 || X >= W || Y >= H) { touches = true; continue; }
+        const u = d.px[Y * W + X]; if (u < 0) touches = true; else if (u !== v) others.add(u);
+      }
+      if (!touches) continue;
+      const A = labs[v]; let mix = Math.min(...bgL.map(l => dE(A, l))) < tol * 0.5;
+      if (!mix) for (const p0 of bgL) { for (const u of others) {
+        const p1 = labs[u], dv = [p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]], L2 = dv[0] ** 2 + dv[1] ** 2 + dv[2] ** 2; if (L2 < 100) continue;
+        const t = ((A[0] - p0[0]) * dv[0] + (A[1] - p0[1]) * dv[1] + (A[2] - p0[2]) * dv[2]) / L2;
+        if (t > 0.12 && t < 0.88 && Math.hypot(A[0] - p0[0] - t * dv[0], A[1] - p0[1] - t * dv[1], A[2] - p0[2] - t * dv[2]) < 8) { mix = true; break; }
+      } if (mix) break; }
+      if (mix) kill.push(i);
+    }
+    kill.forEach(i => d.px[i] = -1); if (!kill.length) break;
+  }
+  removeSpecks(d, 3);
+  keepMainSubject(d);
+  const n = before - d.px.filter(v => v >= 0).length;
+  const cp = compactPalette(d); d.pal = cp.pal; d.px = cp.px; S.sel = 0;
+  designDirty(); renderView();
+  toast(n ? `Removed ${n} background stitches. Tap any leftovers with Magic erase, or raise Background strength and try again.` : "Nothing matched. Raise Background strength, or tap the background with Magic erase.");
+}
+// Magic erase: clears the tapped patch and everything touching it in a similar color.
+function magicErase(i0) {
+  const d = S.design, W = d.w, H = d.h, v0 = d.px[i0]; if (v0 < 0) return;
+  const labs = labOfPal(d), tol = +$("bgTol").value, like = labs.map(l => dE(l, labs[v0]) < tol);
+  pushUndo(); S.edited = true;
+  const seen = new Uint8Array(W * H), st = [i0]; let n = 0;
   while (st.length) {
     const i = st.pop(); if (seen[i]) continue; seen[i] = 1;
     const v = d.px[i]; if (v < 0 || !like[v]) continue;
@@ -2371,8 +2475,8 @@ function removeBackground() {
     const x = i % W, y = (i / W) | 0;
     if (x > 0) st.push(i - 1); if (x < W - 1) st.push(i + 1); if (y > 0) st.push(i - W); if (y < H - 1) st.push(i + W);
   }
-  const cp = compactPalette(d); d.pal = cp.pal; d.px = cp.px; S.sel = 0;
-  designDirty(); renderView(); toast(`Removed ${n} background stitches. They'll stay bare canvas. Undo brings them back.`);
+  const cp = compactPalette(d); d.pal = cp.pal; d.px = cp.px; if (S.sel >= d.pal.length) S.sel = 0;
+  designDirty(); renderView(); toast(`Cleared ${n} stitches.`);
 }
 function trimDesign() {
   const d = S.design; let x0 = 1e9, y0 = 1e9, x1 = -1, y1 = -1;
@@ -2572,6 +2676,7 @@ view.addEventListener("pointerdown", e => {
     if (tool === "move") { drag = { type: "move", start: [wx, wy], delta: [0, 0] }; return; }
     if (tool === "crop") { drag = { type: "crop", a: cell, b: cell }; renderView(); return; }
     if (tool === "text") { if (S.stamp) stampText(cell); else openTextTool(); return; }
+    if (tool === "wand") { magicErase(i); return; }
     if (tool === "pick") { const v = S.design.px[i]; if (v >= 0) { S.sel = v; setTool("paint"); renderPalette(); } return; }
     startEditing();
     pushUndo();
@@ -2703,6 +2808,7 @@ const setLook = l => { S.look = l; $("lookMesh").setAttribute("aria-pressed", l 
 $("lookMesh").onclick = () => setLook("mesh"); $("lookBox").onclick = () => setLook("box");
 $("trim").onclick = () => S.design && trimDesign();
 $("removeBg").onclick = () => S.design && removeBackground();
+$("bgTol").oninput = e => $("bgTolOut").textContent = e.target.value;
 $("origAlpha").oninput = e => { S.origAlpha = +e.target.value; $("origOut").textContent = S.origAlpha + "%"; if (S.view !== "design") setView("design"); else renderView(); }; $("vSnap").onclick = () => setView("snap"); $("vMap").onclick = () => setView("map"); $("vPrev").onclick = () => setView("prev");
 $("zIn").onclick = () => zoomAt(1.4); $("zOut").onclick = () => zoomAt(1 / 1.4); $("zFit").onclick = fitView;
 document.querySelectorAll("[data-tool]").forEach(b => b.onclick = () => { if (b.dataset.tool === "text") { openTextTool(); return; } setTool(b.dataset.tool); });
