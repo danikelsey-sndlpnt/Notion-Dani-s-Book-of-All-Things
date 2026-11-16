@@ -2730,7 +2730,8 @@ function useTestPattern() {
     persistOriginal(); S.beforeTest = rec; store.set("ccp-before-test", rec); idb.set("before-test", rec);
   }
   if (!S.testing) S.savedOriginal = S.original;
-  const n = clamp(S.mesh * 3, 30, 54), w = n + 1, h = n + 1, px = new Int16Array(w * h).fill(-1), c = Math.floor(n / 2);
+  // Odd size with the center stitch exactly in the middle: equal red lines on all four sides and a red border all around.
+  const half = clamp(5 * Math.round(S.mesh * 1.5 / 5), 15, 25), w = 2 * half + 1, h = w, px = new Int16Array(w * h).fill(-1), c = half;
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
     const k = y * w + x;
     if ((x - c) % 5 === 0 || (y - c) % 5 === 0) px[k] = 0;
