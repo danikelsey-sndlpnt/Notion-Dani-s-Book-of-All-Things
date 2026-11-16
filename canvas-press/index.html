@@ -1122,16 +1122,35 @@ async function detectGrid(g, w, h, p0, inMask, procDpi) {
     }
     return best;
   };
-  let cxm = 0, cym = 0; peaks.forEach(p => { cxm += p.x; cym += p.y; }); cxm /= peaks.length; cym /= peaks.length;
-  const central = peaks.map((p, k) => [k, (p.x - cxm) ** 2 + (p.y - cym) ** 2]).sort((a, c2) => a[1] - c2[1]).slice(0, 3000).map(a => a[0]);
-  const ds = []; let C4 = 0, S4 = 0;
-  for (const k of central) {
-    const p = peaks[k], j = near(p.x, p.y, p0 * 1.8, q => q === k); if (j < 0) continue;
-    const dx = peaks[j].x - p.x, dy = peaks[j].y - p.y, d = Math.hypot(dx, dy);
-    ds.push(d); const a = Math.atan2(dy, dx) * 4; C4 += Math.cos(a); S4 += Math.sin(a);
-  }
-  ds.sort((a, c2) => a - c2);
-  const pitch = ds.length ? ds[ds.length >> 1] : p0, theta = Math.atan2(S4, C4) / 4;
+  // Spacing and angle from nearest neighbors. Junk (scanner streaks, tape, text) is scattered at random distances, so the real mesh dominates.
+  const nnStats = (list, lo, hi) => {
+    const ds = []; let C4 = 0, S4 = 0;
+    for (const k of list) {
+      const p = peaks[k], j = near(p.x, p.y, hi, q => q === k); if (j < 0) continue;
+      const dx = peaks[j].x - p.x, dy = peaks[j].y - p.y, d = Math.hypot(dx, dy); if (d < lo) continue;
+      ds.push(d); const a = Math.atan2(dy, dx) * 4; C4 += Math.cos(a); S4 += Math.sin(a);
+    }
+    ds.sort((a, c2) => a - c2);
+    return { pitch: ds.length ? ds[ds.length >> 1] : p0, theta: Math.atan2(S4, C4) / 4 };
+  };
+  const stride = Math.max(1, Math.floor(peaks.length / 8000)), sample = [];
+  for (let k = 0; k < peaks.length; k += stride) sample.push(k);
+  let { pitch, theta } = nnStats(sample, p0 * 0.6, p0 * 1.5);
+  // Keep only crossings with a neighbor at each of the four lattice spots: those are surely canvas.
+  const latticeOK = k => {
+    const p = peaks[k], u = [pitch * Math.cos(theta), pitch * Math.sin(theta)], v = [-u[1], u[0]];
+    for (const [a, c2] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) if (near(p.x + a * u[0] + c2 * v[0], p.y + a * u[1] + c2 * v[1], pitch * 0.25, q => q === k) < 0) return false;
+    return true;
+  };
+  let good = sample.filter(latticeOK);
+  if (good.length < 10) return { error: "No regular thread pattern was found." };
+  ({ pitch, theta } = nnStats(good, pitch * 0.7, pitch * 1.3));
+  good = good.filter(latticeOK);
+  if (good.length < 10) return { error: "No regular thread pattern was found." };
+  const med = arr => { const v = arr.slice().sort((a, c2) => a - c2); return v[v.length >> 1]; };
+  const cxm = med(good.map(k => peaks[k].x)), cym = med(good.map(k => peaks[k].y));
+  let seedK = good[0], sbest = 1e18;
+  for (const k of good) { const d = (peaks[k].x - cxm) ** 2 + (peaks[k].y - cym) ** 2; if (d < sbest) { sbest = d; seedK = k; } }
   const meshSeen = procDpi / pitch;
   const U = [pitch * Math.cos(theta), pitch * Math.sin(theta)], V = [-pitch * Math.sin(theta), pitch * Math.cos(theta)];
 
@@ -1145,8 +1164,6 @@ async function detectGrid(g, w, h, p0, inMask, procDpi) {
     }
     return dark;
   };
-  const seedK = near(cxm, cym, pitch * 6, null);
-  if (seedK < 0) return { error: "Couldn't find a starting point in the middle of the canvas." };
   used[seedK] = 1;
   const seed = { i: 0, j: 0, x: peaks[seedK].x, y: peaks[seedK].y, st: 1, s: peaks[seedK].s, miss: 0, u: U.slice(), v: V.slice() };
   nodes.set(KEY(0, 0), seed);
@@ -1235,14 +1252,20 @@ async function findGrid() {
   S.grid = G;
   refitGuessed(); computeCorners();
   // Default center: the intersection closest to the middle of the found area.
-  let sx = 0, sy = 0, cnt = 0; for (let k = 0; k < gx * gy; k++) if (G.ST[k] === 1) { sx += G.X[k]; sy += G.Y[k]; cnt++; }
-  S.center = nearestNode(sx / cnt, sy / cnt);
+  S.center = canvasMiddle(G);
   S.checked.clear(); S.selNode = -1;
   busy(false);
   const note = Math.abs(meshOut - S.mesh) > S.mesh * 0.08 ? ` The spacing looks like ${meshOut.toFixed(1)} mesh, not ${S.mesh}. Change the mesh and find again if that's wrong.` : ` Spacing measured at ${meshOut.toFixed(2)} mesh, tilted ${(theta * 180 / Math.PI).toFixed(2)}°.`;
   $("meshNote").textContent = `${gx} × ${gy} intersections mapped.` + note;
   setStatus("scanStatus", (S.marksFound ? "Carrier dots found. " : "No Carrier dots: using page edges. ") + `Mapped ${gx} × ${gy} intersections.`, "ok");
   previewDirty(); setView("map"); updateUI(); renderAll();
+}
+// The middle of the canvas: halfway between its edges in each row and column of crossings (ignores stray points).
+function canvasMiddle(G) {
+  const is = [], js = [];
+  for (let k = 0; k < G.gx * G.gy; k++) if (G.ST[k] === 1) { is.push(k % G.gx); js.push((k / G.gx) | 0); }
+  const pc = (a, q) => { a.sort((x, y) => x - y); return a[Math.min(a.length - 1, Math.floor(a.length * q))]; };
+  return { i: Math.round((pc(is, 0.02) + pc(is, 0.98)) / 2), j: Math.round((pc(js, 0.02) + pc(js, 0.98)) / 2) };
 }
 function nearestNode(x, y) {
   const G = S.grid; let best = -1, bd = 1e18;
@@ -1534,6 +1557,14 @@ function canPrint() {
 }
 async function makePrintPdf() {
   if (!canPrint()) return;
+  const chk = forEachStitch(() => {});
+  if (chk.off && !makePrintPdf.ok) {
+    makePrintPdf.ok = true; setTimeout(() => makePrintPdf.ok = false, 15000);
+    setStatus("printStatus", `${chk.off} of ${chk.total} stitches would land off your canvas and print on the Carrier instead. Open "Move the design on the canvas" below to fix it, or click Save print file again within 15 seconds to print anyway.`, "err");
+    $("printStatus").scrollIntoView({ block: "nearest" });
+    return;
+  }
+  makePrintPdf.ok = false;
   busy(true, "Building the print file…", 0.3); await tick();
   try {
     const r = await renderPrint(S.printDpi); busy(true, null, 0.7); await tick();
@@ -2229,7 +2260,7 @@ $("saveSnap").onclick = async () => { if (!S.scan) return; await saveFile("canva
 
 const placeChanged = () => { S.place.ox = +$("ox").value | 0; S.place.oy = +$("oy").value | 0; previewDirty(); updateCounts(); renderView(); };
 $("ox").oninput = placeChanged; $("oy").oninput = placeChanged;
-$("recenter").onclick = () => { $("ox").value = 0; $("oy").value = 0; placeChanged(); };
+$("recenter").onclick = () => { if (S.grid) S.center = canvasMiddle(S.grid); $("ox").value = 0; $("oy").value = 0; placeChanged(); };
 const adjOut = () => { $("satOut").textContent = S.adj.sat + "%"; $("deepOut").textContent = S.adj.deepen; $("conOut").textContent = S.adj.contrast + "%"; $("bleedOut").textContent = S.adj.bleed + "%"; };
 ["sat", "deepen", "contrast", "bleed"].forEach(k => $(k).oninput = e => { S.adj[k] = +e.target.value; adjOut(); previewDirty(); store.set("ccp-adj", S.adj); });
 $("rawColors").onchange = e => { S.adj.raw = e.target.checked; previewDirty(); store.set("ccp-adj", S.adj); };
