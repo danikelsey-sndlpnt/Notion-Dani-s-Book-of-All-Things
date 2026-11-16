@@ -302,6 +302,10 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
           <p class="hint" id="libNote">Saved designs stay on this device, with their original picture, so you can open them later and keep editing.</p>
           <div class="hist" id="lib"></div>
           <div class="row">
+            <button class="btn small" id="findLost">Find lost designs</button>
+          </div>
+          <div class="hist" id="lostList" hidden></div>
+          <div class="row">
             <button class="btn small" id="libBackup">Back up all (file)</button>
             <label class="btn small file-btn">Open a backup<input type="file" id="libRestore" accept=".json,application/json"></label>
           </div>
@@ -2604,6 +2608,39 @@ async function restoreLibrary(file) {
   } catch (err) { toast(err.message || "That backup couldn't be read.", 5000); }
 }
 
+/* ---------------- find lost designs ---------------- */
+// Gathers every copy of a design kept anywhere on this device (the test-pattern copy, earlier designs, the last
+// open design, saved designs) and lists each one once.
+async function findLost() {
+  const found = [], seen = new Set();
+  const add = (rec, where) => {
+    if (!rec || !Array.isArray(rec.px) && !(rec.px instanceof Int16Array) || !rec.pal || rec.testing) return;
+    const px = Array.from(rec.px); if (px.length !== rec.w * rec.h) return;
+    const key = rec.w + "x" + rec.h + ":" + px.join(","); if (seen.has(key)) return; seen.add(key);
+    if (!px.some(v => v >= 0)) return;
+    found.push({ rec: { ...rec, px }, where });
+  };
+  add(S.beforeTest, "Saved just before the test pattern");
+  add(await idb.get("before-test"), "Saved just before the test pattern");
+  add(store.get("ccp-before-test"), "Saved just before the test pattern");
+  (await idb.get("history") || []).forEach(h => add(h, "Earlier design" + (h.why ? " · " + h.why : "")));
+  add(await idb.get("current"), "Last design open in the app");
+  add(store.get("ccp-design"), "Last design open in the app");
+  (await idb.get("library") || []).forEach(e => add(e.rec, "My designs · " + e.name));
+  const box = $("lostList"); box.textContent = ""; box.hidden = false;
+  if (!found.length) { box.innerHTML = `<p class="hint">No other designs were found on this device or in this browser. If you made a backup file, use Open a backup. Designs saved on another device or browser only show up there.</p>`; return; }
+  found.forEach(({ rec, where }) => {
+    const row = document.createElement("div"); row.className = "hrow";
+    const info = document.createElement("div"); const t = rec.time ? new Date(rec.time) : null;
+    info.innerHTML = `<div class="t"></div><div class="m">${rec.w} × ${rec.h} stitches${t ? " · " + t.toLocaleDateString([], { month: "short", day: "numeric" }) + " " + t.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : ""}</div>`;
+    info.querySelector(".t").textContent = (rec.name ? rec.name.replace(/\.[a-z0-9]+$/i, "") + " · " : "") + where;
+    const btn = document.createElement("button"); btn.className = "btn small"; btn.textContent = "Restore";
+    btn.onclick = async () => { pushUndo(); S.testing = false; $("backToMine").hidden = true; await applySaved({ ...rec, testing: false, example: false }, await loadOriginal(rec.origId)); box.hidden = true; toast("Design restored. Save it in My designs so it's easy to find."); };
+    row.append(thumb(rec), info, btn); box.appendChild(row);
+  });
+  toast(`Found ${found.length} design${found.length === 1 ? "" : "s"} on this device.`);
+}
+
 /* ---------------- practice print on paper ---------------- */
 async function practicePdf() {
   const d = S.design; if (!d) { toast("Make a design first."); return; }
@@ -3527,6 +3564,7 @@ $("canvasBorder").onchange = e => { S.canvasBorder = clamp(+e.target.value || 2,
 $("autoFix").onclick = autoFixChecks;
 $("printAnyway").onclick = async () => { S.printAll = true; $("printAllChk").checked = true; previewDirty(); await makePrintPdf(); };
 $("printAllChk").onchange = e => { S.printAll = e.target.checked; previewDirty(); updateFit(); };
+$("findLost").onclick = findLost;
 $("libSave").onclick = () => saveToLibrary(false); $("libSaveNew").onclick = () => saveToLibrary(true);
 $("libBackup").onclick = backupLibrary;
 $("libRestore").onchange = e => { const f = e.target.files[0]; e.target.value = ""; if (f) restoreLibrary(f); };
