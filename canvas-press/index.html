@@ -1309,8 +1309,27 @@ function stitchImageToDesign(c) {
     if (k < 0) { k = pal.length; pal.push(c2.map(Math.round)); labsP.push(L); counts.push(0); }
     counts[k]++; px[i] = k;
   }
-  if (pal.length > 64) { const q = quantize(cells, W, H, 48, false); return { w: W, h: H, ...q }; }
-  return { w: W, h: H, ...compactPalette({ pal, px }) };
+  let out = pal.length > 64 ? { w: W, h: H, ...quantize(cells, W, H, 48, false) } : { w: W, h: H, ...compactPalette({ pal, px }) };
+  return trimPlainBorder(out);
+}
+// Screenshots and exports often have a plain white (or near-white) margin around the chart. Rows and columns along the
+// outside that are entirely that color aren't part of the pattern, so they're cut away.
+function trimPlainBorder(d) {
+  const W = d.w, H = d.h, labs = d.pal.map(c => rgb2lab(c[0], c[1], c[2]));
+  const corners = [0, W - 1, (H - 1) * W, H * W - 1].map(i => d.px[i]);
+  const v0 = corners[0]; if (v0 < 0 || !corners.every(v => v === v0)) return d;
+  const L = labs[v0]; if (L[0] < 88 || Math.hypot(L[1], L[2]) > 8) return d; // only near-white margins
+  const plain = v => v === v0 || (v >= 0 && Math.hypot(labs[v][0] - L[0], labs[v][1] - L[1], labs[v][2] - L[2]) < 5);
+  const rowPlain = y => { for (let x = 0; x < W; x++) if (!plain(d.px[y * W + x])) return false; return true; };
+  const colPlain = x => { for (let y = 0; y < H; y++) if (!plain(d.px[y * W + x])) return false; return true; };
+  let y0 = 0, y1 = H - 1, x0 = 0, x1 = W - 1;
+  while (y0 < y1 && rowPlain(y0)) y0++; while (y1 > y0 && rowPlain(y1)) y1--;
+  while (x0 < x1 && colPlain(x0)) x0++; while (x1 > x0 && colPlain(x1)) x1--;
+  if (y0 === 0 && x0 === 0 && y1 === H - 1 && x1 === W - 1) return d;
+  const w = x1 - x0 + 1, h = y1 - y0 + 1; if (w < 4 || h < 4) return d;
+  const px = new Int16Array(w * h);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) px[y * w + x] = d.px[(y + y0) * W + x + x0];
+  const r = { w, h, ...compactPalette({ pal: d.pal, px }) }; r.trimmed = [W, H]; return r;
 }
 
 /* ---------------- Stitchly files ---------------- */
@@ -3544,7 +3563,7 @@ $("openStitch").onchange = async e => {
     pushUndo(); S.importFile = null; S.original = extra && extra.original || null; S.designName = f.name; S.layers = []; S.exampleDesign = false;
     if (extra && extra.mesh && MESHES.includes(extra.mesh)) setMesh(extra.mesh);
     setDesign(d.pal, d.px, d.w, d.h); setTab(1); fitView(); renderAll();
-    toast(`Opened ${d.w} × ${d.h} stitches, ${d.pal.length} colors${extra ? " in their DMC colors" : ""}.` + (extra && extra.unknown.length ? ` These thread codes aren't DMC and show as gray: ${extra.unknown.join(", ")}.` : ""), 6000);
+    toast(`Opened ${d.w} × ${d.h} stitches, ${d.pal.length} colors${extra ? " in their DMC colors" : ""}.` + (d.trimmed ? ` The plain white margin around it was cut off (the picture was ${d.trimmed[0]} × ${d.trimmed[1]}).` : "") + (extra && extra.unknown.length ? ` These thread codes aren't DMC and show as gray: ${extra.unknown.join(", ")}.` : ""), 6000);
   } catch (err) { toast(err.message, 5000); }
 };
 $("saveStitchPng").onclick = async () => { if (!S.design) return; await saveFile("design-" + S.design.w + "x" + S.design.h + ".png", await canvasBlob(designCanvas)); };
