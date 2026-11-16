@@ -556,6 +556,11 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
           <button class="btn small" id="saveKey2">Save the color key to print (PDF)</button>
           <div class="status" id="fitStatus"></div>
           <div class="status" id="printStatus" hidden></div>
+          <div class="row" id="printAllRow" hidden>
+            <button class="btn primary small" id="printAnyway">Print everything anyway</button>
+            <span class="hint" style="flex:1 1 160px">Includes every stitch, even where the scan didn't map the canvas.</span>
+          </div>
+          <label class="tog"><input type="checkbox" id="printAllChk"> Always print every stitch, even outside the mapped canvas</label>
           <div class="row">
             <button class="btn small" id="testPattern">Save a test pattern print file instead</button>
             <button class="btn small" id="backToMine" hidden>Back to my design</button>
@@ -1972,29 +1977,45 @@ function initialsOrigin(cells) {
   const x = ini.pos === "bl" ? 0 : ini.pos === "bc" ? Math.floor((d.w - cells.w) / 2) : d.w - cells.w;
   return { x, y: d.h + below };
 }
-function forEachStitch(fn) {
+// For stitches past the mapped part of the canvas: continue the grid with a straight-line fit of the crossings
+// found around the design, so "print anyway" still places them on the canvas's spacing and angle.
+function gridExtender(pl, d) {
+  const G = S.grid, A = [[0, 0, 0], [0, 0, 0], [0, 0, 0]], bx = [0, 0, 0], by = [0, 0, 0], pad = 10;
+  for (let j = Math.max(0, pl.j0 - pad); j < Math.min(G.gy, pl.j0 + d.h + pad); j++) for (let i = Math.max(0, pl.i0 - pad); i < Math.min(G.gx, pl.i0 + d.w + pad); i++) {
+    const k = j * G.gx + i; if (G.ST[k] !== 1 && G.ST[k] !== 4) continue; const v = [1, i, j];
+    for (let a = 0; a < 3; a++) { for (let b = 0; b < 3; b++) A[a][b] += v[a] * v[b]; bx[a] += v[a] * G.X[k]; by[a] += v[a] * G.Y[k]; }
+  }
+  if (A[0][0] < 6) return null;
+  const solve = (M, y) => { const m = M.map((r, i) => [...r, y[i]]); for (let c = 0; c < 3; c++) { let pv = c; for (let r = c + 1; r < 3; r++) if (Math.abs(m[r][c]) > Math.abs(m[pv][c])) pv = r; [m[c], m[pv]] = [m[pv], m[c]]; if (!m[c][c]) return null; for (let r = 0; r < 3; r++) if (r !== c) { const f = m[r][c] / m[c][c]; for (let k = c; k < 4; k++) m[r][k] -= f * m[c][k]; } } return m.map((r, i) => r[3] / r[i]); };
+  const fx = solve(A, bx), fy = solve(A, by); if (!fx || !fy) return null;
+  const at = (i, j) => [fx[0] + fx[1] * i + fx[2] * j, fy[0] + fy[1] * i + fy[2] * j];
+  return (i, j) => [at(i - 0.5, j - 0.5), at(i + 0.5, j - 0.5), at(i + 0.5, j + 0.5), at(i - 0.5, j + 0.5)];
+}
+function forEachStitch(fn, all = false) {
   const d = S.design, pl = placement(); if (!pl) return { off: 0, total: 0 };
-  let off = 0, total = 0;
+  let off = 0, total = 0, ext = null, extended = 0;
+  if (all) ext = gridExtender(pl, d);
+  const place = (q, onCanvas, v, i, j) => {
+    if (q && onCanvas) { fn(q, v, i, j); return; }
+    if (ext) { fn(ext(i, j), v, i, j); extended++; return; }
+    off++;
+  };
   if (S.initials && S.initials.on && S.iniCells) {
     const C = S.iniCells, o = initialsOrigin(C), G = S.grid;
     for (let y = 0; y < C.h; y++) for (let x = 0; x < C.w; x++) {
       if (!C.cells[y * C.w + x]) continue; total++;
       const i = pl.i0 + o.x + x, j = pl.j0 + o.y + y;
       const onCanvas = i >= 0 && j >= 0 && i < G.gx && j < G.gy && G.ST[j * G.gx + i];
-      const q = stitchQuad(i, j);
-      if (!q || !onCanvas) { off++; continue; }
-      fn(q, d.pal.length, i, j);
+      place(stitchQuad(i, j), onCanvas, d.pal.length, i, j);
     }
   }
   for (let r = 0; r < d.h; r++) for (let c = 0; c < d.w; c++) {
     const v = d.px[r * d.w + c]; if (v < 0) continue; total++;
     const i = pl.i0 + c, j = pl.j0 + r, G = S.grid;
     const onCanvas = i >= 0 && j >= 0 && i < G.gx && j < G.gy && G.ST[j * G.gx + i];
-    const q = stitchQuad(i, j);
-    if (!q || !onCanvas) { off++; continue; }
-    fn(q, v, i, j);
+    place(stitchQuad(i, j), onCanvas, v, i, j);
   }
-  return { off, total };
+  return { off, total, extended };
 }
 function grow(q, f) {
   const cx = (q[0][0] + q[1][0] + q[2][0] + q[3][0]) / 4, cy = (q[0][1] + q[1][1] + q[2][1] + q[3][1]) / 4;
@@ -2014,7 +2035,7 @@ function buildPreview() {
   if (S.grid && S.design) {
     const pal = printPalette(), f = 1 + S.adj.bleed / 100;
     x.globalCompositeOperation = "multiply";
-    forEachStitch((q, v) => { const g = grow(q, f); x.fillStyle = pal[v]; x.beginPath(); x.moveTo(g[0][0], g[0][1]); for (let k = 1; k < 4; k++) x.lineTo(g[k][0], g[k][1]); x.closePath(); x.fill(); });
+    forEachStitch((q, v) => { const g = grow(q, f); x.fillStyle = pal[v]; x.beginPath(); x.moveTo(g[0][0], g[0][1]); for (let k = 1; k < 4; k++) x.lineTo(g[k][0], g[k][1]); x.closePath(); x.fill(); }, S.printAll);
     x.globalCompositeOperation = "source-over";
   }
   previewStale = false;
@@ -2025,6 +2046,7 @@ function updateFit() {
   if (!S.grid || !S.design) { el.textContent = "Waiting for a design and a mapped scan."; el.className = "status"; return; }
   const r = forEachStitch(() => {});
   const pl = placement();
+  if (r.off && S.printAll) { el.className = "status"; el.textContent = `${r.off} of ${r.total} stitches are past the mapped canvas. They'll still print, placed by continuing the canvas grid.`; return; }
   el.className = "status " + (r.off ? "err" : "ok");
   el.textContent = r.off ? `${r.off} of ${r.total} stitches fall off the mapped canvas. Move the design or make it smaller.` : `All ${r.total} stitches land on mapped intersections. Design corner at intersection ${pl.i0 + 1}, ${pl.j0 + 1}.`;
 }
@@ -2037,7 +2059,7 @@ async function renderPrint(dpi) {
   const r = forEachStitch((q, v) => {
     const g = grow(q, f).map(p => { const pg = scanToPage(p[0], p[1]); return [(pg[0] + nx) * dpi, (pg[1] + ny) * dpi]; });
     x.fillStyle = pal[v]; x.beginPath(); x.moveTo(g[0][0], g[0][1]); for (let k = 1; k < 4; k++) x.lineTo(g[k][0], g[k][1]); x.closePath(); x.fill();
-  });
+  }, S.printAll);
   return { canvas: c, ...r };
 }
 function canPrint() {
@@ -2048,13 +2070,11 @@ function canPrint() {
 async function makePrintPdf() {
   if (!canPrint()) return;
   const chk = forEachStitch(() => {});
-  if (chk.off && !makePrintPdf.ok) {
-    makePrintPdf.ok = true; setTimeout(() => makePrintPdf.ok = false, 15000);
-    setStatus("printStatus", `${chk.off} of ${chk.total} stitches would land off your canvas and print on the Carrier instead. Open "Move the design on the canvas" below to fix it, or click Save print file again within 15 seconds to print anyway.`, "err");
-    $("printStatus").scrollIntoView({ block: "nearest" });
+  if (chk.off && !S.printAll) {
+    setStatus("printStatus", `${chk.off} of ${chk.total} stitches are outside the part of the canvas the scan mapped (often near an edge or under tape). If your canvas really covers the whole design, use Print everything anyway: those stitches are placed by continuing the canvas grid.`, "err");
+    $("printAllRow").hidden = false; $("printStatus").scrollIntoView({ block: "nearest" });
     return;
   }
-  makePrintPdf.ok = false;
   busy(true, "Building the print file…", 0.3); await tick();
   try {
     const r = await renderPrint(S.printDpi); busy(true, null, 0.7); await tick();
@@ -2072,7 +2092,8 @@ async function makePrintPng() {
   await saveFile(fileBase() + `-print-${S.printDpi}dpi.png`, await canvasBlob(r.canvas));
 }
 function printSummary(r) {
-  setStatus("printStatus", `${r.total - r.off} stitches in the file` + (r.off ? `, ${r.off} left out because they fall off the canvas.` : ".") + ` Print it on letter paper at 100% with the Carrier fed the same way you scanned it, top edge first.`, r.off ? "err" : "ok");
+  $("printAllRow").hidden = true;
+  setStatus("printStatus", `${r.total - r.off} stitches in the file` + (r.extended ? ` (${r.extended} placed past the mapped canvas)` : "") + (r.off ? `, ${r.off} left out because they fall off the canvas.` : ".") + ` Print it on letter paper at 100% with the Carrier fed the same way you scanned it, top edge first.`, r.off ? "err" : "ok");
 }
 async function testPagePdf() {
   if (!S.scan) { toast("Load a scan first."); return; }
@@ -2177,7 +2198,7 @@ async function applySaved(rec, original) {
   S.importFile = null; S.edited = true;
   S.original = original || null;
   setDesign(rec.pal.map(c => c.slice()), Int16Array.from(rec.px), rec.w, rec.h, false, rec.sx || 0, rec.sy || 0);
-  $("backToMine").hidden = !(S.testing && store.get("ccp-before-test"));
+  $("backToMine").hidden = !S.testing;
   setTab(1); fitView(); renderAll();
 }
 async function restoreHistory(k) {
@@ -2616,7 +2637,10 @@ async function practicePdf() {
 function useTestPattern() {
   const d = S.design;
   archiveDesign("before the test pattern");
-  if (d && !S.testing) store.set("ccp-before-test", { w: d.w, h: d.h, pal: d.pal, px: Array.from(d.px), sx: d.sx || 0, sy: d.sy || 0, original: !!S.original });
+  if (d && !S.testing) {
+    const rec = { w: d.w, h: d.h, pal: d.pal.map(c => c.slice()), px: Array.from(d.px), sx: d.sx || 0, sy: d.sy || 0, mesh: S.mesh, name: S.designName || "", origId: S.original && S.original.id || null };
+    persistOriginal(); S.beforeTest = rec; store.set("ccp-before-test", rec); idb.set("before-test", rec);
+  }
   if (!S.testing) S.savedOriginal = S.original;
   const n = clamp(S.mesh * 3, 30, 54), w = n + 1, h = n + 1, px = new Int16Array(w * h).fill(-1), c = Math.floor(n / 2);
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
@@ -2630,11 +2654,15 @@ function useTestPattern() {
   $("backToMine").hidden = false; renderAll(); previewDirty();
   toast(`Switched to the test pattern (${w} × ${h} stitches). Your design is saved.`);
 }
-function backToMine() {
-  const b = store.get("ccp-before-test"); if (!b) return;
-  S.testing = false; S.original = S.savedOriginal || null;
-  setDesign(b.pal, Int16Array.from(b.px), b.w, b.h, false, b.sx, b.sy);
-  $("backToMine").hidden = true; renderAll(); previewDirty(); toast("Your design is back.");
+async function backToMine() {
+  let b = S.beforeTest || await idb.get("before-test") || store.get("ccp-before-test");
+  if (!b) { const h = S.history.find(x => x.why === "before the test pattern"); if (h) b = h; }
+  if (!b || !b.px) { toast("Your design wasn't found here. Look in Earlier designs or My designs on the Design step.", 6000); setTab(1); return; }
+  S.testing = false; S.beforeTest = null;
+  const orig = S.savedOriginal || (b.origId ? await loadOriginal(b.origId) : null);
+  S.original = orig || null; if (b.name) S.designName = b.name;
+  setDesign(b.pal.map(c => c.slice()), Int16Array.from(b.px), b.w, b.h, false, b.sx || 0, b.sy || 0);
+  $("backToMine").hidden = true; idb.del("before-test"); renderAll(); previewDirty(); updateFit(); toast("Your design is back.");
 }
 
 /* ---------------- example content ---------------- */
@@ -3497,6 +3525,8 @@ $("showCanvasArea").onchange = e => { S.showArea = e.target.checked; store.set("
 $("canvasBorder").onchange = e => { S.canvasBorder = clamp(+e.target.value || 2, 0.25, 6); store.set("ccp-area", { on: S.showArea, b: S.canvasBorder }); syncSizeInputs(); fitView(); };
 { const a = store.get("ccp-area"); if (a) { S.showArea = !!a.on; S.canvasBorder = a.b || 2; $("showCanvasArea").checked = S.showArea; $("canvasBorder").value = S.canvasBorder; } }
 $("autoFix").onclick = autoFixChecks;
+$("printAnyway").onclick = async () => { S.printAll = true; $("printAllChk").checked = true; previewDirty(); await makePrintPdf(); };
+$("printAllChk").onchange = e => { S.printAll = e.target.checked; previewDirty(); updateFit(); };
 $("libSave").onclick = () => saveToLibrary(false); $("libSaveNew").onclick = () => saveToLibrary(true);
 $("libBackup").onclick = backupLibrary;
 $("libRestore").onchange = e => { const f = e.target.files[0]; e.target.value = ""; if (f) restoreLibrary(f); };
