@@ -193,6 +193,12 @@ input:focus-visible, select:focus-visible, button:focus-visible { outline: 2px s
             <label class="btn primary file-btn">Add artwork or layers<input type="file" id="addArt" multiple accept="image/png,image/jpeg,image/webp,image/gif,.psd,application/pdf,.pdf"></label>
             <label class="btn file-btn">Open stitch file<input type="file" id="openStitch" accept="image/png,image/gif,.oxs,.xml"></label>
           </div>
+          <div class="row">
+            <label class="btn thread file-btn">Read a painted canvas<input type="file" id="readPainted" accept="image/png,image/jpeg,image/webp,.psd,application/pdf,.pdf"></label>
+          </div>
+          <p class="hint"><b>Read a painted canvas</b> takes a photo, scan or listing picture of a canvas that's already painted. It finds every intersection and turns its color into a stitch you can edit and print on a new canvas.</p>
+          <label class="tog"><input type="checkbox" id="bareEmpty" checked> Leave bare canvas unprinted</label>
+          <div class="status" id="importStatus" hidden></div>
           <p class="hint">PNG, JPG, PSD or PDF. Each file becomes a layer, and the layers are flattened into one picture. <b>Open stitch file</b> takes an image with one pixel per stitch, or an OXS chart, with no color changes.</p>
           <div class="layers" id="layers"></div>
           <div class="row">
@@ -991,28 +997,8 @@ function updateH() { S.H = homography(S.marks, MARKS); }
 const scanToPage = (x, y) => S.H ? applyH(S.H, x, y) : [x / S.scan.dpi, y / S.scan.dpi];
 
 /* ---------------- intersection finding ---------------- */
-async function findGrid() {
-  if (!S.scan) return;
-  S.mesh = +$("mesh2").value; S.darkThreads = $("darkThreads").checked;
-  const dpi = +$("dpi").value || S.scan.dpi;
-  const c = S.scan.canvas, w = c.width, h = c.height;
-  let g = S.scan.gray;
-  if (S.darkThreads) { const inv = new Float32Array(g.length); for (let i = 0; i < g.length; i++) inv[i] = 255 - g[i]; g = inv; }
-  const procDpi = S.scan.dpi * (S.scan.dpi === dpi ? 1 : 1);
-  let p0 = procDpi / S.mesh;
-  busy(true, "Reading the threads…", 0.05); await tick();
-
-  // 1. Canvas area: thread/hole texture makes the local spread high; black backing and paper are flat.
-  const rT = Math.max(2, Math.round(p0 * 0.75));
-  const sq = new Float32Array(g.length); for (let i = 0; i < g.length; i++) sq[i] = g[i] * g[i];
-  const m1 = filter2d(g, w, h, rT, 0); busy(true, null, 0.15); await tick();
-  const m2 = filter2d(sq, w, h, rT, 0); busy(true, null, 0.25); await tick();
-  const F = 4, mw = Math.ceil(w / F), mh = Math.ceil(h / F), sd = new Float32Array(mw * mh);
-  for (let y = 0; y < mh; y++) for (let x = 0; x < mw; x++) { const i = Math.min(y * F, h - 1) * w + Math.min(x * F, w - 1); sd[y * mw + x] = Math.sqrt(Math.max(0, m2[i] - m1[i] * m1[i])); }
-  const th = otsu(sd, 128);
-  const mask = new Uint8Array(mw * mh); for (let i = 0; i < sd.length; i++) mask[i] = sd[i] > th ? 1 : 0;
-  const inMask = (x, y) => { const mx = (x / F) | 0, my = (y / F) | 0; return mx >= 0 && my >= 0 && mx < mw && my < mh && mask[my * mw + mx] === 1; };
-
+// Finds every thread crossing: bright peaks with darker holes on all four diagonals, grown into a grid from the middle.
+async function detectGrid(g, w, h, p0, inMask, procDpi) {
   // 2. Smooth so each crossing becomes a bright peak, then find the peaks.
   const r1 = Math.max(1, Math.round(p0 * 0.16));
   let b = filter2d(g, w, h, r1, 0); b = filter2d(b, w, h, r1, 0); busy(true, "Finding crossings…", 0.4); await tick();
@@ -1027,7 +1013,7 @@ async function findGrid() {
     const ox = dxx < 0 ? clamp(-dx / dxx, -0.5, 0.5) : 0, oy = dyy < 0 ? clamp(-dy / dyy, -0.5, 0.5) : 0;
     peaks.push({ x: x + ox, y: y + oy, s: v - mn[i] });
   }
-  if (peaks.length < 20) { busy(false); setStatus("scanStatus", "No thread crossings found. Check the mesh size and that the canvas sits on a dark background.", "err"); return; }
+  if (peaks.length < 20) return { error: "No thread crossings found." };
   const sArr = peaks.map(p => p.s).sort((a, c2) => a - c2), sMed = sArr[sArr.length >> 1];
   peaks = peaks.filter(p => p.s > sMed * 0.3);
   busy(true, "Measuring the mesh…", 0.75); await tick();
@@ -1067,7 +1053,7 @@ async function findGrid() {
     return dark;
   };
   const seedK = near(cxm, cym, pitch * 6, null);
-  if (seedK < 0) { busy(false); setStatus("scanStatus", "Couldn't find a starting point in the middle of the canvas.", "err"); return; }
+  if (seedK < 0) return { error: "Couldn't find a starting point in the middle of the canvas." };
   used[seedK] = 1;
   const seed = { i: 0, j: 0, x: peaks[seedK].x, y: peaks[seedK].y, st: 1, s: peaks[seedK].s, miss: 0, u: U.slice(), v: V.slice() };
   nodes.set(KEY(0, 0), seed);
@@ -1125,6 +1111,33 @@ async function findGrid() {
   for (let j = 0; j < gy; j++) for (let i = 0; i < gx - 1; i++) { const k = j * gx + i; if (G.ST[k] === 1 && G.ST[k + 1] === 1) { dsum += Math.hypot(G.X[k + 1] - G.X[k], G.Y[k + 1] - G.Y[k]); dn++; } }
   for (let j = 0; j < gy - 1; j++) for (let i = 0; i < gx; i++) { const k = j * gx + i; if (G.ST[k] === 1 && G.ST[k + gx] === 1) { dsum += Math.hypot(G.X[k + gx] - G.X[k], G.Y[k + gx] - G.Y[k]); dn++; } }
   if (dn) { G.pitch = dsum / dn; G.meshSeen = procDpi / G.pitch; }
+  return G;
+}
+async function findGrid() {
+  if (!S.scan) return;
+  S.mesh = +$("mesh2").value; S.darkThreads = $("darkThreads").checked;
+  const dpi = +$("dpi").value || S.scan.dpi;
+  const c = S.scan.canvas, w = c.width, h = c.height;
+  let g = S.scan.gray;
+  if (S.darkThreads) { const inv = new Float32Array(g.length); for (let i = 0; i < g.length; i++) inv[i] = 255 - g[i]; g = inv; }
+  const procDpi = S.scan.dpi * (S.scan.dpi === dpi ? 1 : 1);
+  let p0 = procDpi / S.mesh;
+  busy(true, "Reading the threads…", 0.05); await tick();
+
+  // 1. Canvas area: thread/hole texture makes the local spread high; black backing and paper are flat.
+  const rT = Math.max(2, Math.round(p0 * 0.75));
+  const sq = new Float32Array(g.length); for (let i = 0; i < g.length; i++) sq[i] = g[i] * g[i];
+  const m1 = filter2d(g, w, h, rT, 0); busy(true, null, 0.15); await tick();
+  const m2 = filter2d(sq, w, h, rT, 0); busy(true, null, 0.25); await tick();
+  const F = 4, mw = Math.ceil(w / F), mh = Math.ceil(h / F), sd = new Float32Array(mw * mh);
+  for (let y = 0; y < mh; y++) for (let x = 0; x < mw; x++) { const i = Math.min(y * F, h - 1) * w + Math.min(x * F, w - 1); sd[y * mw + x] = Math.sqrt(Math.max(0, m2[i] - m1[i] * m1[i])); }
+  const th = otsu(sd, 128);
+  const mask = new Uint8Array(mw * mh); for (let i = 0; i < sd.length; i++) mask[i] = sd[i] > th ? 1 : 0;
+  const inMask = (x, y) => { const mx = (x / F) | 0, my = (y / F) | 0; return mx >= 0 && my >= 0 && mx < mw && my < mh && mask[my * mw + mx] === 1; };
+
+  const G = await detectGrid(g, w, h, p0, inMask, procDpi);
+  if (G.error) { busy(false); setStatus("scanStatus", G.error + " Check the mesh size and that the canvas sits on a dark background.", "err"); return; }
+  const { gx, gy, theta } = G;
   const meshOut = G.meshSeen;
   S.grid = G;
   refitGuessed(); computeCorners();
@@ -1143,8 +1156,122 @@ function nearestNode(x, y) {
   for (let k = 0; k < G.gx * G.gy; k++) { if (!G.ST[k]) continue; const d = (G.X[k] - x) ** 2 + (G.Y[k] - y) ** 2; if (d < bd) { bd = d; best = k; } }
   return best < 0 ? null : { i: best % G.gx, j: (best / G.gx) | 0, d: Math.sqrt(bd) };
 }
-function refitGuessed() {
-  const G = S.grid, { gx, gy } = G;
+/* ---------------- read stitches from a painted canvas picture ---------------- */
+// The mesh repeats every stitch, so the edge strength along each row and column repeats too. The smallest lag where every multiple lines up is the stitch spacing.
+function estimatePitch(g, w, h) {
+  const one = horiz => {
+    const n = horiz ? w : h, P = new Float64Array(n);
+    if (horiz) { for (let y = 0; y < h; y++) { const o = y * w; for (let x = 1; x < w - 1; x++) P[x] += Math.abs(g[o + x + 1] - g[o + x - 1]); } }
+    else { for (let y = 1; y < h - 1; y++) { const o = y * w; for (let x = 0; x < w; x++) P[y] += Math.abs(g[o + w + x] - g[o - w + x]); } }
+    const R = 60, D = new Float64Array(n);
+    for (let i = 0; i < n; i++) { let s = 0, c = 0; for (let k = Math.max(0, i - R); k <= Math.min(n - 1, i + R); k += 3) { s += P[k]; c++; } D[i] = P[i] - s / c; }
+    const maxL = Math.min(480, Math.floor(n / 3)), ac = new Float64Array(maxL + 2);
+    for (let L = 0; L <= maxL + 1; L++) { let s = 0; for (let i = 0; i + L < n; i++) s += D[i] * D[i + L]; ac[L] = s / (n - L); }
+    const acI = x => { const i = Math.floor(x), f = x - i; return ac[i] * (1 - f) + ac[i + 1] * f; };
+    const scores = []; let best = -1e18;
+    for (let p = 3; p <= Math.min(90, maxL / 4); p += 0.02) {
+      let s = 0, k = 0; for (k = 1; k <= 8 && k * p <= maxL; k++) s += acI(k * p);
+      s /= (k - 1); scores.push([p, s]); if (s > best) best = s;
+    }
+    const pick = scores.find(([, s]) => s >= best * 0.85);
+    return pick ? pick[0] : null;
+  };
+  const px = one(true), py = one(false);
+  if (!px && !py) return null;
+  if (px && py && Math.abs(px - py) / Math.min(px, py) < 0.15) return (px + py) / 2;
+  return Math.min(px || py, py || px);
+}
+function fillGridGaps(G) {
+  const { gx, gy } = G, has = k => G.ST[k] !== 0;
+  for (let it = 0; it < 40; it++) {
+    let changed = 0;
+    for (let j = 0; j < gy; j++) for (let i = 0; i < gx; i++) {
+      const k = j * gx + i; if (has(k)) continue;
+      let sx = 0, sy = 0, n = 0;
+      const at = (a, b) => a >= 0 && b >= 0 && a < gx && b < gy && has(b * gx + a) ? b * gx + a : -1;
+      for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const a = at(i + di, j + dj), b = at(i + 2 * di, j + 2 * dj);
+        if (a >= 0 && b >= 0) { sx += 2 * G.X[a] - G.X[b]; sy += 2 * G.Y[a] - G.Y[b]; n++; }
+      }
+      if (n) { G.X[k] = sx / n; G.Y[k] = sy / n; G.ST[k] = 3; changed++; }
+    }
+    if (!changed) break;
+  }
+}
+async function importPainted(file) {
+  busy(true, "Opening the picture…", 0.05); await tick();
+  try {
+    let { canvas } = await fileToCanvas(file, 200);
+    let gray = c => { const d = c.getContext("2d", { willReadFrequently: true }).getImageData(0, 0, c.width, c.height).data, g = new Float32Array(c.width * c.height); for (let i = 0; i < g.length; i++) g[i] = d[i * 4] * 0.299 + d[i * 4 + 1] * 0.587 + d[i * 4 + 2] * 0.114; return g; };
+    let g = gray(canvas);
+    busy(true, "Measuring the mesh…", 0.15); await tick();
+    let p = estimatePitch(g, canvas.width, canvas.height);
+    if (!p) throw new Error("No mesh pattern was found in this picture.");
+    // Small stitches get enlarged first so each crossing spans enough pixels to locate.
+    const f = clamp(Math.ceil(14 / p), 1, 4);
+    if (f > 1 && canvas.width * canvas.height * f * f < 30e6) {
+      const big = document.createElement("canvas"); big.width = canvas.width * f; big.height = canvas.height * f;
+      const x = big.getContext("2d"); x.imageSmoothingQuality = "high"; x.drawImage(canvas, 0, 0, big.width, big.height);
+      canvas = big; g = gray(canvas); p *= f;
+    }
+    const w = canvas.width, h = canvas.height;
+    const G = await detectGrid(g, w, h, p, () => true, null);
+    if (G.error) throw new Error(G.error + " Try a sharper, straight-on picture.");
+    refitGuessed(G); fillGridGaps(G);
+    busy(true, "Reading the colors…", 0.9); await tick();
+    // Each stitch takes the average color right at its crossing.
+    const d = canvas.getContext("2d").getImageData(0, 0, w, h).data, r = Math.max(1, Math.round(G.pitch * 0.14));
+    const N = G.gx * G.gy, col = new Float32Array(N * 3), lab = new Float32Array(N * 3);
+    for (let k = 0; k < N; k++) {
+      if (!G.ST[k]) continue;
+      const cx = Math.round(G.X[k]), cy = Math.round(G.Y[k]); let R = 0, Gc = 0, B = 0, n = 0;
+      for (let yy = cy - r; yy <= cy + r; yy++) for (let xx = cx - r; xx <= cx + r; xx++) { if (xx < 0 || yy < 0 || xx >= w || yy >= h) continue; const i = (yy * w + xx) * 4; R += d[i]; Gc += d[i + 1]; B += d[i + 2]; n++; }
+      col[k * 3] = R / n; col[k * 3 + 1] = Gc / n; col[k * 3 + 2] = B / n;
+      const L = rgb2lab(R / n, Gc / n, B / n); lab[k * 3] = L[0]; lab[k * 3 + 1] = L[1]; lab[k * 3 + 2] = L[2];
+    }
+    // Bare canvas: the color around the outside, flood-filled inward over matching stitches.
+    const empty = new Uint8Array(N);
+    if ($("bareEmpty").checked) {
+      const ring = [];
+      for (let i = 0; i < G.gx; i++) ring.push(i, (G.gy - 1) * G.gx + i);
+      for (let j = 0; j < G.gy; j++) ring.push(j * G.gx, j * G.gx + G.gx - 1);
+      const med = q => { const v = ring.filter(k => G.ST[k]).map(k => lab[k * 3 + q]).sort((a, b) => a - b); return v[v.length >> 1]; };
+      const bare = [med(0), med(1), med(2)];
+      const near = k => Math.hypot(lab[k * 3] - bare[0], lab[k * 3 + 1] - bare[1], lab[k * 3 + 2] - bare[2]) < 12;
+      const close = ring.filter(k => G.ST[k] && near(k)).length / ring.length;
+      if (close > 0.5) {
+        const st = ring.filter(k => G.ST[k] && near(k));
+        st.forEach(k => empty[k] = 1);
+        while (st.length) {
+          const k = st.pop(), i = k % G.gx, j = (k / G.gx) | 0;
+          for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+            const a = i + di, b = j + dj; if (a < 0 || b < 0 || a >= G.gx || b >= G.gy) continue;
+            const q = b * G.gx + a; if (!empty[q] && G.ST[q] && near(q)) { empty[q] = 1; st.push(q); }
+          }
+        }
+      }
+    }
+    let i0 = 1e9, i1 = -1, j0 = 1e9, j1 = -1;
+    for (let k = 0; k < N; k++) if (G.ST[k] && !empty[k]) { const i = k % G.gx, j = (k / G.gx) | 0; i0 = Math.min(i0, i); i1 = Math.max(i1, i); j0 = Math.min(j0, j); j1 = Math.max(j1, j); }
+    if (i1 < 0) throw new Error("Every stitch looked like bare canvas. Uncheck 'Leave bare canvas unprinted' and try again.");
+    const W = i1 - i0 + 1, H = j1 - j0 + 1, rgba = new Float32Array(W * H * 4);
+    for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) {
+      const k = (j + j0) * G.gx + (i + i0), o = (j * W + i) * 4;
+      if (!G.ST[k] || empty[k]) continue;
+      rgba[o] = col[k * 3]; rgba[o + 1] = col[k * 3 + 1]; rgba[o + 2] = col[k * 3 + 2]; rgba[o + 3] = 255;
+    }
+    if (W > 400 || H > 400) throw new Error(`That reads as ${W} × ${H} stitches, more than the 400 limit. Try a picture of a smaller canvas.`);
+    pushUndo();
+    const q = quantize(rgba, W, H, S.nColors, false);
+    S.layers = []; S.exampleDesign = false;
+    setDesign(q.pal, q.px, W, H);
+    S.importInfo = { name: file.name, gx: G.gx, gy: G.gy, guessed: G.ST.reduce((a, v) => a + (v === 3), 0) };
+    busy(false); setTab(1); fitView(); renderAll();
+    setStatus("importStatus", `Read ${W} × ${H} painted stitches (${G.gx} × ${G.gy} intersections in the picture) with ${q.pal.length} colors. Change the number of colors and read it again, or fix stitches by hand.`, "ok");
+  } catch (e) { busy(false); setStatus("importStatus", e.message, "err"); }
+}
+function refitGuessed(G = S.grid) {
+  const { gx, gy } = G;
   const at = (i, j) => (i >= 0 && j >= 0 && i < gx && j < gy && G.ST[j * gx + i]) ? j * gx + i : -1;
   for (let it = 0; it < 6; it++) {
     for (let j = 0; j < gy; j++) for (let i = 0; i < gx; i++) {
@@ -1616,7 +1743,7 @@ document.querySelectorAll("[data-tool]").forEach(b => b.onclick = () => setTool(
 $("undo").onclick = () => restore(S.undo, S.redo); $("redo").onclick = () => restore(S.redo, S.undo);
 $("showGrid").onchange = e => { S.showGrid = e.target.checked; renderView(); };
 $("nColors").oninput = e => { S.nColors = +e.target.value; $("ncOut").textContent = S.nColors; };
-$("nColors").onchange = () => { if (S.layers.length) convert(); };
+$("nColors").onchange = () => { if (S.layers.length) convert(); else if (S.importFile) importPainted(S.importFile); };
 $("dither").onchange = e => { S.dither = e.target.checked; if (S.layers.length) convert(); };
 $("bgMode").onchange = e => { S.bgMode = e.target.value; $("bgColor").hidden = S.bgMode !== "color"; if (S.layers.length) convert(); };
 $("bgColor").onchange = e => { S.bg = e.target.value; if (S.layers.length) convert(); };
@@ -1641,6 +1768,7 @@ $("addArt").onchange = async e => {
   const files = [...e.target.files]; e.target.value = "";
   if (!files.length) return;
   busy(true, "Opening artwork…", 0.3);
+  S.importFile = null;
   const firstReal = !S.layers.some(l => !l.example);
   if (firstReal) S.layers = [];
   try {
@@ -1650,13 +1778,15 @@ $("addArt").onchange = async e => {
   if (firstReal) { if (S.wSt < 20) S.wSt = 60; const a = S.layers[0].img.height / S.layers[0].img.width; S.hSt = clamp(Math.round(S.wSt * a), 4, 400); }
   setTab(1); renderLayers(); convert();
 };
+$("readPainted").onchange = e => { const f = e.target.files[0]; e.target.value = ""; if (!f) return; S.importFile = f; importPainted(f); };
+$("bareEmpty").onchange = () => { if (S.importFile && !S.layers.length) importPainted(S.importFile); };
 $("openStitch").onchange = async e => {
   const f = e.target.files[0]; e.target.value = ""; if (!f) return;
   try {
     let d;
     if (/\.(oxs|xml)$/i.test(f.name)) d = parseOXS(await f.text()); else d = stitchImageToDesign(await loadImageFile(f));
     if (!d) throw new Error("No stitches were found in this file.");
-    pushUndo(); S.layers = []; S.exampleDesign = false; setDesign(d.pal, d.px, d.w, d.h); setTab(1); fitView(); renderAll();
+    pushUndo(); S.importFile = null; S.layers = []; S.exampleDesign = false; setDesign(d.pal, d.px, d.w, d.h); setTab(1); fitView(); renderAll();
     toast(`Opened ${d.w} × ${d.h} stitches, ${d.pal.length} colors.`);
   } catch (err) { toast(err.message, 5000); }
 };
