@@ -234,6 +234,7 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
   <header class="top">
     <h1>Sookie's <span>Canvas Press</span></h1>
     <p class="sub">Turn artwork into a stitch grid, scan your canvas once, and print straight onto its real threads. Everything stays in your browser.</p>
+    <button class="btn small" id="startOver" title="Clear the design and scan to begin a new canvas">Start over</button>
   </header>
 
   <div class="app">
@@ -2708,6 +2709,26 @@ async function checkStorage() {
   return { ok, persisted };
 }
 
+/* ---------------- start over ---------------- */
+// Clears the design (saved to Earlier designs first) and the scan, so a new canvas starts fresh. Saved designs,
+// backups and settings stay.
+async function startOver() {
+  if (S.design && !S.exampleDesign) await archiveDesign("before starting over");
+  S.layers = []; S.original = null; S.importFile = null; S.designName = ""; S.exampleDesign = false; S.testing = false; S.beforeTest = null;
+  S.bgSmart = false; setBgChip(); S.edited = false; S.libId = null; store.set("ccp-libid", null); $("libName").value = "";
+  S.stamp = null; S.stampPos = null; showTextBar(false); S.finish = null; S.undo = []; S.redo = [];
+  await applyInitials(null);
+  // A blank 60 × 60 grid of bare canvas to build on.
+  setDesign([], new Int16Array(60 * 60).fill(-1), 60, 60);
+  S.scan = null; S.grid = null; S.canvasMesh = null; S.center = null; S.place = { ox: 0, oy: 0 }; S.checked.clear(); S.selNode = -1; S.marks = null; S.H = null;
+  $("ox").value = 0; $("oy").value = 0; $("findGrid").disabled = true; previewCanvas = null; previewStale = true;
+  idb.del("scan-img"); idb.del("scan-state"); idb.del("before-test");
+  setStatus("scanStatus", "No scan loaded yet.", ""); $("printStatus").hidden = true; $("checkStatus").hidden = true; $("importStatus").hidden = true; $("printAllRow").hidden = true;
+  $("backToMine").hidden = true; $("redoBar").hidden = true;
+  setTool("paint"); setTab(1); setView("design"); updateUI(); updateMeshWarn(); renderAll(); renderLibrary(); fitView(); saveCurrent();
+  toast("Started over. Your last design is in Earlier designs if you need it.", 5000);
+}
+
 /* ---------------- find lost designs ---------------- */
 // Gathers every copy of a design kept anywhere on this device (the test-pattern copy, earlier designs, the last
 // open design, saved designs) and lists each one once.
@@ -3304,6 +3325,7 @@ view.addEventListener("pointerdown", e => {
     if (tool === "pick") { const v = S.design.px[i]; if (v >= 0) { S.sel = v; setTool("paint"); renderPalette(); } return; }
     startEditing();
     pushUndo();
+    if ((tool === "fill" && !rightErase || tool === "paint") && !S.design.pal.length) { S.undo.pop(); toast("Add a color first: Add this color or Add a DMC color, under Edit stitches."); return; }
     if (tool === "fill") { floodFill(i, rightErase ? -1 : S.sel); designDirty(); renderView(); return; }
     drag = { type: "paint", v: tool === "erase" ? -1 : S.sel, last: cell };
     paintLine(cell, cell, drag.v); return;
@@ -3679,6 +3701,11 @@ $("fullBtn").onclick = () => setFull(!document.querySelector(".stage").classList
 window.addEventListener("keydown", e => { if (e.key === "Escape" && document.querySelector(".stage").classList.contains("full") && S.tool !== "text") setFull(false); });
 $("vDesignOn").onclick = () => { S.mapDesign = !S.mapDesign; $("vDesignOn").setAttribute("aria-pressed", S.mapDesign); $("vDesignOn").textContent = S.mapDesign ? "Hide design" : "Show design"; store.set("ccp-mapdesign", S.mapDesign); renderView(); };
 { const md = store.get("ccp-mapdesign"); if (md) { S.mapDesign = true; $("vDesignOn").setAttribute("aria-pressed", "true"); $("vDesignOn").textContent = "Hide design"; } }
+$("startOver").onclick = () => {
+  const b = $("startOver");
+  if (b.dataset.sure !== "1") { b.dataset.sure = "1"; b.textContent = "Tap again to start over"; b.classList.add("primary"); setTimeout(() => { b.dataset.sure = ""; b.textContent = "Start over"; b.classList.remove("primary"); }, 4000); return; }
+  b.dataset.sure = ""; b.textContent = "Start over"; b.classList.remove("primary"); startOver();
+};
 $("libSave").onclick = () => saveToLibrary(false); $("libSaveNew").onclick = () => saveToLibrary(true);
 $("libBackup").onclick = backupLibrary;
 $("libRestore").onchange = e => { const f = e.target.files[0]; e.target.value = ""; if (f) restoreLibrary(f); };
