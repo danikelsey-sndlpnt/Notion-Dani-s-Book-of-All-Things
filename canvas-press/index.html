@@ -1354,9 +1354,19 @@ async function parseStitchly(file) {
   const k = keys.find(e => e.textContent === "PatternData"); if (!k) throw new Error("This Stitchly file has no pattern in it.");
   const b64 = k.nextElementSibling.textContent.replace(/\s+/g, ""), bin = Uint8Array.from(atob(b64), ch => ch.charCodeAt(0));
   const arc = parseBplist(bin), objs = arc.$objects, R = v => v && typeof v === "object" && "uid" in v ? objs[v.uid] : v;
-  const root = R(arc.$top.root), W = root.width, H = root.height, list = R(root.layerCodes);
+  const root = R(arc.$top.root), list = R(root.layerCodes);
   const codes = (list && list["NS.objects"] || []).map(R);
-  if (!W || !H || codes.length < W * H) throw new Error("This Stitchly file's stitches couldn't be read.");
+  // The stated width and height don't always match the stored stitches (the board can be bigger than the pattern).
+  // Try every row width that fits the stitches and keep the one where each row lines up best with the next.
+  const N = codes.length; if (!N) throw new Error("This Stitchly file's stitches couldn't be read.");
+  const fit = w => { const h = Math.floor(N / w); if (h < 2) return -1; let same = 0, n = 0; for (let i = 0; i < (h - 1) * w; i += Math.max(1, Math.floor(N / 20000))) { n++; if (codes[i] === codes[i + w]) same++; } return same / n; };
+  const cands = new Set(); [root.width, root.height].forEach(v => { if (v > 1) cands.add(v); });
+  for (let w = 4; w <= 400; w++) if (N % w === 0 && N / w <= 400) cands.add(w);
+  let W = 0, H = 0, best = -1, stated = root.width > 1 && root.height > 1 && root.width * root.height === N ? fit(root.width) : -1;
+  for (const w of cands) { const f = fit(w); if (f > best) { best = f; W = w; } }
+  if (stated >= best - 0.01) W = root.width; // keep the file's own size when it fits as well
+  H = Math.floor(N / W);
+  if (!W || !H) throw new Error("This Stitchly file's stitches couldn't be read.");
   const pal = [], idx = new Map(), unknown = new Set(), px = new Int16Array(W * H).fill(-1);
   for (let i = 0; i < W * H; i++) {
     const c = codes[i]; if (!c || c === "empty" || c === "$null") continue;
@@ -1377,7 +1387,7 @@ async function parseStitchly(file) {
       original = { canvas: c, m: [f, 0, 0, f, (W - c.width * f) / 2, (H - c.height * f) / 2] };
     } catch (e) {}
   }
-  return { w: W, h: H, ...compactPalette({ pal, px }), mesh: root.fabricCount, name: R(root.patternName), unknown: [...unknown], original };
+  return { w: W, h: H, ...compactPalette({ pal, px }), mesh: root.fabricCount, name: R(root.patternName), unknown: [...unknown], original, stated: [root.width, root.height] };
 }
 
 /* ---------------- image processing ---------------- */
