@@ -119,6 +119,7 @@ h1 span { color: var(--accent); }
 .textbar button:hover { background: rgba(255,255,255,.12); }
 .textbar .done { background: #F06292; color: #1D0A13; }
 .textbar .qsep { width: 1px; background: rgba(255,255,255,.2); margin: 4px 2px; }
+@media (max-width: 560px) { .textbar { max-width: calc(100% - 16px); padding: 4px; gap: 2px; } .textbar button { padding: 6px 8px; min-height: 34px; } .textbar .qsep { display: none; } }
 .textbar .tbinfo { flex-basis: 100%; text-align: center; color: #BCB2C8; font: 500 11px var(--mono); }
 .stage.full { position: fixed; inset: 0; z-index: 40; background: var(--bg); padding-top: calc(env(safe-area-inset-top, 0px) + 8px); padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 8px); padding-left: max(8px, env(safe-area-inset-left, 0px)); padding-right: max(8px, env(safe-area-inset-right, 0px)); grid-template-rows: auto minmax(0, 1fr); margin: 0; }
 .stage.full .screen { height: auto !important; min-height: 0; }
@@ -266,18 +267,30 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
             <button data-tool="erase" aria-pressed="false">Erase</button>
             <button data-tool="wand" aria-pressed="false">Magic erase</button>
             <button data-tool="pick" aria-pressed="false">Pick</button>
+            <button data-tool="select" aria-pressed="false">Select</button>
+            <button class="qpaste" data-paste hidden>Paste</button>
             <button data-tool="pan" aria-pressed="false">Move view</button>
             <span class="qsep"></span>
             <button id="qUndo" aria-label="Undo">Undo</button>
             <button id="qRedo" aria-label="Redo">Redo</button>
           </div>
           <div id="qpal" aria-label="Colors"></div>
+          <div id="qselRow" hidden role="toolbar" aria-label="Selection">
+            <button id="selCopy">Copy</button>
+            <button id="selCut">Cut</button>
+            <button id="selDel">Delete</button>
+            <button id="selAll">Select all</button>
+            <button id="selNone">Deselect</button>
+            <span class="qsize" id="selInfo"></span>
+          </div>
           <div class="qsize" id="qsizeRow"><span id="qsizeLbl">Brush 1</span><input type="range" id="qsize" min="1" max="15" value="1" aria-label="Brush size"></div>
         </div>
         <div class="textbar" id="textBar" hidden role="toolbar" aria-label="Adjust text">
           <button id="tbRotL" title="Rotate left 15°">⟲ 15°</button>
           <button id="tbRotR" title="Rotate right 15°">⟳ 15°</button>
           <button id="tbRot90" title="Turn 90°">90°</button>
+          <button id="tbFlipH" title="Flip side to side" hidden>Flip ↔</button>
+          <button id="tbFlipV" title="Flip top to bottom" hidden>Flip ↕</button>
           <span class="qsep"></span>
           <button id="tbSmaller" title="Smaller">Smaller</button>
           <button id="tbBigger" title="Bigger">Bigger</button>
@@ -433,6 +446,8 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
             <button data-tool="move" aria-pressed="false">Move stitches</button>
             <button data-tool="crop" aria-pressed="false">Crop</button>
             <button data-tool="text" aria-pressed="false">Text</button>
+            <button data-tool="select" aria-pressed="false">Select &amp; copy</button>
+            <button data-paste disabled>Paste</button>
             <button data-tool="wand" aria-pressed="false">Magic erase</button>
             <button data-tool="pan" aria-pressed="false">Move view</button>
           </div>
@@ -1199,7 +1214,7 @@ function syncSizeInputs() {
     ` Canvas with a ${bIn} in border: ${(S.wSt / S.mesh + 2 * bIn).toFixed(2)} × ${(S.hSt / S.mesh + 2 * bIn).toFixed(2)} in.`;
   const cn = $("copyNote"); if (cn) cn.textContent = copyPlan();
 }
-function setTool(t) { if (t !== "text" && t !== "pan" && S.stamp) { S.stamp = null; S.stampPos = null; if ($("textBar")) { $("textBar").hidden = true; $("qbar").hidden = S.view !== "design"; } } S.tool = t; document.querySelectorAll("[data-tool]").forEach(b => b.setAttribute("aria-pressed", b.dataset.tool === t)); const bm = $("bigMove"); if (bm) bm.setAttribute("aria-pressed", t === "pan"); if ($("qsizeRow")) syncBrushUI(); if (S.design) renderPalette(); }
+function setTool(t) { if (t !== "select" && t !== "pan" && S.selection) { S.selection = null; } if (t !== "text" && t !== "pan" && S.stamp) { S.stamp = null; S.stampPos = null; if ($("textBar")) { $("textBar").hidden = true; $("qbar").hidden = S.view !== "design"; } } S.tool = t; document.querySelectorAll("[data-tool]").forEach(b => b.setAttribute("aria-pressed", b.dataset.tool === t)); const bm = $("bigMove"); if (bm) bm.setAttribute("aria-pressed", t === "pan"); if ($("qsizeRow")) syncBrushUI(); if ($("qselRow")) syncSelUI(); if (S.design) renderPalette(); }
 
 function renderLayers() {
   const box = $("layers"); box.textContent = "";
@@ -2468,10 +2483,15 @@ async function rebuildStamp() {
 }
 function textBarInfo() {
   const st = S.stamp; if (!st) return;
-  $("tbInfo").textContent = `${st.cells.w} × ${st.cells.h} stitches · ${st.opts.h} tall · ${((st.angle || 0) + 360) % 360}°`;
+  $("tbInfo").textContent = st.clip ? `Copy ${st.cells.w} × ${st.cells.h} · drag it, then Done` : `${st.cells.w} × ${st.cells.h} stitches · ${st.opts.h} tall · ${((st.angle || 0) + 360) % 360}°`;
 }
-function showTextBar(on) { $("textBar").hidden = !on; $("qbar").hidden = on || S.view !== "design"; if (on) textBarInfo(); }
-function endText() { S.stamp = null; S.stampPos = null; showTextBar(false); setTool("paint"); renderView(); }
+function showTextBar(on) {
+  const clip = !!(S.stamp && S.stamp.clip);
+  ["tbRotL", "tbRotR", "tbSmaller", "tbBigger"].forEach(id => $(id).hidden = clip);
+  $("tbFlipH").hidden = $("tbFlipV").hidden = !clip;
+  $("textBar").setAttribute("aria-label", clip ? "Place the copy" : "Adjust text");
+  $("textBar").hidden = !on; $("qbar").hidden = on || S.view !== "design"; if (on) textBarInfo(); }
+function endText() { const clip = !!(S.stamp && S.stamp.clip); S.stamp = null; S.stampPos = null; showTextBar(false); setTool(clip ? "select" : "paint"); renderView(); }
 let iniDraft = null;
 function iniFromForm() {
   return { on: true, text: $("iniText").value, font: $("iniFont").value, h: +$("iniH").value, color: iniDraft.color, pos: $("iniPos").value, below: Math.max(0, +$("iniBelow").value || 0) };
@@ -2534,18 +2554,84 @@ function stampText(cell) {
     for (let y = 0; y < d.h; y++) for (let x = 0; x < d.w; x++) if (y + padT < H && x + padL < W) px[(y + padT) * W + x + padL] = d.px[y * d.w + x];
     setDesign(d.pal, px, W, H, true, (d.sx || 0) + padL, (d.sy || 0) + padT); d = S.design; x0 += padL; y0 += padT;
   }
-  let v = d.pal.findIndex(c => hex(c) === hex(st.color));
-  if (v < 0) { d.pal.push(st.color.slice()); v = d.pal.length - 1; }
+  const palIdx = col => { let v = d.pal.findIndex(c => hex(c) === hex(col)); if (v < 0) { d.pal.push(col.slice()); v = d.pal.length - 1; } return v; };
+  const selHex = hex(st.clip ? d.pal[S.sel] || [0, 0, 0] : st.color);
+  const v = st.clip ? -1 : palIdx(st.color), cmap = new Map();
   let n = 0;
   for (let y = 0; y < st.cells.h; y++) for (let x = 0; x < st.cells.w; x++) {
-    if (!st.cells.cells[y * st.cells.w + x]) continue;
+    const k = y * st.cells.w + x;
+    if (!st.cells.cells[k]) continue;
     const X = x0 + x, Y = y0 + y; if (X < 0 || Y < 0 || X >= d.w || Y >= d.h) continue;
-    d.px[Y * d.w + X] = v; n++;
+    let pv = v;
+    if (st.clip) { const c = st.colors[k], h = hex(c); pv = cmap.get(h); if (pv === undefined) { pv = palIdx(c); cmap.set(h, pv); } }
+    d.px[Y * d.w + X] = pv; n++;
   }
-  const cp = compactPalette(d); d.pal = cp.pal; d.px = cp.px; S.sel = Math.max(0, d.pal.findIndex(c => hex(c) === hex(st.color)));
+  const cp = compactPalette(d); d.pal = cp.pal; d.px = cp.px; S.sel = Math.max(0, d.pal.findIndex(c => hex(c) === selHex));
   designDirty(); renderView();
+  if (st.clip) { toast(n < st.cells.cells.reduce((a, b) => a + b, 0) ? "Copy placed. Part of it went past 400 stitches and was cut off." : "Copy placed." + (padL || padT || W !== S.undo[S.undo.length - 1].w || H !== S.undo[S.undo.length - 1].h ? " The design frame grew to fit it." : "") + " Paste places another."); fitView(); return; }
   toast(n < st.cells.cells.reduce((a, b) => a + b, 0) ? "Text stitched in. Part of it went past 400 stitches and was cut off." : "Text stitched in." + (padL || padT || W !== S.undo[S.undo.length - 1].w || H !== S.undo[S.undo.length - 1].h ? " The design frame grew to fit it." : ""));
   fitView();
+}
+/* ---- Select, copy, cut, paste ---- */
+S.selection = null; S.clipboard = null;
+function selRect(a, b) {
+  const d = S.design; if (!d) return null;
+  const x0 = clamp(Math.min(a[0], b[0]), 0, d.w - 1), x1 = clamp(Math.max(a[0], b[0]), 0, d.w - 1) + 1, y0 = clamp(Math.min(a[1], b[1]), 0, d.h - 1), y1 = clamp(Math.max(a[1], b[1]), 0, d.h - 1) + 1;
+  return { x0, y0, x1, y1 };
+}
+function selCount() { const r = S.selection, d = S.design; let n = 0; if (!r || !d) return 0; for (let y = r.y0; y < r.y1; y++) for (let x = r.x0; x < r.x1; x++) if (d.px[y * d.w + x] >= 0) n++; return n; }
+function syncSelUI() {
+  const on = S.tool === "select" && !!S.selection && !!S.design;
+  const was = $("qselRow").hidden; $("qselRow").hidden = !on;
+  if (was === on && S.view === "design") setTimeout(fitView, 0);
+  if (on) { const r = S.selection; $("selInfo").textContent = `${r.x1 - r.x0} × ${r.y1 - r.y0} · ${selCount()} stitches`; }
+  document.querySelectorAll("[data-paste]").forEach(b => { b.disabled = !S.clipboard; if (b.classList.contains("qpaste")) b.hidden = !S.clipboard; });
+}
+function copySelection(cut) {
+  const r = S.selection, d = S.design; if (!r || !d) { toast("Drag a box with Select first."); return false; }
+  // Trim to the stitches inside the box so the copy is just the motif.
+  let x0 = r.x1, x1 = -1, y0 = r.y1, y1 = -1;
+  for (let y = r.y0; y < r.y1; y++) for (let x = r.x0; x < r.x1; x++) if (d.px[y * d.w + x] >= 0) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
+  if (x1 < 0) { toast("There are no stitches in that box to copy."); return false; }
+  const w = x1 - x0 + 1, h = y1 - y0 + 1, mask = new Uint8Array(w * h), colors = new Array(w * h).fill(null);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const v = d.px[(y + y0) * d.w + x + x0]; if (v >= 0) { mask[y * w + x] = 1; colors[y * w + x] = d.pal[v].slice(); } }
+  S.clipboard = { w, h, mask, colors, at: [x0 + Math.floor(w / 2), y0 + Math.floor(h / 2)] };
+  if (cut) {
+    pushUndo(); S.edited = true;
+    for (let y = r.y0; y < r.y1; y++) for (let x = r.x0; x < r.x1; x++) d.px[y * d.w + x] = -1;
+    const cp = compactPalette(d); d.pal = cp.pal; d.px = cp.px; S.sel = Math.min(S.sel, Math.max(0, d.pal.length - 1));
+    designDirty();
+  }
+  return true;
+}
+function deleteSelection() {
+  const r = S.selection, d = S.design; if (!r || !d) return;
+  if (!selCount()) { toast("There are no stitches in that box."); return; }
+  pushUndo(); S.edited = true;
+  for (let y = r.y0; y < r.y1; y++) for (let x = r.x0; x < r.x1; x++) d.px[y * d.w + x] = -1;
+  const cp = compactPalette(d); d.pal = cp.pal; d.px = cp.px; S.sel = Math.min(S.sel, Math.max(0, d.pal.length - 1));
+  designDirty(); syncSelUI(); renderView(); toast("Stitches in the box cleared. Undo brings them back.");
+}
+function startPaste(at) {
+  const C = S.clipboard; if (!C || !S.design) { toast("Copy something first: Select, drag a box, then Copy."); return; }
+  S.selection = null;
+  setTool("text");
+  S.stamp = { clip: true, cells: { w: C.w, h: C.h, cells: C.mask.slice() }, colors: C.colors.map(c => c && c.slice()), color: [0, 0, 0] };
+  const d = S.design;
+  // First paste lands just beside the original so both are visible; tap or drag to move it.
+  S.stampPos = at || [clamp(C.at[0] + Math.max(2, Math.round(C.w * 0.25)), 0, d.w - 1), clamp(C.at[1] + Math.max(2, Math.round(C.h * 0.25)), 0, d.h - 1)];
+  showTextBar(true); renderView();
+}
+function transformClip(kind) {
+  const st = S.stamp; if (!st || !st.clip) return;
+  const { w, h, cells } = st.cells, cols = st.colors;
+  const W = kind === "rot" ? h : w, H = kind === "rot" ? w : h, m = new Uint8Array(W * H), c = new Array(W * H).fill(null);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    let X = x, Y = y;
+    if (kind === "rot") { X = h - 1 - y; Y = x; } else if (kind === "h") X = w - 1 - x; else Y = h - 1 - y;
+    m[Y * W + X] = cells[y * w + x]; c[Y * W + X] = cols[y * w + x];
+  }
+  st.cells = { w: W, h: H, cells: m }; st.colors = c; textBarInfo(); renderView();
 }
 function openInitials() {
   setDlgMode("initials");
@@ -3183,8 +3269,17 @@ function draw() {
     if (S.tool === "text" && S.stamp && (S.stampPos || hover.cell)) {
       const at = S.stampPos || hover.cell, st = S.stamp, gx0 = at[0] - Math.floor(st.cells.w / 2), gy0 = at[1] - Math.floor(st.cells.h / 2);
       vctx.save(); vctx.globalAlpha = 0.85; vctx.fillStyle = hex(st.color);
-      for (let y = 0; y < st.cells.h; y++) for (let x = 0; x < st.cells.w; x++) if (st.cells.cells[y * st.cells.w + x]) vctx.fillRect(V.tx + (gx0 + x) * V.s, V.ty + (gy0 + y) * V.s, Math.ceil(V.s), Math.ceil(V.s));
+      for (let y = 0; y < st.cells.h; y++) for (let x = 0; x < st.cells.w; x++) if (st.cells.cells[y * st.cells.w + x]) if (!st.clip || (vctx.fillStyle = hex(st.colors[y * st.cells.w + x]))) vctx.fillRect(V.tx + (gx0 + x) * V.s, V.ty + (gy0 + y) * V.s, Math.ceil(V.s), Math.ceil(V.s));
       vctx.globalAlpha = 1; vctx.strokeStyle = "#fff"; vctx.setLineDash([4, 3]); vctx.strokeRect(V.tx + gx0 * V.s, V.ty + gy0 * V.s, st.cells.w * V.s, st.cells.h * V.s); vctx.restore();
+    }
+    if (S.view === "design" && ((drag && drag.type === "select") || (S.tool === "select" && S.selection))) {
+      const r = drag && drag.type === "select" ? selRect(drag.a, drag.b) : S.selection;
+      if (r) {
+        vctx.save(); vctx.fillStyle = "rgba(240,98,146,.14)"; vctx.fillRect(V.tx + r.x0 * V.s, V.ty + r.y0 * V.s, (r.x1 - r.x0) * V.s, (r.y1 - r.y0) * V.s);
+        vctx.lineWidth = 2; vctx.strokeStyle = "#17121C"; vctx.setLineDash([]); vctx.strokeRect(V.tx + r.x0 * V.s, V.ty + r.y0 * V.s, (r.x1 - r.x0) * V.s, (r.y1 - r.y0) * V.s);
+        vctx.strokeStyle = "#fff"; vctx.setLineDash([6, 4]); vctx.strokeRect(V.tx + r.x0 * V.s, V.ty + r.y0 * V.s, (r.x1 - r.x0) * V.s, (r.y1 - r.y0) * V.s); vctx.restore();
+        stat.push(`selection ${r.x1 - r.x0} × ${r.y1 - r.y0}`);
+      }
     }
     if (drag && drag.type === "crop") {
       const x0 = Math.max(0, Math.min(drag.a[0], drag.b[0])), x1 = Math.min(d.w - 1, Math.max(drag.a[0], drag.b[0])) + 1, y0 = Math.max(0, Math.min(drag.a[1], drag.b[1])), y1 = Math.min(d.h - 1, Math.max(drag.a[1], drag.b[1])) + 1;
@@ -3308,10 +3403,11 @@ view.addEventListener("pointerdown", e => {
   const tool = rightErase ? (S.tool === "fill" ? "fill" : "erase") : S.tool;
   if (S.view === "design" && S.design && !panReq && tool !== "pan") {
     const cell = [Math.floor(wx), Math.floor(wy)];
-    if (tool !== "move" && tool !== "crop" && tool !== "text" && (cell[0] < 0 || cell[1] < 0 || cell[0] >= S.design.w || cell[1] >= S.design.h)) { drag = rightErase ? null : { type: "pan", last: [sx, sy] }; return; }
+    if (tool !== "move" && tool !== "crop" && tool !== "text" && tool !== "select" && (cell[0] < 0 || cell[1] < 0 || cell[0] >= S.design.w || cell[1] >= S.design.h)) { drag = rightErase ? null : { type: "pan", last: [sx, sy] }; return; }
     const i = cell[1] * S.design.w + cell[0];
     if (tool === "move") { drag = { type: "move", start: [wx, wy], delta: [0, 0] }; return; }
     if (tool === "crop") { drag = { type: "crop", a: cell, b: cell }; renderView(); return; }
+    if (tool === "select") { drag = { type: "select", a: cell, b: cell }; S.selection = null; syncSelUI(); renderView(); return; }
     if (tool === "text") {
       if (!S.stamp) { openTextTool(); return; }
       if (!S.stampPos) { S.stampPos = cell; renderView(); return; }
@@ -3361,6 +3457,7 @@ view.addEventListener("pointermove", e => {
   const [wx, wy] = toWorld(sx, sy);
   if (drag.type === "pan") { V.tx += sx - drag.last[0]; V.ty += sy - drag.last[1]; drag.last = [sx, sy]; renderView(); }
   else if (drag.type === "textmove") { const c = [Math.floor(wx) + drag.off[0], Math.floor(wy) + drag.off[1]]; if (c[0] !== S.stampPos[0] || c[1] !== S.stampPos[1]) { S.stampPos = c; renderView(); } }
+  else if (drag.type === "select") { const c = [Math.floor(wx), Math.floor(wy)]; if (c[0] !== drag.b[0] || c[1] !== drag.b[1]) { drag.b = c; renderView(); } }
   else if (drag.type === "crop") { const c = [Math.floor(wx), Math.floor(wy)]; if (c[0] !== drag.b[0] || c[1] !== drag.b[1]) { drag.b = c; renderView(); } }
   else if (drag.type === "move") { const nd = [Math.round(wx - drag.start[0]), Math.round(wy - drag.start[1])]; if (nd[0] !== drag.delta[0] || nd[1] !== drag.delta[1]) { drag.delta = nd; renderView(); } }
   else if (drag.type === "paint") { const c = [Math.floor(wx), Math.floor(wy)]; paintLine(drag.last, c, drag.v); drag.last = c; }
@@ -3374,6 +3471,7 @@ const endPtr = e => {
   if (drag && drag.type === "paint") designDirty();
   if (drag && drag.type === "move") { const dl = drag.delta; drag = null; shiftDesign(dl[0], dl[1]); return; }
   if (drag && drag.type === "crop") { const a = drag.a, b = drag.b; drag = null; cropDesign(a, b); return; }
+  if (drag && drag.type === "select") { const a = drag.a, b = drag.b; drag = null; S.selection = selRect(a, b); syncSelUI(); renderView(); return; }
   if (ptrs.size < 2) drag = null;
 };
 view.addEventListener("pointerup", endPtr); view.addEventListener("pointercancel", endPtr);
@@ -3419,6 +3517,14 @@ window.addEventListener("keydown", e => {
     if (mv) { e.preventDefault(); S.stampPos = [S.stampPos[0] + mv[0], S.stampPos[1] + mv[1]]; renderView(); return; }
     if (e.key === "Enter") { $("tbDone").click(); return; }
   }
+  if (S.view === "design" && S.design && (e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey) {
+    const k = e.key.toLowerCase();
+    if ((k === "c" || k === "x") && S.selection) { e.preventDefault(); if (copySelection(k === "x")) startPaste(); return; }
+    if (k === "v" && S.clipboard) { e.preventDefault(); startPaste(); return; }
+    if (k === "a" && S.tool === "select") { e.preventDefault(); $("selAll").click(); return; }
+  }
+  if (S.tool === "select" && S.selection && (e.key === "Delete" || e.key === "Backspace")) { e.preventDefault(); deleteSelection(); return; }
+  if (S.tool === "select" && S.selection && e.key === "Escape") { $("selNone").click(); return; }
   if (e.code === "Space") { spaceDown = true; if (S.view !== "design" || S.design) e.preventDefault(); }
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") { e.preventDefault(); e.shiftKey ? restore(S.redo, S.undo) : restore(S.undo, S.redo); return; }
   if (S.view === "map" && S.selNode >= 0 && e.key.startsWith("Arrow")) {
@@ -3681,11 +3787,18 @@ $("qsize").oninput = e => { if (S.tool === "erase") S.brush.erase = +e.target.va
 { const sb = store.get("ccp-brush"); if (sb && sb.paint && sb.erase) S.brush = sb; syncBrushUI(); }
 $("tbRotL").onclick = () => { if (!S.stamp) return; S.stamp.angle = (S.stamp.angle || 0) - 15; rebuildStamp(); };
 $("tbRotR").onclick = () => { if (!S.stamp) return; S.stamp.angle = (S.stamp.angle || 0) + 15; rebuildStamp(); };
-$("tbRot90").onclick = () => { if (!S.stamp) return; S.stamp.angle = (S.stamp.angle || 0) + 90; rebuildStamp(); };
+$("tbRot90").onclick = () => { if (!S.stamp) return; if (S.stamp.clip) { transformClip("rot"); return; } S.stamp.angle = (S.stamp.angle || 0) + 90; rebuildStamp(); };
 const resizeStamp = dir => { if (!S.stamp) return; const o = S.stamp.opts, step = o.font === "block" ? 7 : Math.max(1, Math.round(o.h * 0.15)); o.h = clamp(o.h + dir * step, o.font === "block" ? 7 : 4, 120); rebuildStamp(); };
 $("tbSmaller").onclick = () => resizeStamp(-1); $("tbBigger").onclick = () => resizeStamp(1);
 $("tbCancel").onclick = endText;
-$("tbDone").onclick = () => { if (!S.stamp) return; if (!S.stampPos) { toast("Click on the design first to place the text."); return; } stampText(S.stampPos); endText(); };
+$("tbFlipH").onclick = () => transformClip("h"); $("tbFlipV").onclick = () => transformClip("v");
+$("selCopy").onclick = () => { if (copySelection(false)) { startPaste(); toast("Copied. Drag the copy where you want it, then Done."); } };
+$("selCut").onclick = () => { if (copySelection(true)) { startPaste(S.clipboard.at); toast("Cut. Drag it where you want it, then Done. Undo puts it back."); } };
+$("selDel").onclick = deleteSelection;
+$("selAll").onclick = () => { if (!S.design) return; S.selection = { x0: 0, y0: 0, x1: S.design.w, y1: S.design.h }; syncSelUI(); renderView(); };
+$("selNone").onclick = () => { S.selection = null; syncSelUI(); renderView(); };
+document.querySelectorAll("[data-paste]").forEach(b => b.onclick = () => startPaste());
+$("tbDone").onclick = () => { if (!S.stamp) return; if (!S.stampPos) { toast("Click on the design first to place the text."); return; } stampText(S.stampPos); endText(); syncSelUI(); };
 $("showCanvasArea").onchange = e => { S.showArea = e.target.checked; store.set("ccp-area", { on: S.showArea, b: S.canvasBorder }); fitView(); };
 $("canvasBorder").onchange = e => { S.canvasBorder = clamp(+e.target.value || 2, 0.25, 6); store.set("ccp-area", { on: S.showArea, b: S.canvasBorder }); syncSizeInputs(); fitView(); };
 { const a = store.get("ccp-area"); if (a) { S.showArea = !!a.on; S.canvasBorder = a.b || 2; $("showCanvasArea").checked = S.showArea; $("canvasBorder").value = S.canvasBorder; } }
