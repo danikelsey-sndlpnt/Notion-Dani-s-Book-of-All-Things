@@ -606,7 +606,7 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
               <button id="nL" aria-label="Nudge left">←</button><span id="nudgeOut">0,0</span><button id="nR" aria-label="Nudge right">→</button>
               <span></span><button id="nD" aria-label="Nudge down">↓</button><span></span>
             </div>
-            <p class="hint" style="flex:1 1 160px">Each tap moves the print 1/200 inch. Your nudge is remembered on this device.</p>
+            <p class="hint" style="flex:1 1 160px">Each tap moves the print 1/400 inch (about 1/30 of a stitch on 13 mesh). Check my print below works out the exact nudge for you. Your nudge is remembered on this device.</p>
           </div>
           <button class="btn small" id="testPage">Test page for plain paper (PDF)</button>
           <p class="hint">Print it on plain paper, lay it on the Carrier and hold both up to a window. The crosshairs should sit on the four dots. If part of a print goes missing, turn off paper width detection in your printer settings.</p>
@@ -684,6 +684,7 @@ const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
 const tick = () => new Promise(r => setTimeout(r, 0));
 const PDFJS = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
 const PDFJS_WORKER = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+const NUDGE = 400; // nudge steps per inch
 const COL = { found: "#2BB5A8", check: "#F2A93B", miss: "#E5484D", moved: "#E86FD0", center: "#FFD400", mark: "#8E5CF7", sel: "#FF7A1A", outline: "#F06292" };
 
 // Carrier geometry, inches from the page's top-left corner.
@@ -2088,7 +2089,7 @@ async function renderPrint(dpi, y0 = 0, hStrip = null) {
   const c = document.createElement("canvas"); c.width = W; c.height = H;
   const x = c.getContext("2d"); x.fillStyle = "#fff"; x.fillRect(0, 0, W, H); x.translate(0, -y0);
   const pal = printPalette(), f = 1 + S.adj.bleed / 100;
-  const nx = S.nudge.x / 200, ny = S.nudge.y / 200;
+  const nx = S.nudge.x / NUDGE, ny = S.nudge.y / NUDGE;
   const r = forEachStitch((q, v) => {
     const g = grow(q, f).map(p => { const pg = scanToPage(p[0], p[1]); return [(pg[0] + nx) * dpi, (pg[1] + ny) * dpi]; });
     x.fillStyle = pal[v]; x.beginPath(); x.moveTo(g[0][0], g[0][1]); for (let k = 1; k < 4; k++) x.lineTo(g[k][0], g[k][1]); x.closePath(); x.fill();
@@ -2140,7 +2141,7 @@ function printSummary(r) {
 }
 async function testPagePdf() {
   if (!S.scan) { toast("Load a scan first."); return; }
-  const nx = S.nudge.x / 200, ny = S.nudge.y / 200;
+  const nx = S.nudge.x / NUDGE, ny = S.nudge.y / NUDGE;
   let c = "0.2 0.2 0.2 RG 0.6 w\n";
   for (const [mx, my] of MARKS) {
     const X = mx + nx, Y = my + ny;
@@ -2318,16 +2319,17 @@ async function checkPrint(f) {
     const ox = med(m.x), oy = med(m.y), spread = Math.max(sd(m.x), sd(m.y)), inPerStitch = p / dpi;
     const dir = (v, pos, neg) => `${Math.abs(v).toFixed(2)} stitch ${v >= 0 ? pos : neg}`;
     let msg = `Ink landed ${dir(ox, "right", "left")} and ${dir(oy, "low", "high")} of the threads on average (measured ${m.x.length + m.y.length} line spots, canvas ${(dpi / p).toFixed(1)} mesh).`;
-    const nx = -Math.round(ox * inPerStitch * 200), ny = -Math.round(oy * inPerStitch * 200);
-    if (Math.abs(ox) < 0.1 && Math.abs(oy) < 0.1) { msg += " That's within 1/10 of a stitch, so no nudge is needed."; $("applyNudge").hidden = true; }
-    else if (!nx && !ny) { msg += " The fix is smaller than one nudge step, so leave it."; $("applyNudge").hidden = true; }
+    // Any steady shift of at least half a nudge step gets a correction, so the next print lands right on the crossings.
+    const nx = -Math.round(ox * inPerStitch * NUDGE), ny = -Math.round(oy * inPerStitch * NUDGE);
+    if (!nx && !ny) { msg += " That's less than half a nudge step (1/800 inch), so it's as centered as the printer can place it. No change needed."; $("applyNudge").hidden = true; }
     else {
       const sug = { x: S.nudge.x + nx, y: S.nudge.y + ny };
-      msg += ` Suggested nudge: ${sug.x},${sug.y} (now ${S.nudge.x},${S.nudge.y}).`;
+      const say = (v, a, b) => v ? `${Math.abs(v)} ${v > 0 ? a : b}` : "";
+      msg += ` To center it on the crossings, move the print ${[say(nx, "right", "left"), say(ny, "down", "up")].filter(Boolean).join(" and ")} (1/400 inch steps). Suggested nudge: ${sug.x},${sug.y} (now ${S.nudge.x},${S.nudge.y}). Use it, then make the print file again.`;
       $("applyNudge").hidden = false; $("applyNudge").onclick = () => { S.nudge = sug; nudgeOut(); $("applyNudge").hidden = true; toast("Nudge set to " + sug.x + "," + sug.y + ". Make the print file again."); };
     }
-    if (spread > 0.2) msg += " The lines wander more than usual from spot to spot. The canvas may have shifted or the paper slipped while printing. Tape it down well and feed the Carrier alone.";
-    setStatus("checkStatus", msg, Math.abs(ox) < 0.1 && Math.abs(oy) < 0.1 && spread <= 0.2 ? "ok" : "err");
+    if (spread > 0.28) msg += " The lines wander more than usual from spot to spot. The canvas may have shifted or the paper slipped while printing. Tape it down well and feed the Carrier alone.";
+    setStatus("checkStatus", msg, !nx && !ny && spread <= 0.28 ? "ok" : "err");
   } catch (e) { busy(false); setStatus("checkStatus", e.message, "err"); }
 }
 
@@ -3592,7 +3594,7 @@ $("recenter").onclick = () => { if (S.grid) S.center = canvasMiddle(S.grid); $("
 const adjOut = () => { $("satOut").textContent = S.adj.sat + "%"; $("deepOut").textContent = S.adj.deepen; $("conOut").textContent = S.adj.contrast + "%"; $("bleedOut").textContent = S.adj.bleed + "%"; };
 ["sat", "deepen", "contrast", "bleed"].forEach(k => $(k).oninput = e => { S.adj[k] = +e.target.value; adjOut(); previewDirty(); store.set("ccp-adj", S.adj); });
 $("rawColors").onchange = e => { S.adj.raw = e.target.checked; previewDirty(); store.set("ccp-adj", S.adj); };
-const nudgeOut = () => { $("nudgeOut").textContent = `${S.nudge.x},${S.nudge.y}`; store.set("ccp-nudge", S.nudge); };
+const nudgeOut = () => { $("nudgeOut").textContent = `${S.nudge.x},${S.nudge.y}`; store.set("ccp-nudge400", S.nudge); };
 $("nU").onclick = () => { S.nudge.y--; nudgeOut(); }; $("nD").onclick = () => { S.nudge.y++; nudgeOut(); };
 $("nL").onclick = () => { S.nudge.x--; nudgeOut(); }; $("nR").onclick = () => { S.nudge.x++; nudgeOut(); };
 $("printDpi").onchange = e => { S.printDpi = +e.target.value; store.set("ccp-printdpi", S.printDpi); };
@@ -3663,7 +3665,9 @@ function startExample() {
 }
 async function start(hot) {
   const adj = store.get("ccp-adj"); if (adj) Object.assign(S.adj, adj);
-  const nd = store.get("ccp-nudge"); if (nd) S.nudge = nd;
+  // Nudge steps are 1/400 inch; older saved nudges were in 1/200 inch steps.
+  const nd = store.get("ccp-nudge400"), old = store.get("ccp-nudge");
+  if (nd) S.nudge = nd; else if (old && (old.x || old.y)) S.nudge = { x: old.x * 2, y: old.y * 2 };
   ["sat", "deepen", "contrast", "bleed"].forEach(k => $(k).value = S.adj[k]); $("rawColors").checked = S.adj.raw; adjOut(); nudgeOut();
   const lk = store.get("ccp-look"); if (lk === "box") setLook("box");
   new ResizeObserver(resize).observe(view);
