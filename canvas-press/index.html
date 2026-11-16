@@ -121,6 +121,11 @@ input:focus-visible, select:focus-visible, button:focus-visible { outline: 2px s
 .layer .lc input, .layer .lc select { width: 100%; min-width: 0; }
 .sec, .group, .layers, .layer { grid-template-columns: minmax(0, 1fr); }
 .sec > *, .group > *, .layer { min-width: 0; }
+.hist { display: grid; gap: 6px; }
+.hrow { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; gap: 10px; align-items: center; border: 1px solid var(--line); border-radius: 10px; padding: 6px 8px; }
+.hrow canvas { width: 44px; height: 44px; border-radius: 6px; background: #EEECE7; image-rendering: pixelated; object-fit: contain; }
+.hrow .t { font-size: 13px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hrow .m { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .icon-btn { border: 1px solid var(--line); background: var(--surface); color: var(--ink-2); min-width: 28px; height: 28px; border-radius: 8px; cursor: pointer; display: grid; place-items: center; font-size: 13px; padding: 0 6px; }
 .pal { display: grid; grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); gap: 6px; }
 .sw { border: 1px solid var(--line); border-radius: 10px; padding: 5px; background: var(--surface); cursor: pointer; display: grid; gap: 3px; text-align: left; font: 500 11px var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
@@ -188,6 +193,11 @@ input:focus-visible, select:focus-visible, button:focus-visible { outline: 2px s
 
       <!-- 1 DESIGN -->
       <div class="sec" id="pane1">
+        <div class="group" id="histGroup" hidden>
+          <h3>Earlier designs</h3>
+          <p class="hint">Saved on this device whenever a design gets replaced. Restoring keeps the one you have now in this list too.</p>
+          <div class="hist" id="hist"></div>
+        </div>
         <div class="group">
           <h3>Artwork</h3>
           <div class="row">
@@ -761,7 +771,7 @@ function startEditing() {
   if (S.origAlpha > 0) { S.origAlpha = 0; $("origAlpha").value = 0; $("origOut").textContent = "0%"; toast("Original hidden while you edit. Slide it back up to compare, or use the Original view."); }
 }
 function redoFromSource() {
-  const run = () => { S.edited = false; $("redoBar").hidden = true; if (S.layers.length) convert(); else if (S.importFile) importPainted(S.importFile); };
+  const run = async () => { if (S.edited) await archiveDesign("before re-reading"); S.edited = false; $("redoBar").hidden = true; if (S.layers.length) convert(); else if (S.importFile) importPainted(S.importFile); };
   if (!S.layers.length && !S.importFile) return;
   if (!S.edited) { run(); return; }
   $("redoBar").hidden = false; $("redoGo").onclick = run;
@@ -817,7 +827,7 @@ function designDirty() {
   x.putImageData(id, 0, 0);
   renderPalette(); previewDirty();
   clearTimeout(designDirty.t);
-  designDirty.t = setTimeout(() => store.set("ccp-design", { w: d.w, h: d.h, pal: d.pal, px: Array.from(d.px), mesh: S.mesh, example: S.exampleDesign }), 400);
+  designDirty.t = setTimeout(saveCurrent, 400);
 }
 function renderPalette() {
   const d = S.design, box = $("pal"); box.textContent = "";
@@ -1551,6 +1561,97 @@ async function testPagePdf() {
 }
 const fileBase = () => "canvas-" + new Date().toISOString().slice(0, 10);
 
+/* ---------------- keeping your work ---------------- */
+// IndexedDB holds the design, its original picture and earlier designs; localStorage is a small backup; claude.hot carries work across page updates.
+const idb = (() => {
+  let dbP = null;
+  const open = () => dbP || (dbP = new Promise((res, rej) => {
+    try { const r = indexedDB.open("canvas-press", 1); r.onupgradeneeded = () => r.result.createObjectStore("kv"); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }
+    catch (e) { rej(e); }
+  }));
+  const run = async (mode, fn) => { const db = await open(); return new Promise((res, rej) => { const t = db.transaction("kv", mode), r = fn(t.objectStore("kv")); t.oncomplete = () => res(r ? r.result : undefined); t.onerror = () => rej(t.error); }); };
+  return {
+    get: k => run("readonly", st => st.get(k)).catch(() => null),
+    set: (k, v) => run("readwrite", st => st.put(v, k)).catch(() => null),
+    del: k => run("readwrite", st => st.delete(k)).catch(() => null),
+  };
+})();
+const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+function plainDesign() {
+  const d = S.design;
+  return { w: d.w, h: d.h, pal: d.pal.map(c => c.slice()), px: Array.from(d.px), sx: d.sx || 0, sy: d.sy || 0, mesh: S.mesh, example: S.exampleDesign, testing: !!S.testing, name: S.designName || "", origId: S.original && S.original.id || null, time: Date.now() };
+}
+function persistOriginal() {
+  const o = S.original; if (!o || o.example) return;
+  if (!o.id) o.id = newId();
+  if (o.saving) return; o.saving = true;
+  o.canvas.toBlob(b => { if (b) idb.set("orig-" + o.id, { blob: b, m: o.m }); }, "image/jpeg", 0.92);
+}
+async function loadOriginal(id) {
+  if (!id) return null;
+  const rec = await idb.get("orig-" + id); if (!rec || !rec.blob) return null;
+  try { const bmp = await createImageBitmap(rec.blob); const c = document.createElement("canvas"); c.width = bmp.width; c.height = bmp.height; c.getContext("2d").drawImage(bmp, 0, 0); return { canvas: c, m: rec.m, id, saving: true }; }
+  catch (e) { return null; }
+}
+function saveCurrent() {
+  if (!S.design) return;
+  persistOriginal();
+  const rec = plainDesign();
+  store.set("ccp-design", rec);
+  idb.set("current", rec);
+}
+S.history = [];
+async function archiveDesign(why) {
+  if (!S.design || S.exampleDesign || S.testing) return;
+  persistOriginal();
+  const rec = plainDesign(); rec.why = why;
+  const last = S.history[0];
+  if (last && last.w === rec.w && last.h === rec.h && last.px.join() === rec.px.join()) return;
+  S.history.unshift(rec); S.history = S.history.slice(0, 10);
+  await idb.set("history", S.history);
+  renderHistory();
+}
+function thumb(rec) {
+  const c = document.createElement("canvas"); c.width = rec.w; c.height = rec.h;
+  const x = c.getContext("2d"), id = x.createImageData(rec.w, rec.h);
+  rec.px.forEach((v, i) => { const col = v >= 0 ? rec.pal[v] : [238, 236, 231]; id.data[i * 4] = col[0]; id.data[i * 4 + 1] = col[1]; id.data[i * 4 + 2] = col[2]; id.data[i * 4 + 3] = 255; });
+  x.putImageData(id, 0, 0); return c;
+}
+function renderHistory() {
+  const box = $("hist"); box.textContent = "";
+  $("histGroup").hidden = !S.history.length;
+  S.history.forEach((rec, k) => {
+    const row = document.createElement("div"); row.className = "hrow";
+    const t = new Date(rec.time);
+    const info = document.createElement("div");
+    info.innerHTML = `<div class="t"></div><div class="m">${rec.w} × ${rec.h} stitches · ${t.toLocaleDateString([], { month: "short", day: "numeric" })} ${t.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</div>`;
+    info.querySelector(".t").textContent = (rec.name || "Design") + (rec.why ? " · " + rec.why : "");
+    const btn = document.createElement("button"); btn.className = "btn small"; btn.textContent = "Restore";
+    btn.onclick = () => restoreHistory(k);
+    row.append(thumb(rec), info, btn); box.appendChild(row);
+  });
+}
+async function applySaved(rec, original) {
+  if (rec.mesh) setMesh(rec.mesh);
+  S.exampleDesign = !!rec.example; S.testing = !!rec.testing; S.designName = rec.name || "";
+  S.layers = S.exampleDesign ? [Object.assign(layerDefaults("Strawberry (example)", exampleArtwork()), { example: true })] : [];
+  S.importFile = null; S.edited = true;
+  S.original = original || null;
+  setDesign(rec.pal.map(c => c.slice()), Int16Array.from(rec.px), rec.w, rec.h, false, rec.sx || 0, rec.sy || 0);
+  $("backToMine").hidden = !(S.testing && store.get("ccp-before-test"));
+  setTab(1); fitView(); renderAll();
+}
+async function restoreHistory(k) {
+  const rec = S.history[k]; if (!rec) return;
+  const cur = S.design && !S.exampleDesign && !S.testing ? plainDesign() : null;
+  S.history.splice(k, 1);
+  if (cur) { cur.why = "before restoring"; S.history.unshift(cur); S.history = S.history.slice(0, 10); }
+  await idb.set("history", S.history);
+  pushUndo();
+  await applySaved(rec, await loadOriginal(rec.origId));
+  renderHistory(); toast("Restored " + (rec.name || "your design") + ".");
+}
+
 /* ---------------- practice print on paper ---------------- */
 async function practicePdf() {
   const d = S.design; if (!d) { toast("Make a design first."); return; }
@@ -1583,6 +1684,7 @@ async function practicePdf() {
 /* ---------------- print test pattern ---------------- */
 function useTestPattern() {
   const d = S.design;
+  archiveDesign("before the test pattern");
   if (d && !S.testing) store.set("ccp-before-test", { w: d.w, h: d.h, pal: d.pal, px: Array.from(d.px), sx: d.sx || 0, sy: d.sy || 0, original: !!S.original });
   if (!S.testing) S.savedOriginal = S.original;
   const n = clamp(S.mesh * 3, 30, 54), w = n + 1, h = n + 1, px = new Int16Array(w * h).fill(-1), c = Math.floor(n / 2);
@@ -2017,6 +2119,7 @@ $("addColor").onclick = () => { if (!S.design) return; pushUndo(); S.design.pal.
 $("addArt").onchange = async e => {
   const files = [...e.target.files]; e.target.value = "";
   if (!files.length) return;
+  await archiveDesign("before adding " + files[0].name); S.designName = files[0].name;
   busy(true, "Opening artwork…", 0.3);
   S.importFile = null;
   const firstReal = !S.layers.some(l => !l.example);
@@ -2028,15 +2131,16 @@ $("addArt").onchange = async e => {
   if (firstReal) { if (S.wSt < 20) S.wSt = 60; const a = S.layers[0].img.height / S.layers[0].img.width; S.hSt = clamp(Math.round(S.wSt * a), 4, 400); }
   setTab(1); renderLayers(); convert();
 };
-$("readPainted").onchange = e => { const f = e.target.files[0]; e.target.value = ""; if (!f) return; S.importFile = f; S.edited = false; $("redoBar").hidden = true; if (S.nColors < 12) { S.nColors = 12; $("nColors").value = 12; $("ncOut").textContent = 12; } importPainted(f); };
+$("readPainted").onchange = async e => { const f = e.target.files[0]; e.target.value = ""; if (!f) return; await archiveDesign("before reading " + f.name); S.designName = f.name; S.importFile = f; S.edited = false; $("redoBar").hidden = true; if (S.nColors < 12) { S.nColors = 12; $("nColors").value = 12; $("ncOut").textContent = 12; } importPainted(f); };
 $("bareEmpty").onchange = redoFromSource;
 $("openStitch").onchange = async e => {
   const f = e.target.files[0]; e.target.value = ""; if (!f) return;
+  await archiveDesign("before opening " + f.name);
   try {
     let d;
     if (/\.(oxs|xml)$/i.test(f.name)) d = parseOXS(await f.text()); else d = stitchImageToDesign(await loadImageFile(f));
     if (!d) throw new Error("No stitches were found in this file.");
-    pushUndo(); S.importFile = null; S.original = null; S.layers = []; S.exampleDesign = false; setDesign(d.pal, d.px, d.w, d.h); setTab(1); fitView(); renderAll();
+    pushUndo(); S.importFile = null; S.original = null; S.designName = f.name; S.layers = []; S.exampleDesign = false; setDesign(d.pal, d.px, d.w, d.h); setTab(1); fitView(); renderAll();
     toast(`Opened ${d.w} × ${d.h} stitches, ${d.pal.length} colors.`);
   } catch (err) { toast(err.message, 5000); }
 };
@@ -2113,25 +2217,51 @@ $("practicePdf").onclick = practicePdf;
 $("testPattern").onclick = useTestPattern; $("backToMine").onclick = backToMine;
 
 /* ---------------- start ---------------- */
-(function init() {
+function startExample() {
+  S.layers = [Object.assign(layerDefaults("Strawberry (example)", exampleArtwork()), { example: true })];
+  S.nColors = 8; $("nColors").value = 8; $("ncOut").textContent = 8;
+  const q = quantize(flatten(), S.wSt, S.hSt, S.nColors, false);
+  S.original = { canvas: flatten.last, m: [0.25, 0, 0, 0.25, 0, 0], example: true };
+  S.exampleDesign = true; setDesign(q.pal, q.px, S.wSt, S.hSt);
+}
+async function start(hot) {
   const adj = store.get("ccp-adj"); if (adj) Object.assign(S.adj, adj);
   const nd = store.get("ccp-nudge"); if (nd) S.nudge = nd;
   ["sat", "deepen", "contrast", "bleed"].forEach(k => $(k).value = S.adj[k]); $("rawColors").checked = S.adj.raw; adjOut(); nudgeOut();
   const lk = store.get("ccp-look"); if (lk === "box") setLook("box");
-  const saved = store.get("ccp-design");
-  if (saved && saved.px && saved.px.length === saved.w * saved.h) {
-    if (saved.mesh) setMesh(saved.mesh);
-    S.exampleDesign = !!saved.example;
-    if (S.exampleDesign) S.layers = [Object.assign(layerDefaults("Strawberry (example)", exampleArtwork()), { example: true })];
-    setDesign(saved.pal, Int16Array.from(saved.px), saved.w, saved.h);
-  } else {
-    S.layers = [Object.assign(layerDefaults("Strawberry (example)", exampleArtwork()), { example: true })];
-    S.nColors = 8; $("nColors").value = 8; $("ncOut").textContent = 8;
-    const q = quantize(flatten(), S.wSt, S.hSt, S.nColors, false);
-    S.original = { canvas: flatten.last, m: [0.25, 0, 0, 0.25, 0, 0] };
-    S.exampleDesign = true; setDesign(q.pal, q.px, S.wSt, S.hSt);
-  }
   new ResizeObserver(resize).observe(view);
+  const valid = r => r && r.px && r.pal && r.px.length === r.w * r.h;
+  let ls = store.get("ccp-design");
+  // Show something right away, then upgrade to the fuller saved copy.
+  if (hot && valid(hot.design)) {
+    let orig = null;
+    if (hot.orig) { try { const im = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = hot.orig.url; }); const c = document.createElement("canvas"); c.width = im.naturalWidth; c.height = im.naturalHeight; c.getContext("2d").drawImage(im, 0, 0); orig = { canvas: c, m: hot.orig.m, id: hot.design.origId, saving: true }; } catch (e) {} }
+    await applySaved(hot.design, orig);
+    if (hot.tab) setTab(hot.tab);
+  } else if (valid(ls)) {
+    await applySaved(ls, null);
+  } else startExample();
   resize(); fitView(); renderAll();
-})();
+  const [cur, hist] = await Promise.all([idb.get("current"), idb.get("history")]);
+  if (Array.isArray(hist)) { S.history = hist.filter(valid); renderHistory(); }
+  if (!(hot && valid(hot.design)) && valid(cur) && (!valid(ls) || (cur.time || 0) >= (ls.time || 0))) {
+    await applySaved(cur, await loadOriginal(cur.origId));
+  } else if (S.design && !S.original && ls && ls.origId) {
+    S.original = await loadOriginal(ls.origId); renderView();
+  }
+  if (window.claude && window.claude.hot && window.claude.hot.snapshot) {
+    window.claude.hot.snapshot(() => {
+      if (!S.design) return {};
+      const out = { design: plainDesign(), tab: [1, 2, 3].find(k => $("tab" + k).getAttribute("aria-selected") === "true") };
+      if (S.original && !S.original.example) {
+        const o = S.original.canvas, f = Math.min(1, 1600 / Math.max(o.width, o.height));
+        const c = document.createElement("canvas"); c.width = Math.round(o.width * f); c.height = Math.round(o.height * f);
+        c.getContext("2d").drawImage(o, 0, 0, c.width, c.height);
+        const m = S.original.m; out.orig = { url: c.toDataURL("image/jpeg", 0.85), m: [m[0] / f, m[1] / f, m[2] / f, m[3] / f, m[4], m[5]] };
+      }
+      return out;
+    });
+  }
+}
+window.claude && window.claude.hot && window.claude.hot.ready ? window.claude.hot.ready(start) : start((window.claude && window.claude.hot && window.claude.hot.data) || {});
 </script>
