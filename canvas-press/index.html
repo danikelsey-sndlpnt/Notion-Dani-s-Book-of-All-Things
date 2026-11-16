@@ -110,6 +110,8 @@ h1 span { color: var(--accent); }
 .qbar .qsw { width: 34px; height: 34px; padding: 0; border-radius: 8px; border: 2px solid transparent; }
 .qbar .qsw[aria-pressed=true] { border-color: #fff; box-shadow: 0 0 0 2px #F06292; background-clip: padding-box; }
 .qbar .qsep { width: 1px; background: rgba(255,255,255,.2); margin: 4px 2px; flex: none; }
+.qbar .qsize { display: flex; align-items: center; gap: 8px; color: #EEE9F3; font: 600 12px var(--body); padding: 6px 10px; }
+.qbar .qsize input { width: 130px; accent-color: #F06292; }
 .bigmove { position: absolute; right: calc(12px + env(safe-area-inset-right, 0px)); bottom: 44px; width: 64px; height: 64px; border-radius: 50%; border: 2px solid rgba(255,255,255,.75); background: rgba(23,18,28,.85); color: #fff; display: grid; place-items: center; align-content: center; gap: 0; cursor: pointer; box-shadow: 0 4px 14px rgba(0,0,0,.4); z-index: 2; }
 .bigmove svg { width: 26px; height: 26px; }
 .bigmove span { font: 700 11px var(--body); }
@@ -255,6 +257,7 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
             <button id="qRedo" aria-label="Redo">Redo</button>
           </div>
           <div id="qpal" aria-label="Colors"></div>
+          <div class="qsize" id="qsizeRow"><span id="qsizeLbl">Brush 1</span><input type="range" id="qsize" min="1" max="15" value="1" aria-label="Brush size"></div>
         </div>
         <button class="bigmove" id="bigMove" aria-pressed="false" aria-label="Move view"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2l3 3h-2v4h4V7l3 3-3 3v-2h-4v4h2l-3 3-3-3h2v-4H7v2l-3-3 3-3v2h4V5H9z" fill="currentColor"/></svg><span>Move</span></button>
         <div class="vstat" id="vstat"></div>
@@ -401,6 +404,10 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
             <button class="btn small" id="undo">Undo</button>
             <button class="btn small" id="redo">Redo</button>
             <label class="tog"><input type="checkbox" id="showGrid" checked> Grid lines</label>
+          </div>
+          <div class="row">
+            <label class="f">Paint brush <small id="bpOut">1 stitch</small><input type="range" id="brushPaint" min="1" max="15" value="1"></label>
+            <label class="f">Eraser <small id="beOut">1 stitch</small><input type="range" id="brushErase" min="1" max="15" value="1"></label>
           </div>
           <div class="row">
             <div class="seg" role="group" aria-label="Look">
@@ -1144,7 +1151,7 @@ function syncSizeInputs() {
   $("sizeNote").textContent = `${S.wSt} × ${S.hSt} stitches = ${(S.wSt / S.mesh).toFixed(2)} × ${(S.hSt / S.mesh).toFixed(2)} in on ${S.mesh} mesh.` + (S.finish ? ` Sized for: ${S.finish.name} (${S.finish.w} × ${S.finish.h} in inside).` : "");
   const cn = $("copyNote"); if (cn) cn.textContent = copyPlan();
 }
-function setTool(t) { S.tool = t; document.querySelectorAll("[data-tool]").forEach(b => b.setAttribute("aria-pressed", b.dataset.tool === t)); const bm = $("bigMove"); if (bm) bm.setAttribute("aria-pressed", t === "pan"); if (S.design) renderPalette(); }
+function setTool(t) { S.tool = t; document.querySelectorAll("[data-tool]").forEach(b => b.setAttribute("aria-pressed", b.dataset.tool === t)); const bm = $("bigMove"); if (bm) bm.setAttribute("aria-pressed", t === "pan"); if ($("qsizeRow")) syncBrushUI(); if (S.design) renderPalette(); }
 
 function renderLayers() {
   const box = $("layers"); box.textContent = "";
@@ -2867,6 +2874,14 @@ function draw() {
     }
     if (S.original && S.origAlpha > 0) drawOriginal(S.origAlpha / 100);
     vctx.restore();
+    if ((S.tool === "paint" || S.tool === "erase") && hover.cell && brushToolSize() > 1) {
+      vctx.save(); vctx.strokeStyle = S.tool === "erase" ? "#fff" : "#F06292"; vctx.lineWidth = 1.5; vctx.setLineDash([4, 3]);
+      for (const [dx, dy] of brushCells(brushToolSize())) {
+        const X = V.tx + (hover.cell[0] + dx) * V.s, Y = V.ty + (hover.cell[1] + dy) * V.s;
+        vctx.strokeRect(X + 0.5, Y + 0.5, V.s - 1, V.s - 1);
+      }
+      vctx.restore();
+    }
     if (S.tool === "text" && S.stamp && hover.cell) {
       const st = S.stamp, gx0 = hover.cell[0] - Math.floor(st.cells.w / 2), gy0 = hover.cell[1] - Math.floor(st.cells.h / 2);
       vctx.save(); vctx.globalAlpha = 0.85; vctx.fillStyle = hex(st.color);
@@ -3044,13 +3059,35 @@ view.addEventListener("pointerup", endPtr); view.addEventListener("pointercancel
 view.addEventListener("pointerleave", () => { if (hover.cell) { hover.cell = null; renderView(); } });
 view.addEventListener("contextmenu", e => e.preventDefault());
 view.addEventListener("wheel", e => { e.preventDefault(); const r = view.getBoundingClientRect(); zoomAt(Math.exp(-e.deltaY * 0.0015), e.clientX - r.left, e.clientY - r.top); }, { passive: false });
+// Brush: a round patch of stitches (square when 1–3 across) centered on the stitch under the pointer.
+S.brush = { paint: 1, erase: 1 };
+function brushCells(size) {
+  const out = [], lo = -Math.floor(size / 2), off = size % 2 ? 0 : -0.5, r2 = (size / 2) ** 2 + 0.25;
+  for (let dy = lo; dy < lo + size; dy++) for (let dx = lo; dx < lo + size; dx++) if (size <= 3 || (dx - off) ** 2 + (dy - off) ** 2 <= r2) out.push([dx, dy]);
+  return out;
+}
 function paintLine(a, b, v) {
   const d = S.design, n = Math.max(Math.abs(b[0] - a[0]), Math.abs(b[1] - a[1]), 1);
+  const cells = brushCells(v < 0 ? S.brush.erase : S.brush.paint), cx = designCanvas.getContext("2d"), c = v >= 0 ? d.pal[v] : null, done = new Set();
   for (let t = 0; t <= n; t++) {
-    const x = Math.round(a[0] + (b[0] - a[0]) * t / n), y = Math.round(a[1] + (b[1] - a[1]) * t / n);
-    if (x >= 0 && y >= 0 && x < d.w && y < d.h) { d.px[y * d.w + x] = v; const c = v >= 0 ? d.pal[v] : null; const cx = designCanvas.getContext("2d"); if (c) { cx.fillStyle = hex(c); cx.fillRect(x, y, 1, 1); } else cx.clearRect(x, y, 1, 1); drawMeshCell(x, y); }
+    const x0 = Math.round(a[0] + (b[0] - a[0]) * t / n), y0 = Math.round(a[1] + (b[1] - a[1]) * t / n);
+    for (const [dx, dy] of cells) {
+      const x = x0 + dx, y = y0 + dy, k = y * d.w + x;
+      if (x < 0 || y < 0 || x >= d.w || y >= d.h || done.has(k)) continue; done.add(k);
+      d.px[k] = v; if (c) { cx.fillStyle = hex(c); cx.fillRect(x, y, 1, 1); } else cx.clearRect(x, y, 1, 1); drawMeshCell(x, y);
+    }
   }
   renderView();
+}
+function brushToolSize() { return S.tool === "erase" ? S.brush.erase : S.brush.paint; }
+function syncBrushUI() {
+  const sz = n => n === 1 ? "1 stitch" : `${n} stitches across`;
+  $("brushPaint").value = S.brush.paint; $("brushErase").value = S.brush.erase;
+  $("bpOut").textContent = sz(S.brush.paint); $("beOut").textContent = sz(S.brush.erase);
+  const show = S.tool === "paint" || S.tool === "erase";
+  $("qsizeRow").hidden = !show; $("qsize").value = brushToolSize();
+  $("qsizeLbl").textContent = (S.tool === "erase" ? "Eraser " : "Brush ") + brushToolSize();
+  store.set("ccp-brush", S.brush);
 }
 window.addEventListener("keydown", e => {
   if (e.target.matches("input, select, textarea")) return;
@@ -3311,6 +3348,10 @@ $("printDpi").onchange = e => S.printDpi = +e.target.value;
 $("makePdf").onclick = makePrintPdf; $("makePng").onclick = makePrintPng;
 $("savePrev").onclick = async () => { if (!S.scan) return; const c = buildPreview(); await saveFile("canvas-preview.png", await canvasBlob(c)); };
 $("testPage").onclick = testPagePdf;
+$("brushPaint").oninput = e => { S.brush.paint = +e.target.value; syncBrushUI(); };
+$("brushErase").oninput = e => { S.brush.erase = +e.target.value; syncBrushUI(); };
+$("qsize").oninput = e => { if (S.tool === "erase") S.brush.erase = +e.target.value; else S.brush.paint = +e.target.value; syncBrushUI(); };
+{ const sb = store.get("ccp-brush"); if (sb && sb.paint && sb.erase) S.brush = sb; syncBrushUI(); }
 $("libSave").onclick = () => saveToLibrary(false); $("libSaveNew").onclick = () => saveToLibrary(true);
 $("libBackup").onclick = backupLibrary;
 $("libRestore").onchange = e => { const f = e.target.files[0]; e.target.value = ""; if (f) restoreLibrary(f); };
