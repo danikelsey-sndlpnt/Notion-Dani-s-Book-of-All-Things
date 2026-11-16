@@ -1406,7 +1406,16 @@ async function parseStitchly(file) {
       original = { canvas: c, m: [f, 0, 0, f, (W - c.width * f) / 2, (H - c.height * f) / 2] };
     } catch (e) {}
   }
-  return { w: W, h: H, ...compactPalette({ pal, px }), mesh: root.fabricCount, name: R(root.patternName), unknown: [...unknown], original, stated: [root.width, root.height] };
+  // Stitchly saves the whole board; keep just the stitched part (empty rows and columns around it are cut off).
+  let x0 = W, y0 = H, x1 = -1, y1 = -1;
+  for (let i = 0; i < W * H; i++) if (px[i] >= 0) { const x = i % W, y = (i / W) | 0; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+  let w2 = W, h2 = H, px2 = px, board = null;
+  if (x1 >= 0 && (x0 > 0 || y0 > 0 || x1 < W - 1 || y1 < H - 1)) {
+    w2 = x1 - x0 + 1; h2 = y1 - y0 + 1; px2 = new Int16Array(w2 * h2); board = [W, H];
+    for (let y = 0; y < h2; y++) for (let x = 0; x < w2; x++) px2[y * w2 + x] = px[(y + y0) * W + x + x0];
+    if (original) original.m = [original.m[0], original.m[1], original.m[2], original.m[3], original.m[4] - x0, original.m[5] - y0];
+  }
+  return { w: w2, h: h2, ...compactPalette({ pal, px: px2 }), mesh: root.fabricCount, name: R(root.patternName), unknown: [...unknown], original, stated: [root.width, root.height], board };
 }
 
 /* ---------------- image processing ---------------- */
@@ -3563,7 +3572,7 @@ $("openStitch").onchange = async e => {
     pushUndo(); S.importFile = null; S.original = extra && extra.original || null; S.designName = f.name; S.layers = []; S.exampleDesign = false;
     if (extra && extra.mesh && MESHES.includes(extra.mesh)) setMesh(extra.mesh);
     setDesign(d.pal, d.px, d.w, d.h); setTab(1); fitView(); renderAll();
-    toast(`Opened ${d.w} × ${d.h} stitches, ${d.pal.length} colors${extra ? " in their DMC colors" : ""}.` + (d.trimmed ? ` The plain white margin around it was cut off (the picture was ${d.trimmed[0]} × ${d.trimmed[1]}).` : "") + (extra && extra.unknown.length ? ` These thread codes aren't DMC and show as gray: ${extra.unknown.join(", ")}.` : ""), 6000);
+    toast(`Opened ${d.w} × ${d.h} stitches, ${d.pal.length} colors${extra ? " in their DMC colors" : ""}.` + (d.trimmed ? ` The plain white margin around it was cut off (the picture was ${d.trimmed[0]} × ${d.trimmed[1]}).` : "") + (extra && extra.board ? ` The empty board around the pattern was left out (the whole board was ${extra.board[0]} × ${extra.board[1]}).` : "") + (extra && extra.unknown.length ? ` These thread codes aren't DMC and show as gray: ${extra.unknown.join(", ")}.` : ""), 6000);
   } catch (err) { toast(err.message, 5000); }
 };
 $("saveStitchPng").onclick = async () => { if (!S.design) return; await saveFile("design-" + S.design.w + "x" + S.design.h + ".png", await canvasBlob(designCanvas)); };
