@@ -126,6 +126,12 @@ h1 span { color: var(--accent); }
 #vDesignOn[aria-pressed=true] { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
 #fullBtn[aria-pressed=true] { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
 .bigmove { position: absolute; right: calc(12px + env(safe-area-inset-right, 0px)); bottom: 44px; width: 64px; height: 64px; border-radius: 50%; border: 2px solid rgba(255,255,255,.75); background: rgba(23,18,28,.85); color: #fff; display: grid; place-items: center; align-content: center; gap: 0; cursor: pointer; box-shadow: 0 4px 14px rgba(0,0,0,.4); z-index: 2; }
+.nudge { position: absolute; right: calc(8px + env(safe-area-inset-right, 0px)); bottom: 116px; display: grid; grid-template-columns: repeat(3, 44px); grid-template-rows: 18px repeat(3, 44px); gap: 3px; z-index: 3; touch-action: none; user-select: none; -webkit-user-select: none; }
+.nudge .nlbl { grid-column: 1 / 4; text-align: center; font: 700 11px var(--body); color: #fff; text-shadow: 0 1px 3px #000; }
+.nudge button { border: 2px solid rgba(255,255,255,.75); border-radius: 12px; background: rgba(23,18,28,.88); color: #fff; font-size: 16px; cursor: pointer; touch-action: none; box-shadow: 0 3px 10px rgba(0,0,0,.4); }
+.nudge button:active { background: #F06292; color: #1D0A13; }
+.nudge [data-nd="0,-1"] { grid-column: 2; grid-row: 2; } .nudge [data-nd="-1,0"] { grid-column: 1; grid-row: 3; } .nudge [data-nd="1,0"] { grid-column: 3; grid-row: 3; } .nudge [data-nd="0,1"] { grid-column: 2; grid-row: 4; }
+@media (max-width: 560px) { .nudge { grid-template-columns: repeat(3, 40px); grid-template-rows: repeat(3, 40px); bottom: 112px; } .nudge .nlbl { display: none; } .nudge [data-nd="0,-1"] { grid-row: 1; } .nudge [data-nd="-1,0"], .nudge [data-nd="1,0"] { grid-row: 2; } .nudge [data-nd="0,1"] { grid-row: 3; } }
 .bigmove svg { width: 26px; height: 26px; }
 .bigmove span { font: 700 11px var(--body); }
 .bigmove[aria-pressed=true] { background: #F06292; border-color: #fff; color: #1D0A13; }
@@ -298,6 +304,13 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
           <button id="tbCancel">Cancel</button>
           <button id="tbDone" class="done">Done</button>
           <span class="tbinfo" id="tbInfo"></span>
+        </div>
+        <div class="nudge" id="nudgePad" hidden role="group" aria-label="Nudge">
+          <span class="nlbl" id="nudgeLbl">Nudge</span>
+          <button data-nd="0,-1" aria-label="Up">▲</button>
+          <button data-nd="-1,0" aria-label="Left">◀</button>
+          <button data-nd="1,0" aria-label="Right">▶</button>
+          <button data-nd="0,1" aria-label="Down">▼</button>
         </div>
         <button class="bigmove" id="bigMove" aria-pressed="false" aria-label="Move view"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2l3 3h-2v4h4V7l3 3-3 3v-2h-4v4h2l-3 3-3-3h2v-4H7v2l-3-3 3-3v2h4V5H9z" fill="currentColor"/></svg><span>Move</span></button>
         <div class="vstat" id="vstat"></div>
@@ -1214,7 +1227,7 @@ function syncSizeInputs() {
     ` Canvas with a ${bIn} in border: ${(S.wSt / S.mesh + 2 * bIn).toFixed(2)} × ${(S.hSt / S.mesh + 2 * bIn).toFixed(2)} in.`;
   const cn = $("copyNote"); if (cn) cn.textContent = copyPlan();
 }
-function setTool(t) { if (t !== "select" && t !== "pan" && S.selection) { S.selection = null; } if (t !== "text" && t !== "pan" && S.stamp) { S.stamp = null; S.stampPos = null; if ($("textBar")) { $("textBar").hidden = true; $("qbar").hidden = S.view !== "design"; } } S.tool = t; document.querySelectorAll("[data-tool]").forEach(b => b.setAttribute("aria-pressed", b.dataset.tool === t)); const bm = $("bigMove"); if (bm) bm.setAttribute("aria-pressed", t === "pan"); if ($("qsizeRow")) syncBrushUI(); if ($("qselRow")) syncSelUI(); if (S.design) renderPalette(); }
+function setTool(t) { if (t !== "select" && t !== "pan" && S.selection) { S.selection = null; } if (t !== "text" && t !== "pan" && S.stamp) { S.stamp = null; S.stampPos = null; if ($("textBar")) { $("textBar").hidden = true; $("qbar").hidden = S.view !== "design"; } } S.tool = t; document.querySelectorAll("[data-tool]").forEach(b => b.setAttribute("aria-pressed", b.dataset.tool === t)); const bm = $("bigMove"); if (bm) bm.setAttribute("aria-pressed", t === "pan"); if ($("qsizeRow")) syncBrushUI(); if ($("qselRow")) syncSelUI(); if ($("nudgePad")) syncNudge(); if (S.design) renderPalette(); }
 
 function renderLayers() {
   const box = $("layers"); box.textContent = "";
@@ -3214,7 +3227,25 @@ function zoomAt(f, cx, cy) {
 }
 const toWorld = (sx, sy) => [(sx - V.tx) / V.s, (sy - V.ty) / V.s];
 let raf = 0;
-function renderView() { if (!raf) raf = requestAnimationFrame(() => { raf = 0; draw(); }); }
+function nudgeTarget() {
+  if (S.view === "design" && S.design && S.tool === "text" && S.stamp && S.stampPos) return S.stamp.clip ? "copy" : "text";
+  if (S.view === "design" && S.design && S.tool === "move") return "design";
+  if (S.view === "map" && S.grid && S.selNode >= 0) return "point";
+  return null;
+}
+function syncNudge() {
+  const t = nudgeTarget(), pad = $("nudgePad"); if (!pad) return;
+  pad.hidden = !t;
+  if (t) $("nudgeLbl").textContent = { copy: "Move copy", text: "Move text", design: "Move design", point: "Move point" }[t];
+}
+function nudge(dx, dy) {
+  const t = nudgeTarget(); if (!t) return;
+  if (t === "copy" || t === "text") S.stampPos = [S.stampPos[0] + dx, S.stampPos[1] + dy];
+  else if (t === "design") { shiftDesign(dx, dy); return; }
+  else if (t === "point") { const G = S.grid, k = S.selNode, st = Math.max(0.5, G.pitch * 0.04); G.X[k] += dx * st; G.Y[k] += dy * st; G.ST[k] = 4; clearTimeout(nudge.t); nudge.t = setTimeout(() => { computeCorners(); previewDirty(); updateCounts(); }, 250); }
+  renderView();
+}
+function renderView() { syncNudge(); if (!raf) raf = requestAnimationFrame(() => { raf = 0; draw(); }); }
 function draw() {
   const dpr = window.devicePixelRatio || 1, cw = view.width / dpr, ch = view.height / dpr;
   vctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -3412,9 +3443,10 @@ view.addEventListener("pointerdown", e => {
       if (!S.stamp) { openTextTool(); return; }
       if (!S.stampPos) { S.stampPos = cell; renderView(); return; }
       // Drag the floating text from wherever it was grabbed.
-      drag = { type: "textmove", off: [S.stampPos[0] - cell[0], S.stampPos[1] - cell[1]] };
+      // Grab anywhere: dragging moves it from where it is (no need to hit the piece). A plain tap outside it jumps it there.
       const st = S.stamp, gx0 = S.stampPos[0] - Math.floor(st.cells.w / 2), gy0 = S.stampPos[1] - Math.floor(st.cells.h / 2);
-      if (cell[0] < gx0 || cell[1] < gy0 || cell[0] >= gx0 + st.cells.w || cell[1] >= gy0 + st.cells.h) { S.stampPos = cell; drag.off = [0, 0]; renderView(); }
+      const outside = cell[0] < gx0 || cell[1] < gy0 || cell[0] >= gx0 + st.cells.w || cell[1] >= gy0 + st.cells.h;
+      drag = { type: "textmove", off: [S.stampPos[0] - wx, S.stampPos[1] - wy], s0: [sx, sy], moved: false, jump: outside ? cell : null };
       return;
     }
     if (tool === "wand") { magicErase(i); return; }
@@ -3431,11 +3463,11 @@ view.addEventListener("pointerdown", e => {
       const n = nearestNode(wx, wy); if (n) { S.center = { i: n.i, j: n.j }; S.place = { ox: 0, oy: 0 }; $("ox").value = 0; $("oy").value = 0; }
       S.pickCenter = false; $("pickCenter").setAttribute("aria-pressed", "false"); previewDirty(); renderView(); return;
     }
-    const tol = Math.max(8 / V.s, 0);
+    const tol = (e.pointerType === "touch" ? 22 : 10) / V.s;
     for (let k = 0; k < 4; k++) { const m = S.marks[k]; if (Math.hypot(m[0] - wx, m[1] - wy) < Math.max(tol * 1.5, MARK_R * S.scan.dpi)) { drag = { type: "mark", k }; return; } }
     if (S.showPts) {
       const n = nearestNode(wx, wy);
-      if (n && n.d < Math.max(tol, S.grid.pitch * 0.3) && S.grid.pitch * V.s >= 9) { S.selNode = n.j * S.grid.gx + n.i; drag = { type: "node", k: S.selNode, off: [S.grid.X[S.selNode] - wx, S.grid.Y[S.selNode] - wy] }; renderView(); return; }
+      if (n && n.d < Math.max(tol, S.grid.pitch * 0.45) && S.grid.pitch * V.s >= 7) { S.selNode = n.j * S.grid.gx + n.i; drag = { type: "node", k: S.selNode, off: [S.grid.X[S.selNode] - wx, S.grid.Y[S.selNode] - wy], s0: [sx, sy] }; renderView(); return; }
     }
   }
   drag = { type: "pan", last: [sx, sy] };
@@ -3456,12 +3488,12 @@ view.addEventListener("pointermove", e => {
   }
   const [wx, wy] = toWorld(sx, sy);
   if (drag.type === "pan") { V.tx += sx - drag.last[0]; V.ty += sy - drag.last[1]; drag.last = [sx, sy]; renderView(); }
-  else if (drag.type === "textmove") { const c = [Math.floor(wx) + drag.off[0], Math.floor(wy) + drag.off[1]]; if (c[0] !== S.stampPos[0] || c[1] !== S.stampPos[1]) { S.stampPos = c; renderView(); } }
+  else if (drag.type === "textmove") { if (!drag.moved && Math.hypot(sx - drag.s0[0], sy - drag.s0[1]) < 6) return; drag.moved = true; const c = [Math.round(wx + drag.off[0]), Math.round(wy + drag.off[1])]; if (c[0] !== S.stampPos[0] || c[1] !== S.stampPos[1]) { S.stampPos = c; renderView(); } }
   else if (drag.type === "select") { const c = [Math.floor(wx), Math.floor(wy)]; if (c[0] !== drag.b[0] || c[1] !== drag.b[1]) { drag.b = c; renderView(); } }
   else if (drag.type === "crop") { const c = [Math.floor(wx), Math.floor(wy)]; if (c[0] !== drag.b[0] || c[1] !== drag.b[1]) { drag.b = c; renderView(); } }
   else if (drag.type === "move") { const nd = [Math.round(wx - drag.start[0]), Math.round(wy - drag.start[1])]; if (nd[0] !== drag.delta[0] || nd[1] !== drag.delta[1]) { drag.delta = nd; renderView(); } }
   else if (drag.type === "paint") { const c = [Math.floor(wx), Math.floor(wy)]; paintLine(drag.last, c, drag.v); drag.last = c; }
-  else if (drag.type === "node") { const G = S.grid; G.X[drag.k] = wx + drag.off[0]; G.Y[drag.k] = wy + drag.off[1]; G.ST[drag.k] = 4; drag.moved = true; renderView(); }
+  else if (drag.type === "node") { if (!drag.moved && Math.hypot(sx - drag.s0[0], sy - drag.s0[1]) < 6) return; const G = S.grid; G.X[drag.k] = wx + drag.off[0]; G.Y[drag.k] = wy + drag.off[1]; G.ST[drag.k] = 4; drag.moved = true; renderView(); }
   else if (drag.type === "mark") { S.marks[drag.k] = [wx, wy]; updateH(); renderView(); }
 });
 const endPtr = e => {
@@ -3471,6 +3503,7 @@ const endPtr = e => {
   if (drag && drag.type === "paint") designDirty();
   if (drag && drag.type === "move") { const dl = drag.delta; drag = null; shiftDesign(dl[0], dl[1]); return; }
   if (drag && drag.type === "crop") { const a = drag.a, b = drag.b; drag = null; cropDesign(a, b); return; }
+  if (drag && drag.type === "textmove" && !drag.moved && drag.jump && S.stamp) { S.stampPos = drag.jump; drag = null; renderView(); return; }
   if (drag && drag.type === "select") { const a = drag.a, b = drag.b; drag = null; S.selection = selRect(a, b); syncSelUI(); renderView(); return; }
   if (ptrs.size < 2) drag = null;
 };
@@ -3791,6 +3824,13 @@ $("tbRot90").onclick = () => { if (!S.stamp) return; if (S.stamp.clip) { transfo
 const resizeStamp = dir => { if (!S.stamp) return; const o = S.stamp.opts, step = o.font === "block" ? 7 : Math.max(1, Math.round(o.h * 0.15)); o.h = clamp(o.h + dir * step, o.font === "block" ? 7 : 4, 120); rebuildStamp(); };
 $("tbSmaller").onclick = () => resizeStamp(-1); $("tbBigger").onclick = () => resizeStamp(1);
 $("tbCancel").onclick = endText;
+document.querySelectorAll("[data-nd]").forEach(b => {
+  const [dx, dy] = b.dataset.nd.split(",").map(Number); let t1 = 0, t2 = 0;
+  const stop = () => { clearTimeout(t1); clearInterval(t2); t1 = t2 = 0; };
+  b.addEventListener("pointerdown", e => { e.preventDefault(); stop(); nudge(dx, dy); t1 = setTimeout(() => { t2 = setInterval(() => nudge(dx, dy), 90); }, 380); });
+  ["pointerup", "pointerleave", "pointercancel"].forEach(ev => b.addEventListener(ev, stop));
+  b.addEventListener("click", e => { if (e.detail === 0) nudge(dx, dy); });
+});
 $("tbFlipH").onclick = () => transformClip("h"); $("tbFlipV").onclick = () => transformClip("v");
 $("selCopy").onclick = () => { if (copySelection(false)) { startPaste(); toast("Copied. Drag the copy where you want it, then Done."); } };
 $("selCut").onclick = () => { if (copySelection(true)) { startPaste(S.clipboard.at); toast("Cut. Drag it where you want it, then Done. Undo puts it back."); } };
