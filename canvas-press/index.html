@@ -289,7 +289,9 @@ input:focus-visible, select:focus-visible, button:focus-visible { outline: 2px s
       <div class="sec" id="pane2" hidden>
         <div class="group">
           <h3>Carrier sheet</h3>
-          <p class="hint">Print once on plain letter paper at <b>100% / Actual Size</b>. Tape your canvas inside the black window and leave the four corner dots uncovered. The dots tell the app exactly where the page sits in the scan, so each scan stands on its own. Reuse the sheet as long as the dots stay clean.</p>
+          <p class="hint">Print once on plain letter paper at <b>100% / Actual Size</b> and reuse it as long as the four corner dots stay clean. The dots tell the app exactly where the page sits in the scan, so each scan stands on its own.</p>
+          <p class="hint">The scan needs a <b>dark background behind the canvas</b> so the holes show up. Pick one: put black cardstock or construction paper between the canvas and the Carrier for the scan (take it out before printing), scan with the lid open in a dim room, or print the solid black window (uses a lot of ink).</p>
+          <label class="tog"><input type="checkbox" id="carrierBlack"> Print the solid black window</label>
           <button class="btn" id="carrierPdf">Save Carrier sheet (PDF)</button>
         </div>
 
@@ -646,13 +648,21 @@ function pdfCircle(cx, cy, r) {
     `${X(cx + k)} ${Y(cy + r)} ${X(cx + r)} ${Y(cy + k)} ${X(cx + r)} ${Y(cy)} c f\n`;
 }
 const pdfText = (x, y, size, s) => `BT /F1 ${size} Tf ${pt(x)} ${ptY(y)} Td (${s.replace(/[()\\]/g, "\\$&")}) Tj ET\n`;
-function carrierPdf() {
+function carrierPdf(black) {
   let c = "0 g\n";
-  c += `${pt(WINDOW.x)} ${ptY(WINDOW.y + WINDOW.h)} ${pt(WINDOW.w)} ${pt(WINDOW.h)} re f\n`;
+  if (black) c += `${pt(WINDOW.x)} ${ptY(WINDOW.y + WINDOW.h)} ${pt(WINDOW.w)} ${pt(WINDOW.h)} re f\n`;
+  else {
+    // Thin corner marks show where the canvas goes, for almost no ink.
+    const L = 0.35, x0 = WINDOW.x, y0 = WINDOW.y, x1 = WINDOW.x + WINDOW.w, y1 = WINDOW.y + WINDOW.h;
+    c += "0.5 G 0.6 w\n";
+    for (const [cx, cy, dx, dy] of [[x0, y0, 1, 1], [x1, y0, -1, 1], [x0, y1, 1, -1], [x1, y1, -1, -1]])
+      c += `${pt(cx + dx * L)} ${ptY(cy)} m ${pt(cx)} ${ptY(cy)} l ${pt(cx)} ${ptY(cy + dy * L)} l S\n`;
+  }
   for (const [x, y] of MARKS) c += pdfCircle(x, y, MARK_R);
   c += pdfCircle(ORIENT[0], ORIENT[1], ORIENT_R);
   c += "0.35 g\n" + pdfText(2.2, 0.42, 7, "Sookie's Canvas Press Carrier  -  print at 100% / Actual Size");
-  c += pdfText(2.2, 0.56, 7, "Tape the canvas inside the black window. Keep the four dots uncovered. This edge goes in first.");
+  c += pdfText(2.2, 0.56, 7, black ? "Tape the canvas inside the black window. Keep the four dots uncovered. This edge goes in first."
+    : "Black paper behind the canvas inside the corner marks (or scan lid open). Keep the dots uncovered. This edge goes in first.");
   return buildPdf(c);
 }
 
@@ -2161,7 +2171,7 @@ $("saveChart").onclick = async () => {
   await saveFile("chart-" + d.w + "x" + d.h + ".png", await canvasBlob(c));
 };
 
-$("carrierPdf").onclick = () => saveFile("carrier-sheet.pdf", carrierPdf());
+$("carrierPdf").onclick = () => saveFile($("carrierBlack").checked ? "carrier-sheet-black.pdf" : "carrier-sheet.pdf", carrierPdf($("carrierBlack").checked));
 $("scanFile").onchange = async e => {
   const f = e.target.files[0]; e.target.value = ""; if (!f) return;
   busy(true, "Opening the scan…", 0.1);
