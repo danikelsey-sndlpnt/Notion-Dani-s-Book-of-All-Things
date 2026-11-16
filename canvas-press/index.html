@@ -304,14 +304,52 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
           <div class="row">
             <label class="f">Width <small>inches</small><input type="number" id="wInch" min="0.5" max="30" step="0.25" value="4.62"></label>
             <label class="f">Height <small>inches</small><input type="number" id="hInch" min="0.5" max="30" step="0.25" value="4.62"></label>
-            <label class="f">Common sizes<select id="sizePreset">
-              <option value="">Pick a size…</option>
-              <option value="3x3">3 × 3 in</option><option value="4x4">4 × 4 in</option><option value="4.5x4.5">4.5 × 4.5 in (round ornament)</option>
-              <option value="5x5">5 × 5 in</option><option value="4x6">4 × 6 in</option><option value="5x7">5 × 7 in</option>
-              <option value="6x6">6 × 6 in</option><option value="8x8">8 × 8 in</option><option value="8x10">8 × 10 in</option><option value="12x12">12 × 12 in (pillow)</option>
+            <label class="f">Finish or size<select id="sizePreset">
+              <option value="">Pick a finish or size…</option>
+              <optgroup label="My finishes" id="myFinishGroup" hidden></optgroup>
+              <optgroup label="Finishes · inside stitch area (typical)">
+                <option value="1.2x1.2">Mini key fob · 1.2 × 1.2 in</option>
+                <option value="1x2.5">Tall key fob · 1 × 2.5 in</option>
+                <option value="1x6">Bookmark · 1 × 6 in</option>
+                <option value="2.25x3.5">Luggage tag · 2.25 × 3.5 in</option>
+                <option value="2.5x3.5">Card holder · 2.5 × 3.5 in</option>
+                <option value="3.25x4.75">Passport cover · 3.25 × 4.75 in</option>
+                <option value="3.5x3">Coin purse · 3.5 × 3 in</option>
+                <option value="2.75x6">Eyeglass case · 2.75 × 6 in</option>
+                <option value="3.5x3.5">Coaster · 3.5 × 3.5 in</option>
+                <option value="5.5x3.5">Wristlet · 5.5 × 3.5 in</option>
+                <option value="8.5x4.5">Clutch · 8.5 × 4.5 in</option>
+                <option value="9.5x5.5">Large clutch · 9.5 × 5.5 in</option>
+                <option value="4.5x6.5">Tray insert · 4.5 × 6.5 in</option>
+                <option value="8x14">Christmas stocking · 8 × 14 in</option>
+                <option value="4x4">Round ornament · 4 × 4 in</option>
+                <option value="11x11">Pillow · 11 × 11 in</option>
+              </optgroup>
+              <optgroup label="Plain sizes">
+                <option value="3x3">3 × 3 in</option><option value="4x4">4 × 4 in</option><option value="5x5">5 × 5 in</option>
+                <option value="4x6">4 × 6 in</option><option value="5x7">5 × 7 in</option><option value="6x6">6 × 6 in</option>
+                <option value="8x8">8 × 8 in</option><option value="8x10">8 × 10 in</option>
+              </optgroup>
             </select></label>
           </div>
           <p class="hint" id="sizeNote"></p>
+          <p class="hint">Finish sizes are the <b>inside</b> area: the part that gets stitched and shows in the finished piece, not the outside of the finish. They're typical sizes; finishers vary, so save your own below. Leave about 2 in of bare canvas around the design for finishing.</p>
+          <div class="row">
+            <label class="f">Save this size as a finish<input type="text" id="finishName" placeholder="My bookmark" maxlength="40" autocomplete="off"></label>
+            <button class="btn small" id="saveFinish">Save</button>
+            <button class="btn small" id="forgetFinishes" hidden>Forget my finishes</button>
+          </div>
+          <details class="more">
+            <summary>Make copies (several minis on one canvas)</summary>
+            <p class="hint">Repeats your design in a grid with a gap between copies, so one piece of canvas holds several key fobs or tags. Undo brings back the single design.</p>
+            <div class="row">
+              <label class="f">Across<input type="number" id="copyCols" min="1" max="10" value="3"></label>
+              <label class="f">Down<input type="number" id="copyRows" min="1" max="10" value="2"></label>
+              <label class="f">Gap <small>inches</small><input type="number" id="copyGap" min="0" max="3" step="0.25" value="0.75"></label>
+            </div>
+            <button class="btn small" id="makeCopies">Make copies</button>
+            <p class="hint" id="copyNote"></p>
+          </details>
           <label class="tog"><input type="checkbox" id="lock" checked> Keep the artwork's proportions</label>
         </div>
 
@@ -1083,7 +1121,8 @@ function renderDmc() {
 function syncSizeInputs() {
   $("wSt").value = S.wSt; $("hSt").value = S.hSt;
   $("wInch").value = +(S.wSt / S.mesh).toFixed(2); $("hInch").value = +(S.hSt / S.mesh).toFixed(2);
-  $("sizeNote").textContent = `${S.wSt} × ${S.hSt} stitches = ${(S.wSt / S.mesh).toFixed(2)} × ${(S.hSt / S.mesh).toFixed(2)} in on ${S.mesh} mesh.`;
+  $("sizeNote").textContent = `${S.wSt} × ${S.hSt} stitches = ${(S.wSt / S.mesh).toFixed(2)} × ${(S.hSt / S.mesh).toFixed(2)} in on ${S.mesh} mesh.` + (S.finish ? ` Sized for: ${S.finish.name} (${S.finish.w} × ${S.finish.h} in inside).` : "");
+  const cn = $("copyNote"); if (cn) cn.textContent = copyPlan();
 }
 function setTool(t) { S.tool = t; document.querySelectorAll("[data-tool]").forEach(b => b.setAttribute("aria-pressed", b.dataset.tool === t)); if (S.design) renderPalette(); }
 
@@ -3006,16 +3045,58 @@ function resizeDesign(w, h) {
   setDesign(d.pal, px, w, h, true); fitView();
 }
 $("wSt").onchange = e => { const w = clamp(+e.target.value | 0, 4, 400); const h = S.lock ? clamp(Math.round(w * aspect()), 4, 400) : S.hSt; resizeDesign(w, h); };
+function copyPlan() {
+  if (!S.design) return "";
+  const c = clamp(+$("copyCols").value | 0, 1, 10), r = clamp(+$("copyRows").value | 0, 1, 10), g = Math.round(Math.max(0, +$("copyGap").value || 0) * S.mesh);
+  const W = c * S.design.w + (c - 1) * g, H = r * S.design.h + (r - 1) * g;
+  return `${c * r} copies → ${W} × ${H} stitches = ${(W / S.mesh).toFixed(2)} × ${(H / S.mesh).toFixed(2)} in.` + (W / S.mesh > 7 || H / S.mesh > 9.5 ? " That's bigger than the Carrier window (7 × 9.5 in), so use fewer copies or a smaller gap." : "");
+}
+function makeCopies() {
+  const d = S.design; if (!d) return;
+  const c = clamp(+$("copyCols").value | 0, 1, 10), r = clamp(+$("copyRows").value | 0, 1, 10), g = Math.round(Math.max(0, +$("copyGap").value || 0) * S.mesh);
+  const W = c * d.w + (c - 1) * g, H = r * d.h + (r - 1) * g;
+  if (W > 400 || H > 400) { toast(`That would be ${W} × ${H} stitches, over the 400 limit. Use fewer copies.`); return; }
+  archiveDesign("before making copies");
+  const px = new Int16Array(W * H).fill(-1);
+  for (let rr = 0; rr < r; rr++) for (let cc = 0; cc < c; cc++) {
+    const ox = cc * (d.w + g), oy = rr * (d.h + g);
+    for (let y = 0; y < d.h; y++) for (let x = 0; x < d.w; x++) px[(oy + y) * W + ox + x] = d.px[y * d.w + x];
+  }
+  pushUndo(); S.edited = true; S.layers = []; S.bgSmart = false; setBgChip();
+  if (S.finish) S.finish = { ...S.finish, name: `${c * r} copies of ${S.finish.name}` };
+  setDesign(d.pal, px, W, H, true, d.sx || 0, d.sy || 0); S.original = null; fitView(); renderAll();
+  toast(`Made ${c * r} copies: ${W} × ${H} stitches. Undo brings back the single design.`);
+}
 // Inches become stitches at the design's mesh; the other side follows when proportions are kept.
 const fromInches = (wi, hi) => {
   let w = clamp(Math.round(wi * S.mesh), 4, 400), h = clamp(Math.round(hi * S.mesh), 4, 400);
   if (Math.round(wi * S.mesh) > 400 || Math.round(hi * S.mesh) > 400) toast(`That's more than 400 stitches on ${S.mesh} mesh, so it was capped.`);
   resizeDesign(w, h);
 };
+$("wInch").addEventListener("change", () => { S.finish = null; }); $("hInch").addEventListener("change", () => { S.finish = null; });
 $("wInch").onchange = e => { const wi = Math.max(0.3, +e.target.value || 0); fromInches(wi, S.lock ? wi * aspect() : S.hSt / S.mesh); };
 $("hInch").onchange = e => { const hi = Math.max(0.3, +e.target.value || 0); fromInches(S.lock ? hi / aspect() : S.wSt / S.mesh, hi); };
+$("makeCopies").onclick = makeCopies;
+S.myFinishes = store.get("ccp-finishes") || [];
+function renderMyFinishes() {
+  const g = $("myFinishGroup"); g.textContent = "";
+  S.myFinishes.forEach(f => { const o = document.createElement("option"); o.value = `${f.w}x${f.h}`; o.textContent = `${f.name} · ${f.w} × ${f.h} in`; g.appendChild(o); });
+  g.hidden = !S.myFinishes.length; $("forgetFinishes").hidden = !S.myFinishes.length;
+}
+$("saveFinish").onclick = () => {
+  const name = $("finishName").value.trim(); if (!name) { toast("Type a name for this finish first."); return; }
+  const w = +(+$("wInch").value).toFixed(2), h = +(+$("hInch").value).toFixed(2);
+  S.myFinishes = S.myFinishes.filter(f => f.name !== name).concat([{ name, w, h }]); store.set("ccp-finishes", S.myFinishes);
+  S.finish = { name, w, h }; $("finishName").value = ""; renderMyFinishes(); syncSizeInputs();
+  toast(`Saved "${name}" (${w} × ${h} in inside). It's at the top of the list now.`);
+};
+$("forgetFinishes").onclick = () => { S.myFinishes = []; store.set("ccp-finishes", []); renderMyFinishes(); toast("Your saved finishes were removed."); };
+renderMyFinishes();
+["copyCols", "copyRows", "copyGap"].forEach(id => $(id).addEventListener("input", () => { $("copyNote").textContent = copyPlan(); }));
 $("sizePreset").onchange = e => {
-  if (!e.target.value) return; const [wi, hi] = e.target.value.split("x").map(Number); e.target.value = "";
+  if (!e.target.value) return; const [wi, hi] = e.target.value.split("x").map(Number);
+  const label = e.target.selectedOptions[0].textContent.split(" · ")[0]; e.target.value = "";
+  S.finish = label.includes("×") ? null : { name: label, w: wi, h: hi };
   // Fit the artwork inside the chosen size when proportions are kept.
   if (S.lock) { const a = aspect(), f = Math.min(wi, hi / a); fromInches(f, f * a); toast(`Fit inside ${wi} × ${hi} in, keeping the artwork's proportions.`); }
   else fromInches(wi, hi);
