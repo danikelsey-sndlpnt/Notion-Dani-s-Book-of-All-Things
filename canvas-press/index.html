@@ -614,7 +614,7 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
         <details class="more">
           <summary>Other file types</summary>
           <div class="row">
-            <label class="f">Print resolution<select id="printDpi"><option value="300" selected>300 dpi</option><option value="600">600 dpi (large file)</option></select></label>
+            <label class="f">Print resolution<select id="printDpi"><option value="600" selected>600 dpi (sharpest)</option><option value="300">300 dpi (smaller file)</option></select></label>
           </div>
           <div class="row">
             <button class="btn small" id="makePng">Save print image (PNG)</button>
@@ -698,7 +698,7 @@ const S = {
   scan: null, grid: null, marks: null, marksFound: false, H: null, darkThreads: false,
   place: { ox: 0, oy: 0 }, center: null,
   adj: { sat: 125, deepen: 8, contrast: 105, bleed: 8, raw: false },
-  nudge: { x: 0, y: 0 }, printDpi: 300,
+  nudge: { x: 0, y: 0 }, printDpi: 600,
   look: "mesh", origAlpha: 0, original: null, showArea: false, canvasBorder: 2,
   view: "design", showPts: true, showGrid: true, pickCenter: false, checked: new Set(), selNode: -1,
 };
@@ -894,15 +894,16 @@ function buildPdf(content, image) {
     push("\nendobj\n");
   };
   push("%PDF-1.4\n%\xE2\xE3\xCF\xD3\n");
-  const res = "<< /Font << /F1 5 0 R >>" + (image ? " /XObject << /Im0 6 0 R >>" : "") + " >>";
+  const imgs = !image ? [] : Array.isArray(image) ? image : [image];
+  const res = "<< /Font << /F1 5 0 R >>" + (imgs.length ? " /XObject << " + imgs.map((m, i) => `/Im${i} ${6 + i} 0 R`).join(" ") + " >>" : "") + " >>";
   obj(1, "<< /Type /Catalog /Pages 2 0 R >>");
   obj(2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>");
   obj(3, "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources " + res + " /Contents 4 0 R >>");
   const cs = enc.encode(content);
   obj(4, "<< /Length " + cs.length + " >>", cs);
   obj(5, "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>");
-  const n = image ? 6 : 5;
-  if (image) obj(6, "<< /Type /XObject /Subtype /Image /Width " + image.w + " /Height " + image.h + " /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /" + image.filter + " /Length " + image.data.length + " >>", image.data);
+  const n = 5 + imgs.length;
+  imgs.forEach((m, i) => obj(6 + i, "<< /Type /XObject /Subtype /Image /Width " + m.w + " /Height " + m.h + " /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /" + m.filter + " /Length " + m.data.length + " >>", m.data));
   const xref = len;
   let x = "xref\n0 " + (n + 1) + "\n0000000000 65535 f \n";
   for (let i = 1; i <= n; i++) x += String(offs[i]).padStart(10, "0") + " 00000 n \n";
@@ -2082,10 +2083,10 @@ function updateFit() {
   el.className = "status " + (r.off ? "err" : "ok");
   el.textContent = r.off ? `${r.off} of ${r.total} stitches fall off the mapped canvas. Move the design or make it smaller.` : `All ${r.total} stitches land on mapped intersections. Design corner at intersection ${pl.i0 + 1}, ${pl.j0 + 1}.`;
 }
-async function renderPrint(dpi) {
-  const W = Math.round(PAGE.w * dpi), H = Math.round(PAGE.h * dpi);
+async function renderPrint(dpi, y0 = 0, hStrip = null) {
+  const W = Math.round(PAGE.w * dpi), H = hStrip || Math.round(PAGE.h * dpi);
   const c = document.createElement("canvas"); c.width = W; c.height = H;
-  const x = c.getContext("2d"); x.fillStyle = "#fff"; x.fillRect(0, 0, W, H);
+  const x = c.getContext("2d"); x.fillStyle = "#fff"; x.fillRect(0, 0, W, H); x.translate(0, -y0);
   const pal = printPalette(), f = 1 + S.adj.bleed / 100;
   const nx = S.nudge.x / 200, ny = S.nudge.y / 200;
   const r = forEachStitch((q, v) => {
@@ -2109,9 +2110,17 @@ async function makePrintPdf() {
   }
   busy(true, "Building the print file…", 0.3); await tick();
   try {
-    const r = await renderPrint(S.printDpi); busy(true, null, 0.7); await tick();
-    const img = await canvasToPdfImage(r.canvas);
-    const blob = buildPdf("q 612 0 0 792 0 0 cm /Im0 Do Q\n", img);
+    // Big pages are built in horizontal strips: phones and tablets refuse one huge picture, and the PDF puts the strips back together.
+    const dpi = S.printDpi, H = Math.round(PAGE.h * dpi), n = dpi > 330 ? 4 : 1, sh = Math.ceil(H / n), imgs = []; let content = "", r = null;
+    for (let k = 0; k < n; k++) {
+      const y0 = k * sh, h = Math.min(sh, H - y0);
+      const part = await renderPrint(dpi, y0, h); if (!r) r = part;
+      imgs.push(await canvasToPdfImage(part.canvas)); part.canvas.width = 1;
+      const hp = h / dpi * 72, yp = 792 - (y0 + h) / dpi * 72;
+      content += `q 612 0 0 ${hp.toFixed(3)} 0 ${yp.toFixed(3)} cm /Im${k} Do Q\n`;
+      busy(true, null, 0.3 + 0.6 * (k + 1) / n); await tick();
+    }
+    const blob = buildPdf(content, imgs);
     busy(false);
     printSummary(r);
     await saveFile(fileBase() + "-print.pdf", blob);
@@ -2120,8 +2129,10 @@ async function makePrintPdf() {
 async function makePrintPng() {
   if (!canPrint()) return;
   busy(true, "Building the print image…", 0.4); await tick();
-  const r = await renderPrint(S.printDpi); busy(false); printSummary(r);
-  await saveFile(fileBase() + `-print-${S.printDpi}dpi.png`, await canvasBlob(r.canvas));
+  let r = await renderPrint(S.printDpi), blob = await canvasBlob(r.canvas);
+  if (!blob && S.printDpi > 300) { r = await renderPrint(300); blob = await canvasBlob(r.canvas); toast("This device can't make a 600 dpi image, so the PNG is 300 dpi. The PDF is still 600 dpi."); }
+  busy(false); printSummary(r);
+  await saveFile(fileBase() + `-print-${Math.round(r.canvas.width / PAGE.w)}dpi.png`, blob);
 }
 function printSummary(r) {
   $("printAllRow").hidden = true;
@@ -3583,7 +3594,8 @@ $("rawColors").onchange = e => { S.adj.raw = e.target.checked; previewDirty(); s
 const nudgeOut = () => { $("nudgeOut").textContent = `${S.nudge.x},${S.nudge.y}`; store.set("ccp-nudge", S.nudge); };
 $("nU").onclick = () => { S.nudge.y--; nudgeOut(); }; $("nD").onclick = () => { S.nudge.y++; nudgeOut(); };
 $("nL").onclick = () => { S.nudge.x--; nudgeOut(); }; $("nR").onclick = () => { S.nudge.x++; nudgeOut(); };
-$("printDpi").onchange = e => S.printDpi = +e.target.value;
+$("printDpi").onchange = e => { S.printDpi = +e.target.value; store.set("ccp-printdpi", S.printDpi); };
+{ const pd = store.get("ccp-printdpi"); if (pd === 300 || pd === 600) { S.printDpi = pd; $("printDpi").value = String(pd); } }
 $("makePdf").onclick = makePrintPdf; $("makePng").onclick = makePrintPng;
 $("savePrev").onclick = async () => { if (!S.scan) return; const c = buildPreview(); await saveFile("canvas-preview.png", await canvasBlob(c)); };
 $("testPage").onclick = testPagePdf;
