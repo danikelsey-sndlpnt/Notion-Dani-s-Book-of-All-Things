@@ -82,6 +82,7 @@ h1 span { color: var(--accent); }
   .vbar .seg button { padding: 6px 9px; }
   #zOut, #zIn { display: none; }
   .vbar .seg[aria-label="Zoom"] { order: -1; }
+  #fullBtn { order: -2; flex: none; padding: 6px 10px; }
   .vbar .spacer { display: none; }
   .qbar button { padding: 7px 7px; }
   .vstat { flex-wrap: nowrap; overflow: hidden; }
@@ -98,6 +99,7 @@ h1 span { color: var(--accent); }
   .vbar { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
   .vbar .seg { flex-wrap: nowrap; flex: none; }
   .vbar .seg[aria-label="Zoom"] { order: -1; }
+  #fullBtn { order: -2; flex: none; padding: 6px 10px; }
   .vbar .spacer { display: none; }
   #zOut, #zIn { display: none; }
 }
@@ -118,6 +120,9 @@ h1 span { color: var(--accent); }
 .textbar .done { background: #F06292; color: #1D0A13; }
 .textbar .qsep { width: 1px; background: rgba(255,255,255,.2); margin: 4px 2px; }
 .textbar .tbinfo { flex-basis: 100%; text-align: center; color: #BCB2C8; font: 500 11px var(--mono); }
+.stage.full { position: fixed; inset: 0; z-index: 40; background: var(--bg); padding-top: calc(env(safe-area-inset-top, 0px) + 8px); padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 8px); padding-left: max(8px, env(safe-area-inset-left, 0px)); padding-right: max(8px, env(safe-area-inset-right, 0px)); grid-template-rows: auto minmax(0, 1fr); margin: 0; }
+.stage.full .screen { height: auto !important; min-height: 0; }
+#fullBtn[aria-pressed=true] { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
 .bigmove { position: absolute; right: calc(12px + env(safe-area-inset-right, 0px)); bottom: 44px; width: 64px; height: 64px; border-radius: 50%; border: 2px solid rgba(255,255,255,.75); background: rgba(23,18,28,.85); color: #fff; display: grid; place-items: center; align-content: center; gap: 0; cursor: pointer; box-shadow: 0 4px 14px rgba(0,0,0,.4); z-index: 2; }
 .bigmove svg { width: 26px; height: 26px; }
 .bigmove span { font: 700 11px var(--body); }
@@ -247,6 +252,7 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
           <button id="zFit">Fit</button>
           <button id="zIn" aria-label="Zoom in">+</button>
         </div>
+        <button class="btn small" id="fullBtn" aria-pressed="false">Full screen</button>
       </div>
       <div class="screen" id="screen">
         <canvas id="view"></canvas>
@@ -3047,7 +3053,8 @@ function fitView() {
     const pad = G.pitch * 4; target = [minx - pad, miny - pad, maxx - minx + pad * 2, maxy - miny + pad * 2];
   }
   // Leave room for the quick toolbar on top and the info chips at the bottom.
-  const topPad = S.view === "design" && !$("qbar").hidden ? $("qbar").getBoundingClientRect().height + 10 : 0, botPad = 30, H = Math.max(80, r.height - topPad - botPad);
+  const over = id => { const e = $(id); return e && !e.hidden ? e.getBoundingClientRect().height + 10 : 0; };
+  const topPad = S.view === "design" ? Math.max(over("qbar"), over("textBar")) : 0, botPad = Math.max(34, over("vstat") + 4), H = Math.max(80, r.height - topPad - botPad);
   V.s = Math.min(r.width / target[2], H / target[3]) * 0.96;
   V.tx = (r.width - target[2] * V.s) / 2 - target[0] * V.s; V.ty = topPad + (H - target[3] * V.s) / 2 - target[1] * V.s;
   renderView();
@@ -3330,6 +3337,7 @@ function paintLine(a, b, v) {
 }
 function brushToolSize() { return S.tool === "erase" ? S.brush.erase : S.brush.paint; }
 function syncBrushUI() {
+  clearTimeout(syncBrushUI.t); syncBrushUI.t = setTimeout(() => { const h = $("qbar").getBoundingClientRect().height; if (S.view === "design" && syncBrushUI.h && Math.abs(h - syncBrushUI.h) > 4 && !drag) fitView(); syncBrushUI.h = h; }, 30);
   const sz = n => n === 1 ? "1 stitch" : `${n} stitches across`;
   $("brushPaint").value = S.brush.paint; $("brushErase").value = S.brush.erase;
   $("bpOut").textContent = sz(S.brush.paint); $("beOut").textContent = sz(S.brush.erase);
@@ -3620,6 +3628,12 @@ $("autoFix").onclick = autoFixChecks;
 $("printAnyway").onclick = async () => { S.printAll = true; $("printAllChk").checked = true; previewDirty(); await makePrintPdf(); };
 $("printAllChk").onchange = e => { S.printAll = e.target.checked; previewDirty(); updateFit(); };
 $("findLost").onclick = findLost;
+const setFull = on => {
+  document.querySelector(".stage").classList.toggle("full", on); $("fullBtn").setAttribute("aria-pressed", on); $("fullBtn").textContent = on ? "Exit" : "Full screen";
+  document.body.style.overflow = on ? "hidden" : ""; setTimeout(() => { resize(); fitView(); }, 30);
+};
+$("fullBtn").onclick = () => setFull(!document.querySelector(".stage").classList.contains("full"));
+window.addEventListener("keydown", e => { if (e.key === "Escape" && document.querySelector(".stage").classList.contains("full") && S.tool !== "text") setFull(false); });
 $("libSave").onclick = () => saveToLibrary(false); $("libSaveNew").onclick = () => saveToLibrary(true);
 $("libBackup").onclick = backupLibrary;
 $("libRestore").onchange = e => { const f = e.target.files[0]; e.target.value = ""; if (f) restoreLibrary(f); };
