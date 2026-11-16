@@ -336,7 +336,14 @@ input:focus-visible, select:focus-visible, button:focus-visible { outline: 2px s
 
       <!-- 3 PRINT -->
       <div class="sec" id="pane3" hidden>
-        <div class="status err" id="printNeed">Load a scan and find its intersections on the Scan step first.</div>
+        <div class="group">
+          <h3>Practice on paper</h3>
+          <p class="hint">Prints the design you're working on at its true size for the chosen mesh, centered on plain letter paper, with the color settings below. No scan needed. Use it to check size and colors.</p>
+          <label class="tog"><input type="checkbox" id="practiceGrid" checked> Draw the stitch grid</label>
+          <button class="btn thread wide" id="practicePdf">Practice print on paper (PDF)</button>
+          <div class="status" id="practiceStatus" hidden></div>
+        </div>
+        <div class="status err" id="printNeed">To print on canvas, load a scan and find its intersections on the Scan step first.</div>
         <div class="group">
           <h3>Test first</h3>
           <p class="hint">A grid of one-stitch lines every 5 stitches, with a blue center cross. Printed on scrap canvas, each line should sit on exactly one row of intersections. Your own design is kept and comes back with one click.</p>
@@ -1544,6 +1551,35 @@ async function testPagePdf() {
 }
 const fileBase = () => "canvas-" + new Date().toISOString().slice(0, 10);
 
+/* ---------------- practice print on paper ---------------- */
+async function practicePdf() {
+  const d = S.design; if (!d) { toast("Make a design first."); return; }
+  const dpi = 300, W = Math.round(PAGE.w * dpi), H = Math.round(PAGE.h * dpi), st = dpi / S.mesh;
+  const wIn = d.w / S.mesh, hIn = d.h / S.mesh;
+  if (wIn > 8 || hIn > 10.4) { setStatus("practiceStatus", `At ${S.mesh} mesh this design is ${wIn.toFixed(2)} × ${hIn.toFixed(2)} in, too big for letter paper. Try a finer mesh.`, "err"); return; }
+  busy(true, "Building the practice print…", 0.3); await tick();
+  const c = document.createElement("canvas"); c.width = W; c.height = H;
+  const x = c.getContext("2d"); x.fillStyle = "#fff"; x.fillRect(0, 0, W, H);
+  const ox = (W - d.w * st) / 2, oy = (H - d.h * st) / 2, pal = d.pal.map(adjustColor).map(hex);
+  for (let r = 0; r < d.h; r++) for (let q = 0; q < d.w; q++) {
+    const v = d.px[r * d.w + q]; if (v < 0) continue;
+    x.fillStyle = pal[v];
+    const x0 = Math.floor(ox + q * st), y0 = Math.floor(oy + r * st);
+    x.fillRect(x0, y0, Math.floor(ox + (q + 1) * st) - x0, Math.floor(oy + (r + 1) * st) - y0);
+  }
+  if ($("practiceGrid").checked) {
+    for (let k = 0; k <= d.w; k++) { x.fillStyle = k % 10 === 0 ? "rgba(0,0,0,.45)" : "rgba(0,0,0,.14)"; x.fillRect(Math.round(ox + k * st), Math.round(oy), 1, Math.round(d.h * st)); }
+    for (let k = 0; k <= d.h; k++) { x.fillStyle = k % 10 === 0 ? "rgba(0,0,0,.45)" : "rgba(0,0,0,.14)"; x.fillRect(Math.round(ox), Math.round(oy + k * st), Math.round(d.w * st), 1); }
+  }
+  busy(true, null, 0.7); await tick();
+  const img = await canvasToPdfImage(c);
+  const label = `Practice print - ${d.w} x ${d.h} stitches = ${wIn.toFixed(2)} x ${hIn.toFixed(2)} in on ${S.mesh} mesh. Print at 100% / Actual Size.`;
+  const blob = buildPdf("q 612 0 0 792 0 0 cm /Im0 Do Q\n0.35 g\n" + pdfText(0.6, 0.5, 8, label), img);
+  busy(false);
+  setStatus("practiceStatus", `${wIn.toFixed(2)} × ${hIn.toFixed(2)} in. Print at 100% and measure it with a ruler to check the size.`, "ok");
+  await saveFile(fileBase() + "-practice.pdf", blob);
+}
+
 /* ---------------- print test pattern ---------------- */
 function useTestPattern() {
   const d = S.design;
@@ -2073,6 +2109,7 @@ $("printDpi").onchange = e => S.printDpi = +e.target.value;
 $("makePdf").onclick = makePrintPdf; $("makePng").onclick = makePrintPng;
 $("savePrev").onclick = async () => { if (!S.scan) return; const c = buildPreview(); await saveFile("canvas-preview.png", await canvasBlob(c)); };
 $("testPage").onclick = testPagePdf;
+$("practicePdf").onclick = practicePdf;
 $("testPattern").onclick = useTestPattern; $("backToMine").onclick = backToMine;
 
 /* ---------------- start ---------------- */
