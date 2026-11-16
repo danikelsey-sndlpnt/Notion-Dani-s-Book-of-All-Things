@@ -2,7 +2,7 @@
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@600;800&family=Figtree:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@600;800&family=Figtree:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&family=Cinzel:wght@700&family=Playfair+Display:wght@700&family=Montserrat:wght@700&family=Great+Vibes&family=Dancing+Script:wght@700&display=swap">
 <style>
 /* Layout: the work surface (design grid or scanned canvas) fills the left like a frame on a stand; the step panel sits right in three tabs; stacks on phones. */
 :root {
@@ -153,6 +153,18 @@ input:focus-visible, select:focus-visible, button:focus-visible { outline: 2px s
 .more summary { cursor: pointer; font-weight: 700; color: var(--ink-2); }
 .more[open] summary { margin-bottom: 4px; }
 .steps { margin: 0; padding-left: 20px; display: grid; gap: 6px; color: var(--ink-2); font-size: 14px; }
+.sw .dm { font: 600 10px var(--body); color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.repl { display: grid; grid-template-columns: repeat(auto-fill, minmax(70px, 1fr)); gap: 6px; padding: 10px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); width: 100%; }
+.repl p { grid-column: 1 / -1; margin: 0; font-size: 12px; color: var(--muted); }
+dialog.dlg { border: 1px solid var(--line); border-radius: 18px; padding: 0; background: var(--surface); color: var(--ink); width: min(560px, calc(100vw - 32px)); max-height: calc(100vh - 32px); box-shadow: 0 20px 60px rgba(0,0,0,.35); }
+dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
+.dlg-in { padding: 18px; display: grid; gap: 14px; grid-template-columns: minmax(0, 1fr); }
+.dlg-in h3 { font-family: var(--display); font-weight: 600; font-size: 17px; margin: 0; color: var(--ink); letter-spacing: 0; text-transform: none; }
+.dmcGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(62px, 1fr)); gap: 6px; max-height: 46vh; overflow: auto; padding: 2px; }
+.dmcGrid .sw { font-family: var(--body); }
+.dlg-foot { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+#iniPrev { width: 100%; height: 120px; background: var(--stage); border-radius: 10px; display: block; }
+.credit { font-size: 11px; color: var(--muted); margin: 0; }
 .toast { position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom, 0px) + 20px); transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 10px; font-weight: 600; font-size: 14px; z-index: 20; max-width: calc(100vw - 32px); }
 .badge { display: inline-block; font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; padding: 2px 8px; border-radius: 999px; background: var(--warn-soft); color: var(--warn); }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
@@ -256,6 +268,7 @@ input:focus-visible, select:focus-visible, button:focus-visible { outline: 2px s
             <button data-tool="pick" aria-pressed="false">Pick color</button>
             <button data-tool="erase" aria-pressed="false">Erase</button>
             <button data-tool="move" aria-pressed="false">Move stitches</button>
+            <button data-tool="crop" aria-pressed="false">Crop</button>
             <button data-tool="pan" aria-pressed="false">Move view</button>
           </div>
           <div class="row">
@@ -269,15 +282,22 @@ input:focus-visible, select:focus-visible, button:focus-visible { outline: 2px s
               <button id="lookBox" aria-pressed="false">Squares</button>
             </div>
             <button class="btn small" id="trim">Trim empty edges</button>
+            <button class="btn small" id="removeBg">Remove background</button>
           </div>
           <label class="f" id="origRow">Original picture on top <small id="origOut">0%</small><input type="range" id="origAlpha" min="0" max="100" value="0"></label>
+          <p class="hint"><b>Crop</b>: drag a box over the part you want to keep. <b>Remove background</b> clears the color around the outside edge of the design (and colors very close to it) so those stitches print as bare canvas. Undo brings either one back.</p>
           <p class="hint"><b>Move stitches</b>: drag the design to shift it. The original picture moves with it, so you can see what you moved. The frame grows if stitches go past the edge.</p>
           <div class="pal" id="pal"></div>
           <div class="selbox" id="selbox"></div>
           <div class="row">
             <input type="color" id="newColor" value="#3a7bd5" aria-label="New color">
             <button class="btn small" id="addColor">Add this color</button>
+            <button class="btn small" id="addDmc">Add a DMC color</button>
           </div>
+          <div class="row">
+            <button class="btn small" id="snapDmc">Change all colors to their closest DMC</button>
+          </div>
+          <p class="credit">Each color shows its closest DMC floss. Screen colors are approximate. DMC color data: craft-color-codes by <a href="https://makebead.com/" target="_blank" rel="noopener">MakeBead</a>, CC BY 4.0.</p>
         </div>
 
         <div class="group">
@@ -285,6 +305,7 @@ input:focus-visible, select:focus-visible, button:focus-visible { outline: 2px s
           <div class="row">
             <button class="btn small" id="saveStitchPng">Stitch image (PNG)</button>
             <button class="btn small" id="saveChart">Chart (PNG)</button>
+            <button class="btn small" id="saveKey">Color key (PDF)</button>
           </div>
           <p class="hint">The stitch image has one pixel per stitch. Open it later with <b>Open stitch file</b> to keep editing.</p>
         </div>
@@ -313,11 +334,12 @@ input:focus-visible, select:focus-visible, button:focus-visible { outline: 2px s
           </div>
           <div class="row">
             <label class="f">Scan resolution (dpi)<input type="number" id="dpi" min="100" max="1200" value="300"></label>
-            <label class="f">Canvas mesh<select id="mesh2"><option>10</option><option>12</option><option selected>13</option><option>14</option><option>18</option></select></label>
+            <label class="f">Canvas mesh<select id="mesh2"><option value="auto" selected>Auto (measure it)</option><option>10</option><option>12</option><option>13</option><option>14</option><option>18</option></select></label>
           </div>
           <label class="tog"><input type="checkbox" id="darkThreads"> My threads are darker than the background</label>
           <button class="btn thread wide" id="findGrid" disabled>Find the intersections</button>
           <div class="status" id="scanStatus">No scan loaded yet.</div>
+          <div class="status err" id="meshWarn" hidden></div>
         </div>
 
         <div class="group" id="mapGroup" hidden>
@@ -353,6 +375,7 @@ input:focus-visible, select:focus-visible, button:focus-visible { outline: 2px s
 
       <!-- 3 PRINT -->
       <div class="sec" id="pane3" hidden>
+        <div class="status err" id="meshWarn2" hidden></div>
         <div class="status err" id="printNeed">First scan your canvas on step 2 (Scan). Then come back here.</div>
         <div class="group">
           <h3>Print your canvas</h3>
@@ -362,7 +385,12 @@ input:focus-visible, select:focus-visible, button:focus-visible { outline: 2px s
             <li>Open that PDF on your computer and print it at <b>100% / Actual Size</b>, <b>Best</b> quality, Letter paper.</li>
             <li>Put the Carrier with your canvas in the printer by itself, text edge first.</li>
           </ol>
+          <div class="row" style="align-items:center">
+            <button class="btn small" id="iniOpen">Add initials</button>
+            <span class="hint" id="iniSummary" style="flex:1 1 160px"></span>
+          </div>
           <button class="btn primary wide" id="makePdf">Save print file (PDF)</button>
+          <button class="btn small" id="saveKey2">Save the color key to print (PDF)</button>
           <div class="status" id="fitStatus"></div>
           <div class="status" id="printStatus" hidden></div>
           <div class="row">
@@ -420,10 +448,60 @@ input:focus-visible, select:focus-visible, button:focus-visible { outline: 2px s
             <button class="btn small" id="savePrev">Save preview (PNG)</button>
           </div>
         </details>
+
+        <div class="group">
+          <h3>Check my print</h3>
+          <p class="hint">Something look off? Leave the printed canvas on the Carrier, scan it the same way, and load that scan here. The app measures where the ink landed on the threads and suggests a printer nudge if it's needed. Works best with the test pattern.</p>
+          <label class="btn thread file-btn">Load a scan of my printed canvas<input type="file" id="checkFile" accept="application/pdf,.pdf,image/png,image/jpeg,image/webp"></label>
+          <div class="status" id="checkStatus" hidden></div>
+          <button class="btn small" id="applyNudge" hidden>Use the suggested nudge</button>
+        </div>
       </div>
     </section>
   </div>
 </div>
+<dialog class="dlg" id="dmcDlg" aria-labelledby="dmcTitle">
+  <div class="dlg-in">
+    <h3 id="dmcTitle">Pick a DMC color</h3>
+    <input type="text" id="dmcSearch" placeholder="Search by number or name, like 321 or blue" autocomplete="off">
+    <p class="hint" id="dmcHint">Closest matches first.</p>
+    <div class="dmcGrid" id="dmcGrid"></div>
+    <div class="dlg-foot"><button class="btn small" id="dmcCancel" type="button">Cancel</button></div>
+  </div>
+</dialog>
+<dialog class="dlg" id="iniDlg" aria-labelledby="iniTitle">
+  <div class="dlg-in">
+    <h3 id="iniTitle">Initials on the canvas</h3>
+    <div class="row">
+      <label class="f">Initials<input type="text" id="iniText" maxlength="8" placeholder="DK" autocomplete="off"></label>
+      <label class="f">Font<select id="iniFont">
+        <option value="block">Block letters (crisp when small)</option>
+        <option value="Cinzel">Classic capitals</option>
+        <option value="Playfair Display">Serif</option>
+        <option value="Montserrat">Clean sans</option>
+        <option value="Great Vibes">Elegant script</option>
+        <option value="Dancing Script">Casual script</option>
+      </select></label>
+    </div>
+    <label class="f">Height <small id="iniHOut"></small><input type="range" id="iniH" min="5" max="24" value="7"></label>
+    <div class="group" style="gap:6px">
+      <span style="font-size:13px;font-weight:600;color:var(--ink-2)">Color <small id="iniColorName" style="font-weight:500;color:var(--muted)"></small></span>
+      <div class="pal" id="iniPal"></div>
+      <div class="row"><button class="btn small" type="button" id="iniDmc">Pick a DMC color</button><input type="color" id="iniColor" value="#c72b3b" aria-label="Custom color"></div>
+    </div>
+    <div class="row">
+      <label class="f">Where<select id="iniPos"><option value="br">Bottom right</option><option value="bc">Bottom center</option><option value="bl">Bottom left</option></select></label>
+      <label class="f">Below the design <small>inches</small><input type="number" id="iniBelow" step="0.25" min="0" max="6" value="2"></label>
+    </div>
+    <canvas id="iniPrev"></canvas>
+    <p class="hint" id="iniNote"></p>
+    <div class="dlg-foot">
+      <button class="btn small" type="button" id="iniRemove">Remove initials</button>
+      <button class="btn small" type="button" id="iniCancel">Cancel</button>
+      <button class="btn primary small" type="button" id="iniSave">Add to the print</button>
+    </div>
+  </div>
+</dialog>
 <div class="toast" id="toast" hidden></div>
 
 <script>
@@ -482,6 +560,18 @@ function lab2rgb(L, a, b) {
 }
 const hex = c => "#" + c.map(v => v.toString(16).padStart(2, "0")).join("");
 const unhex = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+const DMC = [["3713","Salmon Very Light","ffe2e2",0],["761","Salmon Light","ffc9c9",0],["760","Salmon","f5adad",0],["3712","Salmon Medium","f18787",0],["3328","Salmon Dark","e36d6d",0],["347","Salmon Very Dark","bf2d2d",0],["353","Peach","fed7cc",0],["352","Coral Light","fd9c97",0],["351","Coral","e96a67",0],["350","Coral Medium","e04848",0],["349","Coral Dark","d21035",0],["817","Coral Red Very Dark","bb051f",0],["3708","Melon Light","ffcbd5",0],["3706","Melon Medium","ffadbc",0],["3705","Melon Dark","ff7992",0],["3801","Melon Very Dark","e74967",0],["666","Bright Red","e31d42",0],["321","Red","c72b3b",0],["304","Red Medium","b71f33",0],["498","Red Dark","a7132b",0],["816","Garnet","970b23",0],["815","Garnet Medium","87071f",0],["814","Garnet Dark","7b001b",0],["894","Carnation Very Light","ffb2bb",0],["893","Carnation Light","fc90a2",0],["892","Carnation Medium","ff798c",0],["891","Carnation Dark","ff5773",0],["818","Baby Pink","ffdfd9",0],["957","Geranium Pale","fdb5b5",0],["956","Geranium","ff9191",0],["309","Rose Dark","c12041",0],["963","Dusty Rose Ultra Very Light","ffd7d7",0],["3716","Dusty Rose Medium Very Light","ffbdbd",0],["962","Dusty Rose Medium","e68a8a",0],["961","Dusty Rose Dark","cf7373",0],["3833","Raspberry Light","ea8699",0],["3832","Raspberry Medium","db556e",0],["3831","Raspberry Dark","b32f48",0],["777","Raspberry Very Dark","913546",0],["819","Baby Pink Light","ffeeeb",0],["3326","Rose Light","fbadb4",0],["776","Pink Medium","fcb0b9",0],["899","Rose Medium","f27688",0],["335","Rose","ee546e",0],["326","Rose Very Dark","b33b4b",0],["151","Dusty Rose Very Light","f0ced4",0],["3354","Dusty Rose Light","e4a6ac",0],["3733","Dusty Rose","e8879b",0],["3731","Dusty Rose Very Dark","da6783",0],["3350","Dusty Rose Ultra Dark","bc4365",0],["150","Dusty Rose Ultra Very Dark","ab0249",0],["3689","Mauve Light","fbbfc2",0],["3688","Mauve Medium","e7a9ac",0],["3687","Mauve","c96b70",0],["3803","Mauve Dark","ab3357",0],["3685","Mauve Very Dark","881531",0],["605","Cranberry Very Light","ffc0cd",0],["604","Cranberry Light","ffb0be",0],["603","Cranberry","ffa4be",0],["602","Cranberry Medium","e24874",0],["601","Cranberry Dark","d1286a",0],["600","Cranberry Very Dark","cd2f63",0],["3806","Cyclamen Pink Light","ff8cae",0],["3805","Cyclamen Pink","f3478b",0],["3804","Cyclamen Pink Dark","e02876",0],["3609","Plum Ultra Light","f4aed5",0],["3608","Plum Very Light","ea9cc4",0],["3607","Plum Light","c54989",0],["718","Plum","9c2462",0],["917","Plum Medium","9b1359",0],["915","Plum Dark","820043",0],["225","Shell Pink Ultra Very Light","ffdfd5",0],["224","Shell Pink Very Light","ebb7af",0],["152","Shell Pink Medium Light","e2a099",0],["223","Shell Pink Light","cc847c",0],["3722","Shell Pink Medium","bc6c64",0],["3721","Shell Pink Dark","a14b51",0],["221","Shell Pink Very Dark","883e43",0],["778","Antique Mauve Very Light","dfb3bb",0],["3727","Antique Mauve Light","dba9b2",0],["316","Antique Mauve Medium","b7737f",0],["3726","Antique Mauve Dark","9b5b66",0],["315","Antique Mauve Medium Dark","814952",0],["3802","Antique Mauve Very Darkv","714149",0],["902","Garnet Very Dark","822637",0],["3743","Antique Violet Very Light","d7cbd3",0],["3042","Antique Violet Light","b79da7",0],["3041","Antique Violet Medium","956f7c",0],["3740","Antique Violet Dark","785762",0],["3836","Grape Light","ba91aa",0],["3835","Grape Medium","946083",0],["3834","Grape Dark","72375d",0],["154","Grape Very Dark","572433",0],["211","Lavender Light","e3cbe3",0],["210","Lavender Medium","c39fc3",0],["209","Lavender Dark","a37ba7",0],["208","Lavender Very Dark","835b8b",0],["3837","Lavender Ultra Dark","6c3a6e",0],["327","Violet Dark","633666",0],["153","Violet Very Light","e6ccd9",0],["554","Violet Light","dbb3cb",0],["553","Violet","a3638b",0],["552","Violet  Medium","803a6b",0],["550","Violet Very Dark","5c184e",0],["3747","Blue Violet Very Light","d3d7ed",0],["341","Blue Violet Light","b7bfdd",0],["156","Blue Violet Medium Light","a3aed1",0],["340","Blue Violet Medium","ada7c7",0],["155","Blue Violet Medium Dark","9891b6",0],["3746","Blue Violet Dark","776b98",0],["333","Blue Violet Very Dark","5c5478",0],["157","Cornflower Blue Very Light","bbc3d9",0],["794","Cornflower Blue Light","8f9cc1",0],["793","Cornflower Blue Medium","707da2",0],["3807","Cornflower Blue","60678c",0],["792","Cornflower Blue Dark","555b7b",0],["158","Cornflower Blue  Very Dark","4c526e",0],["791","Cornflower Blue Very Dark","464563",0],["3840","Lavender Blue Light","b0c0da",0],["3839","Lavender Blue Medium","7b8eab",0],["3838","Lavender Blue Dark","5c7294",0],["800","Delft Blue Pale","c0ccde",0],["809","Delft Blue","94a8c6",0],["799","Delft Blue Medium","748eb6",0],["798","Delft Blue Dark","466a8e",0],["797","Royal Blue","13477d",0],["796","Royal Blue Dark","11416d",0],["820","Royal Blue Very Dark","0e365c",0],["162","Blue Ultra Very Light","dbecf5",0],["827","Blue Very Light","bddded",0],["813","Blue Light","a1c2d7",0],["826","Blue Medium","6b9ebf",0],["825","Blue Dark","4781a5",0],["824","Blue Very Dark","396987",0],["996","Electric Blue Medium","30c2ec",0],["3843","Electric Blue","14aad0",0],["995","Electric Blue Dark","2696b6",0],["3846","Turquoise Bright Light","06e3e6",0],["3845","Turquoise Bright Medium","04c4ca",0],["3844","Turquoise Bright Dark","12aeba",0],["159","Blue Gray Light","c7cad7",0],["160","Blue Gray Medium","999fb7",0],["161","Blue Gray","7880a4",0],["3756","Baby Blue Ultra Very Light","eefcfc",0],["775","Baby Blue Very Light","d9ebf1",0],["3841","Baby Blue Pale","cddfed",0],["3325","Baby Blue Light","b8d2e6",0],["3755","Baby Blue","93b4ce",0],["334","Baby Blue Medium","739fc1",0],["322","Baby Blue Dark","5a8fb8",0],["312","Baby Blue Very Dark","35668b",0],["803","Baby Blue Ultra Very Dark","2c597c",0],["336","Navy Blue","253b73",0],["823","Navy Blue Dark","213063",0],["939","Navy Blue Very Dark","1b2853",0],["3753","Antique Blue Ultra Very Light","dbe2e9",0],["3752","Antique Blue Very Light","c7d1db",0],["932","Antique Blue Light","a2b5c6",0],["931","Antique Blue Medium","6a859e",0],["930","Antique Blue Dark","455c71",0],["3750","Antique Blue Very Dark","384c5e",0],["828","Sky Blue Very Light","c5e8ed",0],["3761","Sky Blue Light","acd8e2",0],["519","Sky Blue","7eb1c8",0],["518","Wedgewood Light","4f93a7",0],["3760","Wedgewood Medium","3e85a2",0],["517","Wedgewood Dark","3b768f",0],["3842","Wedgewood Very Dark","32667c",0],["311","Wedgewood Ultra Very Dark","1c5066",0],["747","Peacock Blue Very Light","e5fcfd",0],["3766","Peacock Blue Light","99cfd9",0],["807","Peacock Blue","64abba",0],["806","Peacock Blue Dark","3d95a5",0],["3765","Peacock Blue Very Dark","347f8c",0],["3811","Turquoise Very Light","bce3e6",0],["598","Turquoise Light","90c3cc",0],["597","Turquoise","5ba3b3",0],["3810","Turquoise Dark","488e9a",0],["3809","Turquoise Vy Dark","3f7c85",0],["3808","Turquoise Ultra Very Dark","366970",0],["928","Gray Green Very Light","dde3e3",0],["927","Gray Green Light","bdcbcb",0],["926","Gray Green Medium","98aeae",0],["3768","Gray Green Dark","657f7f",0],["924","Gray Green Vy Dark","566a6a",0],["3849","Teal Green Light","52b3a4",0],["3848","Teal Green Medium","559392",0],["3847","Teal Green Dark","347d75",0],["964","Sea Green Light","a9e2d8",0],["959","Sea Green Medium","59c7b4",0],["958","Sea Green Dark","3eb6a1",0],["3812","Sea Green Very Dark","2f8c84",0],["3851","Green Bright Light","49b3a1",0],["943","Green Bright Medium","3d9384",0],["3850","Green Bright Dark","378477",0],["993","Aquamarine Very Light","90c0b4",0],["992","Aquamarine Light","6fae9f",0],["3814","Aquamarine","508b7d",0],["991","Aquamarine Dark","477b6e",0],["966","Jade Ultra Very Light","b9d7c0",0],["564","Jade Very Light","a7cdaf",0],["563","Jade Light","8fc098",0],["562","Jade Medium","53976a",0],["505","Jade Green","338362",0],["3817","Celadon Green Light","99c3aa",0],["3816","Celadon Green","65a57d",0],["163","Celadon Green Medium","4d8361",0],["3815","Celadon Green Dark","477759",0],["561","Celadon Green VD","2c6a45",0],["504","Blue Green Very Light","c4decc",0],["3813","Blue Green Light","b2d4bd",0],["503","Blue Green Medium","7bac94",0],["502","Blue Green","5b9071",0],["501","Blue Green Dark","396f52",0],["500","Blue Green Very Dark","044d33",0],["955","Nile Green Light","a2d6ad",0],["954","Nile Green","88ba91",0],["913","Nile Green Medium","6dab77",0],["912","Emerald Green Light","1b9d6b",0],["911","Emerald Green Medium","189065",0],["910","Emerald Green Dark","187e56",0],["909","Emerald Green Very Dark","156f49",0],["3818","Emerald Green Ultra Very Dark","115a3b",0],["369","Pistachio Green Very Light","d7edcc",0],["368","Pistachio Green Light","a6c298",0],["320","Pistachio Green Medium","69885a",0],["367","Pistachio Green Dark","617a52",0],["319","Pistachio Grn Very Dark","205f2e",0],["890","Pistachio Grn Ultra Very Dark","174923",0],["164","Forest Green Light","c8d8b8",0],["989","Forest Green","8da675",0],["988","Forest Green Medium","738b5b",0],["987","Forest Green Dark","587141",0],["986","Forest Green Very Dark","405230",0],["772","Yellow Green Very Light","e4ecd4",0],["3348","Yellow Green Light","ccd9b1",0],["3347","Yellow Green Medium","71935c",0],["3346","Hunter Green","406a3a",0],["3345","Hunter Green Dark","1b5915",0],["895","Hunter Green Very Dark","1b5300",0],["704","Chartreuse Bright","9ecf34",0],["703","Chartreuse","7bb547",0],["702","Kelly Green","47a72f",0],["701","Green Light","3f8f29",0],["700","Green Bright","07731b",0],["699","Green","056517",0],["907","Parrot Green Light","c7e666",0],["906","Parrot Green Medium","7fb335",0],["905","Parrot Green Dark","628a28",0],["904","Parrot Green Very Dark","557822",0],["472","Avocado Green Ultra Light","d8e498",0],["471","Avocado Grn Very Light","aebf79",0],["470","Avocado Grn Light","94ab4f",0],["469","Avocado Green","72843c",0],["937","Avocado Green Medium","627133",0],["936","Avocado Green Very Dark","4c5826",0],["935","Avocado Green Dark","424d21",0],["934","Avocado Grn Black","313919",0],["523","Fern Green Light","abb197",0],["3053","Green Gray","9ca482",0],["3052","Green Gray Medium","889268",0],["3051","Green Gray Dark","5f6648",0],["524","Fern Green Very Light","c4cdac",0],["522","Fern Green","969e7e",0],["520","Fern Green Dark","666d4f",0],["3364","Pine Green","83975f",0],["3363","Pine Green Medium","728256",0],["3362","Pine Green Dark","5e6b47",0],["165","Moss Green Very Light","eff4a4",0],["3819","Moss Green Light","e0e868",0],["166","Moss Green Medium Light","c0c840",0],["581","Moss Green","a7ae38",0],["580","Moss Green Dark","888d33",0],["734","Olive Green Light","c7c077",0],["733","Olive Green Medium","bcb34c",0],["732","Olive Green","948c36",0],["731","Olive Green Dark","938b37",0],["730","Olive Green Very Dark","827b30",0],["3013","Khaki Green Light","b9b982",0],["3012","Khaki Green Medium","a6a75d",0],["3011","Khaki Green Dark","898a58",0],["372","Mustard Light","ccb784",0],["371","Mustard","bfa671",0],["370","Mustard Medium","b89d64",0],["834","Golden Olive Very Light","dbbe7f",0],["833","Golden Olive Light","c8ab6c",0],["832","Golden Olive","bd9b51",0],["831","Golden Olive Medium","aa8f56",0],["830","Golden Olive Dark","8d784b",0],["829","Golden Olive Very Dark","7e6b42",0],["613","Drab Brown Very Light","dcc4aa",0],["612","Drab Brown Light","bc9a78",0],["611","Drab Brown","967656",0],["610","Drab Brown Dark","796047",0],["3047","Yellow Beige Light","e7d6c1",0],["3046","Yellow Beige Medium","d8bc9a",0],["3045","Yellow Beige Dark","bc966a",0],["167","Yellow Beige Very Dark","a77c49",0],["746","Off White","fcfcee",0],["677","Old Gold Very Light","f5eccb",0],["422","Hazelnut Brown Light","c69f7b",0],["3828","Hazelnut Brown","b78b61",0],["420","Hazelnut Brown Dark","a07042",0],["869","Hazelnut Brown Very Dark","835e39",0],["728","Topaz","e4b468",0],["783","Topaz Medium","ce9124",0],["782","Topaz Dark","ae7720",0],["781","Topaz Very Dark","a26d20",0],["780","Topaz Ultra Very Dark","94631a",0],["676","Old Gold Light","e5ce97",0],["729","Old Gold Medium","d0a53e",0],["680","Old Gold Dark","bc8d0e",0],["3829","Old Gold Vy Dark","a98204",0],["3822","Straw Light","f6dc98",0],["3821","Straw","f3ce75",0],["3820","Straw Dark","dfb65f",0],["3852","Straw Very Dark","cd9d37",0],["445","Lemon Light","fffb8b",0],["307","Lemon","fded54",0],["973","Canary Bright","ffe300",0],["444","Lemon Dark","ffd600",0],["3078","Golden Yellow Very Light","fdf9cd",0],["727","Topaz Very Light","fff1af",0],["726","Topaz Light","fdd755",0],["725","Topaz Medium Light","ffc840",0],["972","Canary Deep","ffb515",0],["745","Yellow Pale Light","ffe9ad",0],["744","Yellow Pale","ffe793",0],["743","Yellow Medium","fed376",0],["742","Tangerine Light","ffbf57",0],["741","Tangerine Medium","ffa32b",0],["740","Tangerine","ff8b00",0],["970","Pumpkin Light","f78b13",0],["971","Pumpkin","f67f00",0],["947","Burnt Orange","ff7b4d",0],["946","Burnt Orange Medium","eb6307",0],["900","Burnt Orange Dark","d15807",0],["967","Apricot Very Light","ffded5",0],["3824","Apricot Light","fecdc2",0],["3341","Apricot","fcab98",0],["3340","Apricot Medium","ff836f",0],["608","Burnt Orange Bright","fd5d35",0],["606","Orange Red Bright","fa3203",0],["951","Tawny Light","ffe2cf",0],["3856","Mahogany Ultra Very Light","ffd3b5",0],["722","Orange Spice Light","f7976f",0],["721","Orange Spice Medium","f27842",0],["720","Orange Spice Dark","e55c1f",0],["3825","Pumpkin Pale","fdbd96",0],["922","Copper Light","e27323",0],["921","Copper","c66218",0],["920","Copper Medium","ac5414",0],["919","Red Copper","a64510",0],["918","Red Copper Dark","82340a",0],["3770","Tawny Vy Light","ffeee3",0],["945","Tawny","fbd5bb",0],["402","Mahogany Very Light","f7a777",0],["3776","Mahogany Light","cf7939",0],["301","Mahogany Medium","b35f2b",0],["400","Mahogany Dark","8f430f",0],["300","Mahogany Very Dark","6f2f00",0],["3823","Yellow Ultra Pale","fffde3",0],["3855","Autumn Gold Light","fad396",0],["3854","Autumn Gold Medium","f2af68",0],["3853","Autumn Gold Dark","f29746",0],["3827","Golden Brown Pale","f7bb77",0],["977","Golden Brown Light","dc9c56",0],["976","Golden Brown Medium","c28142",0],["3826","Golden Brown","ad7239",0],["975","Golden Brown Dark","914f12",0],["948","Peach Very Light","fee7da",0],["754","Peach Light","f7cbbf",0],["3771","Terra Cotta Ultra Very Light","f4bba9",0],["758","Terra Cotta Very Light","eeaa9b",0],["3778","Terra Cotta Light","d98978",0],["356","Terra Cotta Medium","c56a5b",0],["3830","Terra Cotta","b95544",0],["355","Terra Cotta Dark","984436",0],["3777","Terra Cotta Very Dark","863022",0],["3779","Rosewood Ultra Very Light","f8cac8",0],["3859","Rosewood Light","ba8b7c",0],["3858","Rosewood Medium","964a3f",0],["3857","Rosewood Dark","68251a",0],["3774","Desert Sand Very Light","f3e1d7",0],["950","Desert Sand Light","eed3c4",0],["3064","Desert Sand","c48e70",0],["407","Desert Sand Medium","bb8161",0],["3773","Desert Sand Dark","b67552",0],["3772","Desert Sand Very Dark","a06c50",0],["632","Desert Sand Ultra Very Dark","875539",0],["453","Shell Gray Light","d7cecb",0],["452","Shell Gray Medium","c0b3ae",0],["451","Shell Gray Dark","917b73",0],["3861","Cocoa Light","a68881",0],["3860","Cocoa","7d5d57",0],["779","Cocoa Dark","624b45",0],["712","Cream","fffbef",0],["739","Tan Ultra Very Light","f8e4c8",0],["738","Tan Very Light","eccc9e",0],["437","Tan Light","e4bb8e",0],["436","Tan","cb9051",0],["435","Brown Very Light","b87748",0],["434","Brown Light","985e33",0],["433","Brown Medium","7a451f",0],["801","Coffee Brown Dark","653919",0],["898","Coffee Brown Very Dark","492a13",0],["938","Coffee Brown Ultra Dark","361f0e",0],["3371","Black Brown","1e1108",0],["543","Beige Brown Ultra Very Light","f2e3ce",0],["3864","Mocha Beige Light","cbb69c",0],["3863","Mocha Beige Medium","a4835c",0],["3862","Mocha Beige Dark","8a6e4e",0],["3031","Mocha Brown Very Dark","4b3c2a",0],["B5200","Snow White","ffffff",0],["Blanc","White","fcfbf8",0],["3865","Winter White","f9f7f1",0],["Ecru","Ecru","f0eada",0],["822","Beige Gray Light","e7e2d3",0],["644","Beige Gray Medium","ddd8cb",0],["642","Beige Gray Dark","a49878",0],["640","Beige Gray Very Dark","857b61",0],["3787","Brown Gray Dark","625d50",0],["3021","Brown Gray Very Dark","4f4b41",0],["3024","Brown Gray Very Light","ebeae7",0],["3023","Brown Gray Light","b1aa97",0],["3022","Brown Gray Medium","8e9078",0],["535","Ash Gray Very Light","636458",0],["3033","Mocha Brown Very Light","e3d8cc",0],["3782","Mocha Brown Light","d2bca6",0],["3032","Mocha Brown Medium","b39f8b",0],["3790","Beige Gray Ultra Dark","7f6a55",0],["3781","Mocha Brown Dark","6b5743",0],["3866","Mocha Brown Ultra Very Light","faf6f0",0],["842","Beige Brown Very Light","d1baa1",0],["841","Beige Brown Light","b69b7e",0],["840","Beige Brown Medium","9a7c5c",0],["839","Beige Brown Dark","675541",0],["838","Beige Brown Very Dark","594937",0],["3072","Beaver Gray Very Light","e6e8e8",0],["648","Beaver Gray Light","bcb4ac",0],["647","Beaver Gray Medium","b0a69c",0],["646","Beaver Gray Dark","877d73",0],["645","Beaver Gray Very Dark","6e655c",0],["844","Beaver Gray Ultra Dark","484848",0],["762","Pearl Gray Very Light","ececec",0],["415","Pearl Gray","d3d3d6",0],["318","Steel Gray Light","ababab",0],["414","Steel Gray Dark","8c8c8c",0],["168","Pewter Very Light","d1d1d1",0],["169","Pewter Light","848484",0],["317","Pewter Gray","6c6c6c",0],["413","Pewter Gray Dark","565656",0],["3799","Pewter Gray Very Dark","424242",0],["310","Black","000000",0],["01","White Tin","e3e3e6",0],["02","Tin","d7d7d8",0],["03","Tin Medium","b8b8bb",0],["04","Tin Dark","aeaeb1",0],["05","Driftwood Light","e3ccbe",0],["06","Driftwood Medium Light","dcc6b8",0],["07","Driftwood","8f7b6e",0],["08","Driftwood Dark","6a5046",0],["09","Cocoa Very Dark","55200e",0],["10","Tender Green Very Light","edfed9",0],["11","Tender Green Light","e2edb5",0],["12","Tender Green","cdd99a",0],["13","Nile Green Medium Light","bff6e0",0],["14","Apple Green Pale","d0fbb2",0],["15","Apple Green","d1eda4",0],["16","Chartreuse Light","c9c258",0],["17","Yellow Plum Light","e5e272",0],["18","Yellow Plum","d9d56d",0],["19","Autumn Gold medium Light","f7c95f",0],["20","Shrimp","f7af93",0],["21","Alizarin Light","d79982",0],["22","Alizarin","bc604e",0],["23","Apple Blossom","ede2ed",0],["24","White Lavender","e0d7ee",0],["25","Lavender Ultra Light","dad2e9",0],["26","Lavender Pale","d7cae6",0],["27","White Violet","f0eef9",0],["28","Eggplant Medium Light","9086a9",0],["29","Eggplant","674076",0],["30","Blueberry Medium Light","7d77a5",0],["31","Blueberry","50518d",0],["32","Blueberry Dark","4d2e8a",0],["33","Fuschia","9c599e",0],["34","Fuschia Dark","7d3064",0],["35","Fuschia Very Dark","46052d",0]];
+// Closest DMC by color distance (CIE Lab). Cached per color.
+const DMC_LAB = DMC.map(d => rgb2lab(...unhex("#" + d[2])));
+const dmcCache = new Map();
+function nearestDmc(c, n = 1) {
+  const key = hex(c) + n; if (dmcCache.has(key)) return dmcCache.get(key);
+  const L = rgb2lab(c[0], c[1], c[2]);
+  const ds = DMC_LAB.map((l, i) => [i, (l[0] - L[0]) ** 2 + (l[1] - L[1]) ** 2 + (l[2] - L[2]) ** 2]).sort((a, b) => a[1] - b[1]);
+  const out = n === 1 ? DMC[ds[0][0]] : ds.slice(0, n).map(x => DMC[x[0]]);
+  dmcCache.set(key, out); return out;
+}
+const dmcLabel = d => `DMC ${d[0]}`;
 function adjustColor(c) {
   if (S.adj.raw) return c;
   let [L, a, b] = rgb2lab(c[0], c[1], c[2]);
@@ -843,7 +933,7 @@ function designDirty() {
   const x = designCanvas.getContext("2d"), id = x.createImageData(d.w, d.h);
   for (let i = 0; i < d.px.length; i++) { const v = d.px[i]; if (v < 0) continue; const c = d.pal[v]; id.data[i * 4] = c[0]; id.data[i * 4 + 1] = c[1]; id.data[i * 4 + 2] = c[2]; id.data[i * 4 + 3] = 255; }
   x.putImageData(id, 0, 0);
-  renderPalette(); previewDirty();
+  renderPalette(); previewDirty(); if (typeof updateMeshWarn === "function") updateMeshWarn();
   clearTimeout(designDirty.t);
   designDirty.t = setTimeout(saveCurrent, 400);
 }
@@ -853,33 +943,63 @@ function renderPalette() {
   const counts = new Int32Array(d.pal.length); let empty = 0;
   for (const v of d.px) v >= 0 ? counts[v]++ : empty++;
   d.pal.forEach((c, i) => {
+    const dm = nearestDmc(c);
     const b = document.createElement("button"); b.className = "sw"; b.setAttribute("aria-pressed", i === S.sel);
-    b.title = hex(c);
-    b.innerHTML = `<i style="background:${hex(c)}"></i>${counts[i]}`;
+    b.title = `${dmcLabel(dm)} ${dm[1]} · ${counts[i]} stitches`;
+    b.innerHTML = `<i style="background:${hex(c)}"></i><span class="dm">${dm[0]}</span>${counts[i]}`;
     b.onclick = () => { S.sel = i; if (S.tool === "erase" || S.tool === "pick" || S.tool === "pan") setTool("paint"); renderPalette(); };
     box.appendChild(b);
   });
   const ub = document.createElement("button"); ub.className = "sw"; ub.setAttribute("aria-pressed", S.tool === "erase");
-  ub.title = "Unprinted (bare canvas)"; ub.innerHTML = `<i style="background:repeating-linear-gradient(45deg,#EEECE7 0 4px,#D9D4DE 4px 8px)"></i>${empty} bare`;
+  ub.title = "Unprinted (bare canvas)"; ub.innerHTML = `<i style="background:repeating-linear-gradient(45deg,#EEECE7 0 4px,#D9D4DE 4px 8px)"></i><span class="dm">bare</span>${empty}`;
   ub.onclick = () => { setTool("erase"); renderPalette(); };
   box.appendChild(ub);
   const sb = $("selbox"); sb.textContent = "";
   if (!d.pal.length) { sb.innerHTML = `<span class="hint">No colors yet. Add one below.</span>`; return; }
-  const c = d.pal[S.sel] || d.pal[0];
+  const c = d.pal[S.sel] || d.pal[0], dm = nearestDmc(c);
   const picker = document.createElement("input"); picker.type = "color"; picker.value = hex(c); picker.id = "selColor"; picker.setAttribute("aria-label", "Change this color");
   picker.oninput = () => { d.pal[S.sel] = unhex(picker.value); designDirty(); renderView(); };
-  picker.onchange = () => {};
   picker.onfocus = () => { pushUndo(); S.edited = true; };
-  const lbl = document.createElement("span"); lbl.innerHTML = `<b>${hex(c)}</b> · ${counts[S.sel] || 0} stitches · ${empty} unprinted`;
-  const sel = document.createElement("select"); sel.id = "mergeInto"; sel.setAttribute("aria-label", "Replace with");
-  sel.innerHTML = `<option value="">Replace all with…</option><option value="-1">Unprinted (no ink)</option>` + d.pal.map((p, i) => i === S.sel ? "" : `<option value="${i}">${hex(p)}</option>`).join("");
-  sel.onchange = () => {
-    if (sel.value === "") return; const to = +sel.value; pushUndo(); S.edited = true;
-    d.px = d.px.map(v => v === S.sel ? to : v);
-    const cp = compactPalette(d); d.pal = cp.pal; d.px = cp.px; S.sel = 0; designDirty(); renderView();
-  };
-  sb.append(picker, lbl, sel);
+  const lbl = document.createElement("span"); lbl.style.flex = "1 1 160px";
+  lbl.innerHTML = `<b></b> · ${counts[S.sel] || 0} stitches`; lbl.querySelector("b").textContent = `${dmcLabel(dm)} ${dm[1]}`;
+  const pickDmc = document.createElement("button"); pickDmc.className = "btn small"; pickDmc.textContent = "Pick DMC";
+  pickDmc.onclick = () => openDmc(c, dmc => { pushUndo(); S.edited = true; d.pal[S.sel] = unhex("#" + dmc[2]); designDirty(); renderView(); });
+  const rb = document.createElement("button"); rb.className = "btn small"; rb.textContent = "Replace all with…"; rb.setAttribute("aria-expanded", "false");
+  const pop = document.createElement("div"); pop.className = "repl"; pop.hidden = true;
+  pop.innerHTML = `<p>Every stitch of this color changes to:</p>`;
+  const choose = to => { pushUndo(); S.edited = true; d.px = d.px.map(v => v === S.sel ? to : v); const cp = compactPalette(d); d.pal = cp.pal; d.px = cp.px; S.sel = 0; designDirty(); renderView(); };
+  d.pal.forEach((p2, i) => {
+    if (i === S.sel) return; const dd = nearestDmc(p2);
+    const bt = document.createElement("button"); bt.className = "sw"; bt.title = `${dmcLabel(dd)} ${dd[1]}`;
+    bt.innerHTML = `<i style="background:${hex(p2)}"></i><span class="dm">${dd[0]}</span>${counts[i]}`; bt.onclick = () => choose(i); pop.appendChild(bt);
+  });
+  const bare = document.createElement("button"); bare.className = "sw"; bare.title = "Unprinted (bare canvas)";
+  bare.innerHTML = `<i style="background:repeating-linear-gradient(45deg,#EEECE7 0 4px,#D9D4DE 4px 8px)"></i><span class="dm">bare</span>no ink`; bare.onclick = () => choose(-1); pop.appendChild(bare);
+  rb.onclick = () => { pop.hidden = !pop.hidden; rb.setAttribute("aria-expanded", String(!pop.hidden)); };
+  sb.append(picker, lbl, pickDmc, rb, pop);
 }
+
+/* ---------------- DMC picker ---------------- */
+let dmcCb = null, dmcNear = [];
+function showDialog(dl) { try { dl.showModal(); } catch (e) { dl.setAttribute("open", ""); } }
+function openDmc(cur, cb) {
+  dmcCb = cb; dmcNear = cur ? nearestDmc(cur, 12) : [];
+  $("dmcSearch").value = ""; renderDmc(); showDialog($("dmcDlg"));
+  setTimeout(() => $("dmcSearch").focus(), 50);
+}
+function renderDmc() {
+  const q = $("dmcSearch").value.trim().toLowerCase(), g = $("dmcGrid"); g.textContent = "";
+  let list;
+  if (!q) { list = dmcNear.length ? dmcNear.concat(DMC.filter(d => !dmcNear.includes(d))) : DMC; $("dmcHint").textContent = dmcNear.length ? "Closest matches first, then every DMC color." : "Every DMC color."; }
+  else { list = DMC.filter(d => d[0].toLowerCase().startsWith(q) || d[1].toLowerCase().includes(q)); $("dmcHint").textContent = list.length ? `${list.length} match${list.length === 1 ? "" : "es"}.` : "No DMC color matches that."; }
+  list.forEach(dc => {
+    const b = document.createElement("button"); b.className = "sw"; b.type = "button"; b.title = `${dmcLabel(dc)} ${dc[1]}`;
+    b.innerHTML = `<i style="background:#${dc[2]}"></i><span class="dm"></span>`; b.querySelector(".dm").textContent = dc[0];
+    b.onclick = () => { $("dmcDlg").close(); const cb = dmcCb; dmcCb = null; if (cb) cb(dc); };
+    g.appendChild(b);
+  });
+}
+
 function syncSizeInputs() {
   $("wSt").value = S.wSt; $("hSt").value = S.hSt;
   $("wIn").textContent = (S.wSt / S.mesh).toFixed(2) + " in"; $("hIn").textContent = (S.hSt / S.mesh).toFixed(2) + " in";
@@ -1016,7 +1136,7 @@ async function loadScan(canvas, dpi, name, example) {
     dpi = PROC;
   }
   S.scan = { canvas: c, dpi, name, example: !!example, gray: null };
-  S.grid = null; S.center = null; S.checked.clear(); S.selNode = -1; S.place = { ox: 0, oy: 0 }; $("ox").value = 0; $("oy").value = 0;
+  S.grid = null; S.canvasMesh = null; S.center = null; S.checked.clear(); S.selNode = -1; S.place = { ox: 0, oy: 0 }; $("ox").value = 0; $("oy").value = 0;
   $("dpi").value = Math.round(dpi);
   $("findGrid").disabled = false;
   computeGray();
@@ -1135,18 +1255,23 @@ async function detectGrid(g, w, h, p0, inMask, procDpi) {
   };
   const stride = Math.max(1, Math.floor(peaks.length / 8000)), sample = [];
   for (let k = 0; k < peaks.length; k += stride) sample.push(k);
-  let { pitch, theta } = nnStats(sample, p0 * 0.6, p0 * 1.5);
   // Keep only crossings with a neighbor at each of the four lattice spots: those are surely canvas.
-  const latticeOK = k => {
+  const latticeOK = (k, pitch, theta) => {
     const p = peaks[k], u = [pitch * Math.cos(theta), pitch * Math.sin(theta)], v = [-u[1], u[0]];
     for (const [a, c2] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) if (near(p.x + a * u[0] + c2 * v[0], p.y + a * u[1] + c2 * v[1], pitch * 0.25, q => q === k) < 0) return false;
     return true;
   };
-  let good = sample.filter(latticeOK);
-  if (good.length < 10) return { error: "No regular thread pattern was found." };
-  ({ pitch, theta } = nnStats(good, pitch * 0.7, pitch * 1.3));
-  good = good.filter(latticeOK);
-  if (good.length < 10) return { error: "No regular thread pattern was found." };
+  // The first spacing guess can be off by double or half (photos, unusual mesh), so try those too and keep the best fit.
+  const first = nnStats(sample, p0 * 0.5, p0 * 2.2);
+  let best = null;
+  for (const f of [1, 2, 0.5]) {
+    let { pitch, theta } = first; pitch *= f;
+    let good = sample.filter(k => latticeOK(k, pitch, theta));
+    if (good.length >= 10) { ({ pitch, theta } = nnStats(good, pitch * 0.7, pitch * 1.3)); good = good.filter(k => latticeOK(k, pitch, theta)); }
+    if (!best || good.length > best.good.length) best = { pitch, theta, good };
+  }
+  if (best.good.length < 10) return { error: "No regular thread pattern was found." };
+  let { pitch, theta, good } = best;
   const med = arr => { const v = arr.slice().sort((a, c2) => a - c2); return v[v.length >> 1]; };
   const cxm = med(good.map(k => peaks[k].x)), cym = med(good.map(k => peaks[k].y));
   let seedK = good[0], sbest = 1e18;
@@ -1225,13 +1350,15 @@ async function detectGrid(g, w, h, p0, inMask, procDpi) {
 }
 async function findGrid() {
   if (!S.scan) return;
-  S.mesh = +$("mesh2").value; S.darkThreads = $("darkThreads").checked;
+  const meshPick = $("mesh2").value; S.darkThreads = $("darkThreads").checked;
   const dpi = +$("dpi").value || S.scan.dpi;
   const c = S.scan.canvas, w = c.width, h = c.height;
   let g = S.scan.gray;
   if (S.darkThreads) { const inv = new Float32Array(g.length); for (let i = 0; i < g.length; i++) inv[i] = 255 - g[i]; g = inv; }
   const procDpi = S.scan.dpi * (S.scan.dpi === dpi ? 1 : 1);
-  let p0 = procDpi / S.mesh;
+  let p0, autoNote = "";
+  // Auto starts from 13 mesh; the crossing finder measures the real spacing and maps again if it's quite different.
+  p0 = meshPick === "auto" ? procDpi / 13 : procDpi / +meshPick;
   busy(true, "Reading the threads…", 0.05); await tick();
 
   // 1. Canvas area: thread/hole texture makes the local spread high; black backing and paper are flat.
@@ -1245,7 +1372,12 @@ async function findGrid() {
   const mask = new Uint8Array(mw * mh); for (let i = 0; i < sd.length; i++) mask[i] = sd[i] > th ? 1 : 0;
   const inMask = (x, y) => { const mx = (x / F) | 0, my = (y / F) | 0; return mx >= 0 && my >= 0 && mx < mw && my < mh && mask[my * mw + mx] === 1; };
 
-  const G = await detectGrid(g, w, h, p0, inMask, procDpi);
+  let G = await detectGrid(g, w, h, p0, inMask, procDpi);
+  if (meshPick === "auto" && !G.error && Math.abs(G.pitch - p0) / p0 > 0.12) {
+    busy(true, "Mapping again at the measured mesh…", 0.5); await tick();
+    const G2 = await detectGrid(g, w, h, G.pitch, inMask, procDpi);
+    if (!G2.error) G = G2;
+  }
   if (G.error) { busy(false); setStatus("scanStatus", G.error + " Check the mesh size and that the canvas sits on a dark background.", "err"); return; }
   const { gx, gy, theta } = G;
   const meshOut = G.meshSeen;
@@ -1255,9 +1387,14 @@ async function findGrid() {
   S.center = canvasMiddle(G);
   S.checked.clear(); S.selNode = -1;
   busy(false);
-  const note = Math.abs(meshOut - S.mesh) > S.mesh * 0.08 ? ` The spacing looks like ${meshOut.toFixed(1)} mesh, not ${S.mesh}. Change the mesh and find again if that's wrong.` : ` Spacing measured at ${meshOut.toFixed(2)} mesh, tilted ${(theta * 180 / Math.PI).toFixed(2)}°.`;
+  S.canvasMesh = snapMesh(meshOut);
+  const picked = meshPick === "auto" ? null : +meshPick;
+  const note = picked && Math.abs(meshOut - picked) > picked * 0.08
+    ? ` Warning: you picked ${picked} mesh, but this canvas measures ${meshOut.toFixed(1)} mesh. Switch Canvas mesh to Auto or ${S.canvasMesh} and find again.`
+    : ` This canvas measures ${meshOut.toFixed(2)} mesh (${S.canvasMesh} mesh), tilted ${(theta * 180 / Math.PI).toFixed(2)}°.` + autoNote;
   $("meshNote").textContent = `${gx} × ${gy} intersections mapped.` + note;
-  setStatus("scanStatus", (S.marksFound ? "Carrier dots found. " : "No Carrier dots: using page edges. ") + `Mapped ${gx} × ${gy} intersections.`, "ok");
+  setStatus("scanStatus", (S.marksFound ? "Carrier dots found. " : "No Carrier dots: using page edges. ") + `Mapped ${gx} × ${gy} intersections on ${S.canvasMesh} mesh canvas.`, picked && Math.abs(meshOut - picked) > picked * 0.08 ? "err" : "ok");
+  updateMeshWarn();
   previewDirty(); setView("map"); updateUI(); renderAll();
 }
 // The middle of the canvas: halfway between its edges in each row and column of crossings (ignores stray points).
@@ -1267,6 +1404,16 @@ function canvasMiddle(G) {
   const pc = (a, q) => { a.sort((x, y) => x - y); return a[Math.min(a.length - 1, Math.floor(a.length * q))]; };
   return { i: Math.round((pc(is, 0.02) + pc(is, 0.98)) / 2), j: Math.round((pc(js, 0.02) + pc(js, 0.98)) / 2) };
 }
+const MESHES = [10, 12, 13, 14, 16, 18, 24];
+function snapMesh(m) { const near = MESHES.reduce((a, b) => Math.abs(b - m) < Math.abs(a - m) ? b : a); return Math.abs(near - m) / near < 0.06 ? near : Math.round(m * 10) / 10; }
+// The design's size is set for one mesh (step 1); a canvas of another mesh still prints stitch for stitch, just bigger or smaller.
+function updateMeshWarn() {
+  const els = [$("meshWarn"), $("meshWarn2")];
+  if (!S.grid || !S.canvasMesh || !S.design || S.canvasMesh === S.mesh) { els.forEach(e => e.hidden = true); return; }
+  const d = S.design, f = n => (n / S.canvasMesh).toFixed(2), g = n => (n / S.mesh).toFixed(2);
+  const msg = `Mesh doesn't match: this canvas is ${S.canvasMesh} mesh, but your design is set for ${S.mesh} mesh. It will still print one stitch per intersection, so it comes out ${f(d.w)} × ${f(d.h)} in instead of ${g(d.w)} × ${g(d.h)} in. If you want the planned size, use a ${S.mesh} mesh canvas or resize the design on step 1.`;
+  els.forEach(e => { e.textContent = msg; e.hidden = false; });
+}
 function nearestNode(x, y) {
   const G = S.grid; let best = -1, bd = 1e18;
   for (let k = 0; k < G.gx * G.gy; k++) { if (!G.ST[k]) continue; const d = (G.X[k] - x) ** 2 + (G.Y[k] - y) ** 2; if (d < bd) { bd = d; best = k; } }
@@ -1274,7 +1421,7 @@ function nearestNode(x, y) {
 }
 /* ---------------- read stitches from a painted canvas picture ---------------- */
 // The mesh repeats every stitch, so the edge strength along each row and column repeats too. The smallest lag where every multiple lines up is the stitch spacing.
-function estimatePitch(g, w, h) {
+function estimatePitch(g, w, h, minP = 3, maxP = 90) {
   const one = horiz => {
     const n = horiz ? w : h, P = new Float64Array(n);
     if (horiz) { for (let y = 0; y < h; y++) { const o = y * w; for (let x = 1; x < w - 1; x++) P[x] += Math.abs(g[o + x + 1] - g[o + x - 1]); } }
@@ -1285,7 +1432,7 @@ function estimatePitch(g, w, h) {
     for (let L = 0; L <= maxL + 1; L++) { let s = 0; for (let i = 0; i + L < n; i++) s += D[i] * D[i + L]; ac[L] = s / (n - L); }
     const acI = x => { const i = Math.floor(x), f = x - i; return ac[i] * (1 - f) + ac[i + 1] * f; };
     const scores = []; let best = -1e18;
-    for (let p = 3; p <= Math.min(90, maxL / 4); p += 0.02) {
+    for (let p = minP; p <= Math.min(maxP, maxL / 4); p += 0.02) {
       let s = 0, k = 0; for (k = 1; k <= 8 && k * p <= maxL; k++) s += acI(k * p);
       s /= (k - 1); scores.push([p, s]); if (s > best) best = s;
     }
@@ -1493,9 +1640,29 @@ function stitchQuad(i, j) {
   const q = [corner(i - 1, j - 1), corner(i, j - 1), corner(i, j), corner(i - 1, j)];
   return q.every(Boolean) ? q : null;
 }
+function printPalette() {
+  const pal = S.design.pal.slice(); if (S.initials && S.initials.on) pal.push(S.initials.color);
+  return pal.map(adjustColor).map(hex);
+}
+function initialsOrigin(cells) {
+  const d = S.design, ini = S.initials, below = Math.round(ini.below * (S.canvasMesh || S.mesh));
+  const x = ini.pos === "bl" ? 0 : ini.pos === "bc" ? Math.floor((d.w - cells.w) / 2) : d.w - cells.w;
+  return { x, y: d.h + below };
+}
 function forEachStitch(fn) {
   const d = S.design, pl = placement(); if (!pl) return { off: 0, total: 0 };
   let off = 0, total = 0;
+  if (S.initials && S.initials.on && S.iniCells) {
+    const C = S.iniCells, o = initialsOrigin(C), G = S.grid;
+    for (let y = 0; y < C.h; y++) for (let x = 0; x < C.w; x++) {
+      if (!C.cells[y * C.w + x]) continue; total++;
+      const i = pl.i0 + o.x + x, j = pl.j0 + o.y + y;
+      const onCanvas = i >= 0 && j >= 0 && i < G.gx && j < G.gy && G.ST[j * G.gx + i];
+      const q = stitchQuad(i, j);
+      if (!q || !onCanvas) { off++; continue; }
+      fn(q, d.pal.length, i, j);
+    }
+  }
   for (let r = 0; r < d.h; r++) for (let c = 0; c < d.w; c++) {
     const v = d.px[r * d.w + c]; if (v < 0) continue; total++;
     const i = pl.i0 + c, j = pl.j0 + r, G = S.grid;
@@ -1522,7 +1689,7 @@ function buildPreview() {
   const x = previewCanvas.getContext("2d");
   x.drawImage(c, 0, 0);
   if (S.grid && S.design) {
-    const pal = S.design.pal.map(adjustColor).map(hex), f = 1 + S.adj.bleed / 100;
+    const pal = printPalette(), f = 1 + S.adj.bleed / 100;
     x.globalCompositeOperation = "multiply";
     forEachStitch((q, v) => { const g = grow(q, f); x.fillStyle = pal[v]; x.beginPath(); x.moveTo(g[0][0], g[0][1]); for (let k = 1; k < 4; k++) x.lineTo(g[k][0], g[k][1]); x.closePath(); x.fill(); });
     x.globalCompositeOperation = "source-over";
@@ -1542,7 +1709,7 @@ async function renderPrint(dpi) {
   const W = Math.round(PAGE.w * dpi), H = Math.round(PAGE.h * dpi);
   const c = document.createElement("canvas"); c.width = W; c.height = H;
   const x = c.getContext("2d"); x.fillStyle = "#fff"; x.fillRect(0, 0, W, H);
-  const pal = S.design.pal.map(adjustColor).map(hex), f = 1 + S.adj.bleed / 100;
+  const pal = printPalette(), f = 1 + S.adj.bleed / 100;
   const nx = S.nudge.x / 200, ny = S.nudge.y / 200;
   const r = forEachStitch((q, v) => {
     const g = grow(q, f).map(p => { const pg = scanToPage(p[0], p[1]); return [(pg[0] + nx) * dpi, (pg[1] + ny) * dpi]; });
@@ -1701,6 +1868,244 @@ async function restoreHistory(k) {
   renderHistory(); toast("Restored " + (rec.name || "your design") + ".");
 }
 
+/* ---------------- check a printed canvas ---------------- */
+async function fileToScanCanvas(f) {
+  let canvas, dpi;
+  if (/\.pdf$/i.test(f.name) || f.type === "application/pdf") { const r = await pdfToCanvas(await f.arrayBuffer(), 300); canvas = r.canvas; dpi = r.dpi || canvas.width / 8.5; }
+  else { canvas = await loadImageFile(f); dpi = canvas.width / 8.5; }
+  for (const v of [150, 200, 240, 300, 400, 600, 1200]) if (Math.abs(dpi - v) / v < 0.04) dpi = v;
+  if (dpi > 330) { const k = 300 / dpi, c = document.createElement("canvas"); c.width = Math.round(canvas.width * k); c.height = Math.round(canvas.height * k); const x = c.getContext("2d"); x.imageSmoothingQuality = "high"; x.drawImage(canvas, 0, 0, c.width, c.height); canvas = c; dpi = 300; }
+  return { canvas, dpi };
+}
+// Measures printed lines against the threads: in small tiles, the threads repeat every stitch, so each thin line of ink
+// can be compared with the nearest thread. Offsets are in stitches (+ = right / down).
+function measureInk(c, gray, p) {
+  const w = c.width, h = c.height, d = c.getContext("2d").getImageData(0, 0, w, h).data;
+  const hole = new Uint8Array(w * h), ink = new Uint8Array(w * h);
+  for (let i = 0; i < w * h; i++) {
+    const r = d[i * 4], g = d[i * 4 + 1], b = d[i * 4 + 2], mx = Math.max(r, g, b), ch = mx - Math.min(r, g, b);
+    if (gray[i] < 90 && ch < 45) hole[i] = 1; if (ch > 55) ink[i] = 1;
+  }
+  const T = Math.round(p * 7), out = { x: [], y: [] };
+  const hp = new Float32Array(T), kp = new Float32Array(T);
+  for (let ty = 0; ty + T <= h; ty += T >> 1) for (let tx = 0; tx + T <= w; tx += T >> 1) {
+    let hs = 0; for (let y = ty; y < ty + T; y += 2) for (let x = tx; x < tx + T; x += 2) hs += hole[y * w + x];
+    hs /= (T / 2) * (T / 2); if (hs < 0.08 || hs > 0.6) continue;
+    for (const axis of ["x", "y"]) {
+      hp.fill(0); kp.fill(0);
+      for (let y = 0; y < T; y++) for (let x = 0; x < T; x++) { const i = (ty + y) * w + tx + x, k = axis === "x" ? x : y; hp[k] += hole[i]; kp[k] += ink[i]; }
+      for (let k = 0; k < T; k++) { hp[k] /= T; kp[k] /= T; }
+      let ph = 0, best = -1;
+      for (let f = 0; f < p; f += 0.25) { let v = 0; for (let q = f; q < T - 1; q += p) { const i = q | 0, fr = q - i; v += 1 - (hp[i] * (1 - fr) + hp[i + 1] * fr); } if (v > best) { best = v; ph = f; } }
+      const sorted = Array.from(kp).sort((a, b) => a - b), base = sorted[Math.floor(T * 0.3)];
+      let mx = 0; for (let k = 0; k < T; k++) mx = Math.max(mx, kp[k] - base);
+      if (mx < 0.35) continue;
+      for (let k = 0; k < T;) {
+        if (kp[k] - base <= mx * 0.5) { k++; continue; }
+        let j = k, sw = 0, sc = 0; while (j < T && kp[j] - base > mx * 0.5) { sw += kp[j] - base; sc += (kp[j] - base) * j; j++; }
+        if (k > 2 && j < T - 2 && j - k < p * 1.6) { const cpos = sc / sw, n = Math.round((cpos - ph) / p); out[axis].push((cpos - (ph + n * p)) / p); }
+        k = j;
+      }
+    }
+  }
+  return out;
+}
+async function checkPrint(f) {
+  busy(true, "Reading your printed canvas…", 0.1); await tick();
+  try {
+    const { canvas, dpi } = await fileToScanCanvas(f);
+    // Turn it the right way up using the Carrier dots, without touching the loaded scan.
+    const keep = { scan: S.scan, marks: S.marks, H: S.H, mf: S.marksFound };
+    S.scan = { canvas, dpi, gray: null }; computeGray(); findMarks();
+    const c = S.scan.canvas, gray = S.scan.gray;
+    Object.assign(S, { scan: keep.scan, marks: keep.marks, H: keep.H, marksFound: keep.mf });
+    busy(true, "Measuring the ink…", 0.4); await tick();
+    const G = await detectGrid(gray, c.width, c.height, dpi / 13, () => true, dpi);
+    if (G.error) throw new Error("The canvas threads couldn't be found in this scan. Scan the printed canvas on its Carrier, lid closed.");
+    const p = G.pitch;
+    const m = measureInk(c, gray, p);
+    busy(false);
+    if (m.x.length < 15 || m.y.length < 15) { setStatus("checkStatus", "Not enough thin printed lines to measure. Print the test pattern (Save a test pattern print file instead), scan it, and check that.", "err"); $("applyNudge").hidden = true; return; }
+    const med = a => { const v = a.slice().sort((x, y) => x - y); return v[v.length >> 1]; };
+    const sd = a => { const mu = a.reduce((x, y) => x + y, 0) / a.length; return Math.sqrt(a.reduce((x, y) => x + (y - mu) ** 2, 0) / a.length); };
+    const ox = med(m.x), oy = med(m.y), spread = Math.max(sd(m.x), sd(m.y)), inPerStitch = p / dpi;
+    const dir = (v, pos, neg) => `${Math.abs(v).toFixed(2)} stitch ${v >= 0 ? pos : neg}`;
+    let msg = `Ink landed ${dir(ox, "right", "left")} and ${dir(oy, "low", "high")} of the threads on average (measured ${m.x.length + m.y.length} line spots, canvas ${(dpi / p).toFixed(1)} mesh).`;
+    const nx = -Math.round(ox * inPerStitch * 200), ny = -Math.round(oy * inPerStitch * 200);
+    if (Math.abs(ox) < 0.1 && Math.abs(oy) < 0.1) { msg += " That's within 1/10 of a stitch, so no nudge is needed."; $("applyNudge").hidden = true; }
+    else if (!nx && !ny) { msg += " The fix is smaller than one nudge step, so leave it."; $("applyNudge").hidden = true; }
+    else {
+      const sug = { x: S.nudge.x + nx, y: S.nudge.y + ny };
+      msg += ` Suggested nudge: ${sug.x},${sug.y} (now ${S.nudge.x},${S.nudge.y}).`;
+      $("applyNudge").hidden = false; $("applyNudge").onclick = () => { S.nudge = sug; nudgeOut(); $("applyNudge").hidden = true; toast("Nudge set to " + sug.x + "," + sug.y + ". Make the print file again."); };
+    }
+    if (spread > 0.2) msg += " The lines wander more than usual from spot to spot. The canvas may have shifted or the paper slipped while printing. Tape it down well and feed the Carrier alone.";
+    setStatus("checkStatus", msg, Math.abs(ox) < 0.1 && Math.abs(oy) < 0.1 && spread <= 0.2 ? "ok" : "err");
+  } catch (e) { busy(false); setStatus("checkStatus", e.message, "err"); }
+}
+
+/* ---------------- initials ---------------- */
+const BLOCK = {
+  A: "01110100011000111111100011000110001", B: "11110100011000111110100011000111110", C: "01110100011000010000100001000101110",
+  D: "11110100011000110001100011000111110", E: "11111100001000011110100001000011111", F: "11111100001000011110100001000010000",
+  G: "01110100011000010111100011000101111", H: "10001100011000111111100011000110001", I: "01110001000010000100001000010001110",
+  J: "00111000100001000010000101001001100", K: "10001100101010011000101001001010001", L: "10000100001000010000100001000011111",
+  M: "10001110111010110101100011000110001", N: "10001100011100110101100111000110001", O: "01110100011000110001100011000101110",
+  P: "11110100011000111110100001000010000", Q: "01110100011000110001101011001001101", R: "11110100011000111110101001001010001",
+  S: "01111100001000001110000010000111110", T: "11111001000010000100001000010000100", U: "10001100011000110001100011000101110",
+  V: "10001100011000110001100010101000100", W: "10001100011000110101101011010101010", X: "10001100010101000100010101000110001",
+  Y: "10001100010101000100001000010000100", Z: "11111000010001000100010001000011111",
+  "0": "01110100011001110101110011000101110", "1": "00100011000010000100001000010001110", "2": "01110100010000100010001000100011111",
+  "3": "11111000100010000010000011000101110", "4": "00010001100101010010111110001000010", "5": "11111100001111000001000011000101110",
+  "6": "00110010001000011110100011000101110", "7": "11111000010001000100010000100001000", "8": "01110100011000101110100011000101110",
+  "9": "01110100011000101111000010001001100", ".": "00000000000000000000000000110001100", "-": "00000000000000001110000000000000000",
+  "&": "01100100101010001000101011001001101",
+};
+S.initials = store.get("ccp-initials") || null; S.iniCells = null;
+async function initialsCells(ini) {
+  const text = (ini.text || "").trim(); if (!text) return null;
+  if (ini.font === "block") {
+    const sc = Math.max(1, Math.round(ini.h / 7)), chars = [...text.toUpperCase()];
+    const widths = chars.map(ch => ch === " " ? 3 : BLOCK[ch] ? 5 : 0);
+    const W = (widths.reduce((a, b) => a + b, 0) + Math.max(0, chars.length - 1)) * sc, H = 7 * sc, cells = new Uint8Array(W * H);
+    let x0 = 0;
+    chars.forEach((ch, k) => {
+      const g = BLOCK[ch];
+      if (g) for (let y = 0; y < 7; y++) for (let x = 0; x < 5; x++) if (g[y * 5 + x] === "1")
+        for (let yy = 0; yy < sc; yy++) for (let xx = 0; xx < sc; xx++) cells[(y * sc + yy) * W + (x0 + x) * sc + xx] = 1;
+      x0 += widths[k] + 1;
+    });
+    return W ? { w: W, h: H, cells } : null;
+  }
+  const fam = `"${ini.font}"`, weight = ini.font === "Great Vibes" ? "400" : "700";
+  try { await document.fonts.load(`${weight} 80px ${fam}`, text); } catch (e) {}
+  const k = 12, c = document.createElement("canvas"), x = c.getContext("2d");
+  x.font = `${weight} 100px ${fam}, serif`;
+  const m = x.measureText(text), inkH = (m.actualBoundingBoxAscent + m.actualBoundingBoxDescent) || 100;
+  const size = 100 * ini.h * k / inkH;
+  x.font = `${weight} ${size}px ${fam}, serif`;
+  const m2 = x.measureText(text), pad = k * 2;
+  c.width = Math.ceil(m2.actualBoundingBoxLeft + m2.actualBoundingBoxRight + pad * 2); c.height = Math.ceil(m2.actualBoundingBoxAscent + m2.actualBoundingBoxDescent + pad * 2);
+  x.font = `${weight} ${size}px ${fam}, serif`; x.fillStyle = "#000";
+  x.fillText(text, pad + m2.actualBoundingBoxLeft, pad + m2.actualBoundingBoxAscent);
+  const d = x.getImageData(0, 0, c.width, c.height).data, W = Math.ceil(c.width / k), H = Math.ceil(c.height / k), cells = new Uint8Array(W * H);
+  for (let cy = 0; cy < H; cy++) for (let cx = 0; cx < W; cx++) {
+    let a = 0, n = 0;
+    for (let y = cy * k; y < Math.min(c.height, cy * k + k); y++) for (let xx = cx * k; xx < Math.min(c.width, cx * k + k); xx++) { a += d[(y * c.width + xx) * 4 + 3]; n++; }
+    if (a / n > 255 * 0.38) cells[cy * W + cx] = 1;
+  }
+  // Trim empty edges.
+  let x0 = W, x1 = -1, y0 = H, y1 = -1;
+  for (let y = 0; y < H; y++) for (let xx = 0; xx < W; xx++) if (cells[y * W + xx]) { x0 = Math.min(x0, xx); x1 = Math.max(x1, xx); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
+  if (x1 < 0) return null;
+  const w2 = x1 - x0 + 1, h2 = y1 - y0 + 1, out = new Uint8Array(w2 * h2);
+  for (let y = 0; y < h2; y++) for (let xx = 0; xx < w2; xx++) out[y * w2 + xx] = cells[(y + y0) * W + xx + x0];
+  return { w: w2, h: h2, cells: out };
+}
+let iniDraft = null;
+function iniFromForm() {
+  return { on: true, text: $("iniText").value, font: $("iniFont").value, h: +$("iniH").value, color: iniDraft.color, pos: $("iniPos").value, below: Math.max(0, +$("iniBelow").value || 0) };
+}
+async function drawIniPreview() {
+  const ini = iniFromForm(); $("iniHOut").textContent = `${ini.h} stitches (${(ini.h / (S.canvasMesh || S.mesh)).toFixed(2)} in)`;
+  const dm = nearestDmc(ini.color); $("iniColorName").textContent = `${dmcLabel(dm)} ${dm[1]}`;
+  const cv = $("iniPrev"), r = cv.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+  cv.width = Math.round(r.width * dpr); cv.height = Math.round(r.height * dpr);
+  const x = cv.getContext("2d"); x.fillStyle = "#4E4854"; x.fillRect(0, 0, cv.width, cv.height);
+  const C = await initialsCells(ini);
+  if (!C) { $("iniNote").textContent = "Type your initials above."; return; }
+  const k = Math.max(3, Math.min((cv.width - 20) / (C.w + 4), (cv.height - 20) / (C.h + 4)));
+  const ox = (cv.width - (C.w + 4) * k) / 2, oy = (cv.height - (C.h + 4) * k) / 2, col = hex(ini.color);
+  for (let y = 0; y < C.h + 4; y++) for (let xx = 0; xx < C.w + 4; xx++) {
+    const on = y >= 2 && xx >= 2 && y < C.h + 2 && xx < C.w + 2 && C.cells[(y - 2) * C.w + xx - 2];
+    const X = ox + xx * k, Y = oy + y * k, t = k * 0.62, o = (k - t) / 2;
+    x.fillStyle = on ? col : "#EEECE7"; x.fillRect(X, Y + o, k, t); x.fillRect(X + o, Y, t, k);
+  }
+  const mesh = S.canvasMesh || S.mesh;
+  $("iniNote").textContent = `${C.w} × ${C.h} stitches, placed ${ini.below} in below the design at the ${ini.pos === "br" ? "bottom right" : ini.pos === "bl" ? "bottom left" : "bottom center"}.` +
+    (ini.font !== "block" && ini.h < 12 ? " Script and serif letters read better at 12 stitches or taller. Block letters stay crisp when small." : "");
+}
+function renderIniSwatches() {
+  const box = $("iniPal"); box.textContent = "";
+  const opts = (S.design ? S.design.pal : []).slice(0, 16);
+  opts.forEach(c => {
+    const dm = nearestDmc(c), b = document.createElement("button"); b.type = "button"; b.className = "sw"; b.title = `${dmcLabel(dm)} ${dm[1]}`;
+    b.setAttribute("aria-pressed", hex(c) === hex(iniDraft.color));
+    b.innerHTML = `<i style="background:${hex(c)}"></i><span class="dm">${dm[0]}</span>`;
+    b.onclick = () => { iniDraft.color = c.slice(); $("iniColor").value = hex(c); renderIniSwatches(); drawIniPreview(); };
+    box.appendChild(b);
+  });
+}
+function openInitials() {
+  const cur = S.initials || { text: "", font: "block", h: 7, color: S.design && S.design.pal[0] ? nearestDmc(S.design.pal[0]) && unhex("#" + nearestDmc(S.design.pal[0])[2]) : [199, 43, 59], pos: "br", below: 2 };
+  iniDraft = { color: cur.color.slice() };
+  $("iniText").value = cur.text; $("iniFont").value = cur.font; $("iniH").value = cur.h; $("iniPos").value = cur.pos; $("iniBelow").value = cur.below; $("iniColor").value = hex(cur.color);
+  $("iniRemove").hidden = !S.initials;
+  renderIniSwatches(); showDialog($("iniDlg")); setTimeout(() => { drawIniPreview(); $("iniText").focus(); }, 30);
+}
+async function applyInitials(ini) {
+  S.initials = ini; store.set("ccp-initials", ini);
+  S.iniCells = ini && ini.on ? await initialsCells(ini) : null;
+  iniSummary(); previewDirty(); updateFit(); renderView();
+}
+function iniSummary() {
+  const ini = S.initials, el = $("iniSummary");
+  if (!ini || !ini.on || !ini.text.trim()) { el.textContent = "No initials."; $("iniOpen").textContent = "Add initials"; return; }
+  const dm = nearestDmc(ini.color), font = $("iniFont").querySelector(`option[value="${ini.font}"]`);
+  el.textContent = `"${ini.text.trim()}" · ${font ? font.textContent.replace(/ \(.*\)/, "") : ini.font} · ${dmcLabel(dm)} · ${ini.below} in below, ${ini.pos === "br" ? "bottom right" : ini.pos === "bl" ? "bottom left" : "bottom center"}`;
+  $("iniOpen").textContent = "Edit initials";
+}
+
+/* ---------------- color key PDF ---------------- */
+const ascii = t => String(t).normalize("NFD").replace(/[^\x20-\x7E]/g, "");
+async function colorKeyPdf() {
+  const d = S.design; if (!d) { toast("Make a design first."); return; }
+  const counts = new Int32Array(d.pal.length); let empty = 0; for (const v of d.px) v >= 0 ? counts[v]++ : empty++;
+  const rows = d.pal.map((c, i) => ({ c, dm: nearestDmc(c), n: counts[i], label: "" })).filter(r => r.n);
+  if (S.initials && S.initials.on && S.iniCells) {
+    const n = S.iniCells.cells.reduce((a, b) => a + b, 0);
+    rows.push({ c: S.initials.color, dm: nearestDmc(S.initials.color), n, label: "initials" });
+  }
+  // Design picture at the top, drawn in the canvas mesh look.
+  const k = Math.max(4, Math.floor(1400 / Math.max(d.w, d.h))), pic = document.createElement("canvas");
+  pic.width = d.w * k; pic.height = d.h * k; pic.getContext("2d").drawImage(meshCanvas, 0, 0, pic.width, pic.height);
+  const img = await canvasToPdfImage(pic);
+  const maxW = 7, maxH = 3.6, sc = Math.min(maxW / d.w, maxH / d.h), iw = d.w * sc, ih = d.h * sc, ix = (PAGE.w - iw) / 2, iy = 1.25;
+  const mesh = S.mesh;
+  let c = "";
+  c += `q ${pt(iw)} 0 0 ${pt(ih)} ${pt(ix)} ${ptY(iy + ih)} cm /Im0 Do Q\n`;
+  c += "0.1 g\n" + pdfText(0.75, 0.75, 16, ascii(`Color key${S.designName ? " - " + S.designName.replace(/\.[a-z0-9]+$/i, "") : ""}`));
+  c += "0.35 g\n" + pdfText(0.75, 1.0, 9, ascii(`${d.w} x ${d.h} stitches  -  ${(d.w / mesh).toFixed(2)} x ${(d.h / mesh).toFixed(2)} in on ${mesh} mesh  -  ${rows.length} colors  -  ${new Date().toLocaleDateString()}`));
+  const top = iy + ih + 0.35, cols = rows.length > 14 ? 2 : 1, perCol = Math.ceil(rows.length / cols);
+  const rowH = Math.min(0.42, (10.35 - top - 0.3) / Math.max(1, perCol)), colW = cols === 2 ? 3.55 : 7;
+  c += "0.35 g\n";
+  for (let cl = 0; cl < cols; cl++) {
+    const x0 = 0.75 + cl * colW;
+    c += pdfText(x0, top, 7.5, "DESIGN   DMC");
+    c += pdfText(x0 + 1.0, top, 7.5, "NUMBER / NAME");
+    c += pdfText(x0 + colW - 0.75, top, 7.5, "STITCHES");
+  }
+  rows.forEach((r, k2) => {
+    const cl = Math.floor(k2 / perCol), x0 = 0.75 + cl * colW, y = top + 0.12 + (k2 % perCol) * rowH, sw = Math.min(0.36, rowH - 0.08), sh = sw * 0.75;
+    const fill = (col, x) => `${(col[0] / 255).toFixed(3)} ${(col[1] / 255).toFixed(3)} ${(col[2] / 255).toFixed(3)} rg ${pt(x)} ${ptY(y + sh)} ${pt(sw)} ${pt(sh)} re f 0.6 G 0.5 w ${pt(x)} ${ptY(y + sh)} ${pt(sw)} ${pt(sh)} re S\n`;
+    c += fill(r.c, x0) + fill(unhex("#" + r.dm[2]), x0 + sw + 0.1);
+    const ty = y + sh * 0.72;
+    c += "0.1 g\n" + pdfText(x0 + 1.0, ty, 10, ascii(`DMC ${r.dm[0]}`)) + "0.3 g\n" + pdfText(x0 + 1.75, ty, 8.5, ascii(r.dm[1] + (r.label ? `  (${r.label})` : "")).slice(0, cols === 2 ? 26 : 60));
+    c += "0.1 g\n" + pdfText(x0 + colW - 0.75, ty, 9, String(r.n));
+  });
+  if (empty) c += "0.35 g\n" + pdfText(0.75, 10.35, 8, ascii(`${empty} stitches are left unprinted (bare canvas).`));
+  c += "0.45 g\n" + pdfText(0.75, 10.55, 7, "Left swatch: your design color. Right swatch: the closest DMC floss. Screen and print colors are approximate; check against real floss.");
+  c += pdfText(0.75, 10.7, 7, "DMC color data: craft-color-codes by MakeBead (makebead.com), CC BY 4.0. Made with Sookie's Canvas Press.");
+  await saveFile(fileBase() + "-color-key.pdf", buildPdf(c, img));
+}
+function snapAllToDmc() {
+  const d = S.design; if (!d) return; pushUndo(); S.edited = true;
+  const map = new Map(), pal = [], idx = d.pal.map(c => { const dm = nearestDmc(c); if (!map.has(dm[0])) { map.set(dm[0], pal.length); pal.push(unhex("#" + dm[2])); } return map.get(dm[0]); });
+  const merged = d.pal.length - pal.length;
+  d.px = d.px.map(v => v >= 0 ? idx[v] : -1); d.pal = pal; S.sel = 0; designDirty(); renderView();
+  toast(`Colors changed to DMC.${merged ? ` ${merged} matched the same DMC and were merged.` : ""} Undo brings them back.`);
+}
+
 /* ---------------- practice print on paper ---------------- */
 async function practicePdf() {
   const d = S.design; if (!d) { toast("Make a design first."); return; }
@@ -1839,6 +2244,40 @@ function shiftDesign(dx, dy) {
   if (padL || padT || W !== d.w || H !== d.h) fitView();
   renderView();
 }
+function cropDesign(a, b) {
+  const d = S.design;
+  const x0 = clamp(Math.min(a[0], b[0]), 0, d.w - 1), x1 = clamp(Math.max(a[0], b[0]), 0, d.w - 1), y0 = clamp(Math.min(a[1], b[1]), 0, d.h - 1), y1 = clamp(Math.max(a[1], b[1]), 0, d.h - 1);
+  const W = x1 - x0 + 1, H = y1 - y0 + 1;
+  if (W < 2 || H < 2) { toast("Drag a bigger box to crop."); return; }
+  const px = new Int16Array(W * H);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) px[y * W + x] = d.px[(y + y0) * d.w + x + x0];
+  pushUndo(); S.edited = true;
+  setDesign(d.pal, px, W, H, true, (d.sx || 0) - x0, (d.sy || 0) - y0);
+  const cp = compactPalette(S.design); S.design.pal = cp.pal; S.design.px = cp.px; if (S.sel >= cp.pal.length) S.sel = 0;
+  designDirty(); fitView(); toast(`Cropped to ${W} × ${H} stitches. Undo brings the rest back.`);
+}
+// Background = the most common color along the outer edge. Clear it (and colors within a small color distance) inward from the edges.
+function removeBackground() {
+  const d = S.design, W = d.w, H = d.h, cnt = new Map(), edge = [];
+  for (let x = 0; x < W; x++) edge.push(x, (H - 1) * W + x);
+  for (let y = 0; y < H; y++) edge.push(y * W, y * W + W - 1);
+  for (const i of edge) { const v = d.px[i]; if (v >= 0) cnt.set(v, (cnt.get(v) || 0) + 1); }
+  if (!cnt.size) { toast("The edges are already bare canvas."); return; }
+  const bg = [...cnt.entries()].sort((a, b) => b[1] - a[1])[0][0], L = rgb2lab(...d.pal[bg]);
+  const like = d.pal.map(c => { const l = rgb2lab(...c); return Math.hypot(l[0] - L[0], l[1] - L[1], l[2] - L[2]) < 8; });
+  const seen = new Uint8Array(W * H), st = edge.filter(i => d.px[i] >= 0 && like[d.px[i]]);
+  if (!st.length) { toast("No background color found along the edges."); return; }
+  pushUndo(); S.edited = true; let n = 0;
+  while (st.length) {
+    const i = st.pop(); if (seen[i]) continue; seen[i] = 1;
+    const v = d.px[i]; if (v < 0 || !like[v]) continue;
+    d.px[i] = -1; n++;
+    const x = i % W, y = (i / W) | 0;
+    if (x > 0) st.push(i - 1); if (x < W - 1) st.push(i + 1); if (y > 0) st.push(i - W); if (y < H - 1) st.push(i + W);
+  }
+  const cp = compactPalette(d); d.pal = cp.pal; d.px = cp.px; S.sel = 0;
+  designDirty(); renderView(); toast(`Removed ${n} background stitches. They'll stay bare canvas. Undo brings them back.`);
+}
 function trimDesign() {
   const d = S.design; let x0 = 1e9, y0 = 1e9, x1 = -1, y1 = -1;
   for (let i = 0; i < d.px.length; i++) if (d.px[i] >= 0) { const x = i % d.w, y = (i / d.w) | 0; x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
@@ -1915,6 +2354,14 @@ function draw() {
     }
     if (S.original && S.origAlpha > 0) drawOriginal(S.origAlpha / 100);
     vctx.restore();
+    if (drag && drag.type === "crop") {
+      const x0 = Math.max(0, Math.min(drag.a[0], drag.b[0])), x1 = Math.min(d.w - 1, Math.max(drag.a[0], drag.b[0])) + 1, y0 = Math.max(0, Math.min(drag.a[1], drag.b[1])), y1 = Math.min(d.h - 1, Math.max(drag.a[1], drag.b[1])) + 1;
+      vctx.save(); vctx.fillStyle = "rgba(10,8,14,.5)";
+      vctx.fillRect(V.tx, V.ty, d.w * V.s, y0 * V.s); vctx.fillRect(V.tx, V.ty + y1 * V.s, d.w * V.s, (d.h - y1) * V.s);
+      vctx.fillRect(V.tx, V.ty + y0 * V.s, x0 * V.s, (y1 - y0) * V.s); vctx.fillRect(V.tx + x1 * V.s, V.ty + y0 * V.s, (d.w - x1) * V.s, (y1 - y0) * V.s);
+      vctx.strokeStyle = "#fff"; vctx.lineWidth = 2; vctx.setLineDash([6, 4]); vctx.strokeRect(V.tx + x0 * V.s, V.ty + y0 * V.s, (x1 - x0) * V.s, (y1 - y0) * V.s); vctx.restore();
+      stat.push(`crop ${x1 - x0} × ${y1 - y0}`);
+    }
     if (mv[0] || mv[1]) { vctx.save(); vctx.strokeStyle = COL.outline; vctx.lineWidth = 2; vctx.setLineDash([6, 4]); vctx.strokeRect(V.tx, V.ty, d.w * V.s, d.h * V.s); vctx.restore(); }
     if (S.showGrid && V.s >= 5 && S.look !== "mesh") {
       vctx.save(); vctx.lineWidth = 1;
@@ -2015,9 +2462,10 @@ view.addEventListener("pointerdown", e => {
   const tool = rightErase ? (S.tool === "fill" ? "fill" : "erase") : S.tool;
   if (S.view === "design" && S.design && !panReq && tool !== "pan") {
     const cell = [Math.floor(wx), Math.floor(wy)];
-    if (tool !== "move" && (cell[0] < 0 || cell[1] < 0 || cell[0] >= S.design.w || cell[1] >= S.design.h)) { drag = rightErase ? null : { type: "pan", last: [sx, sy] }; return; }
+    if (tool !== "move" && tool !== "crop" && (cell[0] < 0 || cell[1] < 0 || cell[0] >= S.design.w || cell[1] >= S.design.h)) { drag = rightErase ? null : { type: "pan", last: [sx, sy] }; return; }
     const i = cell[1] * S.design.w + cell[0];
     if (tool === "move") { drag = { type: "move", start: [wx, wy], delta: [0, 0] }; return; }
+    if (tool === "crop") { drag = { type: "crop", a: cell, b: cell }; renderView(); return; }
     if (tool === "pick") { const v = S.design.px[i]; if (v >= 0) { S.sel = v; setTool("paint"); renderPalette(); } return; }
     startEditing();
     pushUndo();
@@ -2055,6 +2503,7 @@ view.addEventListener("pointermove", e => {
   }
   const [wx, wy] = toWorld(sx, sy);
   if (drag.type === "pan") { V.tx += sx - drag.last[0]; V.ty += sy - drag.last[1]; drag.last = [sx, sy]; renderView(); }
+  else if (drag.type === "crop") { const c = [Math.floor(wx), Math.floor(wy)]; if (c[0] !== drag.b[0] || c[1] !== drag.b[1]) { drag.b = c; renderView(); } }
   else if (drag.type === "move") { const nd = [Math.round(wx - drag.start[0]), Math.round(wy - drag.start[1])]; if (nd[0] !== drag.delta[0] || nd[1] !== drag.delta[1]) { drag.delta = nd; renderView(); } }
   else if (drag.type === "paint") { const c = [Math.floor(wx), Math.floor(wy)]; paintLine(drag.last, c, drag.v); drag.last = c; }
   else if (drag.type === "node") { const G = S.grid; G.X[drag.k] = wx + drag.off[0]; G.Y[drag.k] = wy + drag.off[1]; G.ST[drag.k] = 4; drag.moved = true; renderView(); }
@@ -2066,6 +2515,7 @@ const endPtr = e => {
   if (drag && drag.type === "mark") setStatus("scanStatus", "Corner dot moved by hand.", "ok");
   if (drag && drag.type === "paint") designDirty();
   if (drag && drag.type === "move") { const dl = drag.delta; drag = null; shiftDesign(dl[0], dl[1]); return; }
+  if (drag && drag.type === "crop") { const a = drag.a, b = drag.b; drag = null; cropDesign(a, b); return; }
   if (ptrs.size < 2) drag = null;
 };
 view.addEventListener("pointerup", endPtr); view.addEventListener("pointercancel", endPtr);
@@ -2144,6 +2594,7 @@ $("vDesign").onclick = () => setView("design"); $("vOrig").onclick = () => setVi
 const setLook = l => { S.look = l; $("lookMesh").setAttribute("aria-pressed", l === "mesh"); $("lookBox").setAttribute("aria-pressed", l === "box"); store.set("ccp-look", l); renderView(); };
 $("lookMesh").onclick = () => setLook("mesh"); $("lookBox").onclick = () => setLook("box");
 $("trim").onclick = () => S.design && trimDesign();
+$("removeBg").onclick = () => S.design && removeBackground();
 $("origAlpha").oninput = e => { S.origAlpha = +e.target.value; $("origOut").textContent = S.origAlpha + "%"; if (S.view !== "design") setView("design"); else renderView(); }; $("vSnap").onclick = () => setView("snap"); $("vMap").onclick = () => setView("map"); $("vPrev").onclick = () => setView("prev");
 $("zIn").onclick = () => zoomAt(1.4); $("zOut").onclick = () => zoomAt(1 / 1.4); $("zFit").onclick = fitView;
 document.querySelectorAll("[data-tool]").forEach(b => b.onclick = () => setTool(b.dataset.tool));
@@ -2155,9 +2606,9 @@ $("dither").onchange = e => { S.dither = e.target.checked; redoFromSource(); };
 $("bgMode").onchange = e => { S.bgMode = e.target.value; $("bgColor").hidden = S.bgMode !== "color"; redoFromSource(); };
 $("bgColor").onchange = e => { S.bg = e.target.value; redoFromSource(); };
 $("convert").onclick = () => { S.edited = false; $("redoBar").hidden = true; convert(); };
-function setMesh(m) { S.mesh = m; $("mesh").value = m; $("mesh2").value = m; syncSizeInputs(); renderView(); }
+function setMesh(m) { S.mesh = m; $("mesh").value = m; syncSizeInputs(); renderView(); updateMeshWarn(); }
 $("mesh").onchange = e => setMesh(+e.target.value);
-$("mesh2").onchange = e => setMesh(+e.target.value);
+$("mesh2").onchange = () => { if (S.scan) findGrid(); };
 const aspect = () => { const L = S.layers.find(l => l.visible); return L ? L.img.height / L.img.width : (S.design ? S.design.h / S.design.w : 1); };
 function resizeDesign(w, h) {
   if (S.layers.length) { S.wSt = w; S.hSt = h; convert(); return; }
@@ -2271,6 +2722,23 @@ $("printDpi").onchange = e => S.printDpi = +e.target.value;
 $("makePdf").onclick = makePrintPdf; $("makePng").onclick = makePrintPng;
 $("savePrev").onclick = async () => { if (!S.scan) return; const c = buildPreview(); await saveFile("canvas-preview.png", await canvasBlob(c)); };
 $("testPage").onclick = testPagePdf;
+$("dmcSearch").oninput = renderDmc; $("dmcCancel").onclick = () => $("dmcDlg").close();
+$("addDmc").onclick = () => S.design && openDmc(null, dm => { pushUndo(); S.edited = true; S.design.pal.push(unhex("#" + dm[2])); S.sel = S.design.pal.length - 1; setTool("paint"); designDirty(); });
+$("snapDmc").onclick = snapAllToDmc;
+$("saveKey").onclick = colorKeyPdf; $("saveKey2").onclick = colorKeyPdf;
+$("iniOpen").onclick = openInitials;
+["iniText", "iniFont", "iniH", "iniPos", "iniBelow"].forEach(id => $(id).addEventListener("input", drawIniPreview));
+$("iniColor").oninput = e => { iniDraft.color = unhex(e.target.value); renderIniSwatches(); drawIniPreview(); };
+$("iniDmc").onclick = () => { const back = iniDraft.color; $("iniDlg").close(); openDmc(back, dm => { iniDraft.color = unhex("#" + dm[2]); $("iniColor").value = "#" + dm[2]; showDialog($("iniDlg")); renderIniSwatches(); drawIniPreview(); }); $("dmcCancel").onclick = () => { $("dmcDlg").close(); showDialog($("iniDlg")); $("dmcCancel").onclick = () => $("dmcDlg").close(); }; };
+$("iniCancel").onclick = () => $("iniDlg").close();
+$("iniRemove").onclick = async () => { $("iniDlg").close(); await applyInitials(null); toast("Initials removed."); };
+$("iniSave").onclick = async () => {
+  const ini = iniFromForm(); if (!ini.text.trim()) { $("iniNote").textContent = "Type your initials first."; return; }
+  $("iniDlg").close(); await applyInitials(ini); if (S.scan) setView("prev");
+  const r = S.grid ? forEachStitch(() => {}) : null;
+  toast(r && r.off ? "Initials added, but some stitches land off the canvas. Lower the distance below the design." : "Initials added. Check them in Preview.");
+};
+$("checkFile").onchange = e => { const f = e.target.files[0]; e.target.value = ""; if (f) checkPrint(f); };
 $("practicePdf").onclick = practicePdf;
 $("testPattern").onclick = async () => { useTestPattern(); if (S.grid) { setView("prev"); await makePrintPdf(); } else setStatus("printStatus", "The test pattern is ready. Scan your canvas on step 2, then come back and click Save print file.", "err"); }; $("backToMine").onclick = backToMine;
 
@@ -2300,6 +2768,7 @@ async function start(hot) {
     await applySaved(ls, null);
   } else startExample();
   resize(); fitView(); renderAll();
+  if (S.initials) applyInitials(S.initials); else iniSummary();
   const [cur, hist] = await Promise.all([idb.get("current"), idb.get("history")]);
   if (Array.isArray(hist)) { S.history = hist.filter(valid); renderHistory(); }
   if (!(hot && valid(hot.design)) && valid(cur) && (!valid(ls) || (cur.time || 0) >= (ls.time || 0))) {

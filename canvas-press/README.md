@@ -21,3 +21,15 @@ The four Carrier dots are printed by your own printer, so their spots in the sca
 Open `index.html` in Chrome, Edge or Safari, or use the published version.
 
 Reading a PDF uses pdf.js from cdnjs. If that can't load, the app pulls the scanned image out of the PDF itself. That works for most scanner PDFs.
+
+## More tools
+
+- **DMC colors**: every color shows its closest DMC floss number. **Pick DMC** chooses an exact DMC color, **Add a DMC color** adds one, and **Change all colors to their closest DMC** converts the whole design. **Replace all with** shows color swatches with their DMC numbers.
+- **Color key (PDF)**: a printable sheet with the design picture, each design color beside its closest DMC swatch, DMC number and name, and stitch counts. It's on the Design step (Save the design) and the Print step.
+- **Initials**: on the Print step, **Add initials** opens a pop-up for the letters, font, height, color (design colors or any DMC) and position. By default they go bottom right, 2 inches below the design. They print with the design and appear in Preview and the color key.
+- **Crop and remove background**: on the Design step. Crop is a tool: drag a box over the part to keep. Remove background clears the color around the outside edge of the design so it prints as bare canvas.
+- **Auto mesh**: the Scan step measures the canvas mesh and warns when it doesn't match the mesh the design is sized for, or the mesh you picked.
+- **Check my print**: at the end of the Print step, load a scan of a printed canvas (on its Carrier). The app measures where the ink landed on the threads and suggests a printer nudge if it's off by more than 1/10 of a stitch.
+
+DMC color data: [craft-color-codes](https://www.npmjs.com/package/craft-color-codes) by [MakeBead](https://makebead.com/), CC BY 4.0. DMC doesn't publish screen colors, so all DMC matches are approximate; check against real floss.
+
