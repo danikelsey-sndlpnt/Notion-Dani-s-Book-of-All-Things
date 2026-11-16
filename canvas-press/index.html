@@ -160,6 +160,7 @@ input:focus-visible, select:focus-visible, button:focus-visible { outline: 2px s
       <div class="vbar">
         <div class="seg" role="group" aria-label="View">
           <button id="vDesign" aria-pressed="true">Design</button>
+          <button id="vOrig" aria-pressed="false">Original</button>
           <button id="vSnap" aria-pressed="false">Snapshot</button>
           <button id="vMap" aria-pressed="false">Map</button>
           <button id="vPrev" aria-pressed="false">Preview</button>
@@ -238,6 +239,7 @@ input:focus-visible, select:focus-visible, button:focus-visible { outline: 2px s
             <button data-tool="fill" aria-pressed="false">Fill</button>
             <button data-tool="pick" aria-pressed="false">Pick color</button>
             <button data-tool="erase" aria-pressed="false">Erase</button>
+            <button data-tool="move" aria-pressed="false">Move stitches</button>
             <button data-tool="pan" aria-pressed="false">Move view</button>
           </div>
           <div class="row">
@@ -245,6 +247,15 @@ input:focus-visible, select:focus-visible, button:focus-visible { outline: 2px s
             <button class="btn small" id="redo">Redo</button>
             <label class="tog"><input type="checkbox" id="showGrid" checked> Grid lines</label>
           </div>
+          <div class="row">
+            <div class="seg" role="group" aria-label="Look">
+              <button id="lookMesh" aria-pressed="true">Canvas mesh</button>
+              <button id="lookBox" aria-pressed="false">Squares</button>
+            </div>
+            <button class="btn small" id="trim">Trim empty edges</button>
+          </div>
+          <label class="f" id="origRow">Original picture on top <small id="origOut">0%</small><input type="range" id="origAlpha" min="0" max="100" value="0"></label>
+          <p class="hint"><b>Move stitches</b>: drag the design to shift it. The original picture moves with it, so you can see what you moved. The frame grows if stitches go past the edge.</p>
           <div class="pal" id="pal"></div>
           <div class="selbox" id="selbox"></div>
           <div class="row">
@@ -401,6 +412,7 @@ const S = {
   place: { ox: 0, oy: 0 }, center: null,
   adj: { sat: 125, deepen: 8, contrast: 105, bleed: 8, raw: false },
   nudge: { x: 0, y: 0 }, printDpi: 300,
+  look: "mesh", origAlpha: 0, original: null,
   view: "design", showPts: true, showGrid: true, pickCenter: false, checked: new Set(), selNode: -1,
 };
 const store = {
@@ -635,6 +647,7 @@ function flatten() {
     x.drawImage(L.img, (c.width - dw) / 2 + L.ox / 100 * c.width, (c.height - dh) / 2 + L.oy / 100 * c.height, dw, dh);
   }
   x.globalAlpha = 1;
+  flatten.last = c;
   const d = x.getImageData(0, 0, c.width, c.height).data, out = new Float32Array(W * H * 4);
   for (let sy = 0; sy < H; sy++) for (let sx = 0; sx < W; sx++) {
     let r = 0, g = 0, b = 0, a = 0;
@@ -708,8 +721,8 @@ function compactPalette(d) {
   const px = d.px.map(v => v >= 0 ? remap[v] : -1);
   return { pal: order.map(o => d.pal[o]), px };
 }
-function setDesign(pal, px, w, h, keepSel) {
-  S.design = { w, h, pal, px };
+function setDesign(pal, px, w, h, keepSel, sx = 0, sy = 0) {
+  S.design = { w, h, pal, px, sx, sy };
   if (!keepSel) S.sel = 0;
   S.wSt = w; S.hSt = h; syncSizeInputs();
   designDirty();
@@ -718,6 +731,7 @@ function convert() {
   if (!S.layers.length) { toast("Add artwork first."); return; }
   pushUndo();
   const rgba = flatten();
+  S.original = { canvas: flatten.last, m: [0.25, 0, 0, 0.25, 0, 0] };
   const q = quantize(rgba, S.wSt, S.hSt, S.nColors, S.dither);
   setDesign(q.pal, q.px, S.wSt, S.hSt);
   S.exampleDesign = S.layers.every(l => l.example);
@@ -725,15 +739,16 @@ function convert() {
 }
 
 /* ---------------- design editing ---------------- */
+const snap = () => ({ w: S.design.w, h: S.design.h, pal: S.design.pal.map(c => c.slice()), px: S.design.px.slice(), sx: S.design.sx || 0, sy: S.design.sy || 0 });
 function pushUndo() {
   if (!S.design) return;
-  S.undo.push({ w: S.design.w, h: S.design.h, pal: S.design.pal.map(c => c.slice()), px: S.design.px.slice() });
+  S.undo.push(snap());
   if (S.undo.length > 60) S.undo.shift();
   S.redo.length = 0;
 }
 function restore(from, to) {
   const s = from.pop(); if (!s) return;
-  to.push({ w: S.design.w, h: S.design.h, pal: S.design.pal.map(c => c.slice()), px: S.design.px.slice() });
+  to.push(snap());
   S.design = s; S.wSt = s.w; S.hSt = s.h; syncSizeInputs();
   if (S.sel >= s.pal.length) S.sel = 0;
   designDirty(); renderAll();
@@ -747,9 +762,28 @@ function floodFill(i0, v) {
     if (x > 0) st.push(i - 1); if (x < d.w - 1) st.push(i + 1); if (y > 0) st.push(i - d.w); if (y < d.h - 1) st.push(i + d.w);
   }
 }
-let designCanvas = document.createElement("canvas");
+let designCanvas = document.createElement("canvas"), meshCanvas = document.createElement("canvas");
+const HOLE = "#4E4854", BARE = [238, 236, 231];
+const shade = (c, f) => "rgb(" + c.map(v => Math.round(v * f)).join(",") + ")";
+// One stitch = one crossing: a horizontal and a vertical thread meeting in the cell's middle, holes at the corners.
+function drawMeshCell(x, y) {
+  const d = S.design, k = meshCanvas.k, cx = meshCanvas.getContext("2d"), v = d.px[y * d.w + x];
+  const c = v >= 0 ? d.pal[v] : BARE, X = x * k, Y = y * k, t = k * 0.62, o = (k - t) / 2;
+  cx.fillStyle = HOLE; cx.fillRect(X, Y, k, k);
+  const over = (x + y) % 2 === 0;
+  const hBar = () => { cx.fillStyle = shade(c, over ? 1 : 0.9); cx.fillRect(X, Y + o, k, t); cx.fillStyle = shade(c, 0.8); cx.fillRect(X, Y + o + t - k * 0.07, k, k * 0.07); };
+  const vBar = () => { cx.fillStyle = shade(c, over ? 0.9 : 1); cx.fillRect(X + o, Y, t, k); cx.fillStyle = shade(c, 0.8); cx.fillRect(X + o + t - k * 0.07, Y, k * 0.07, k); };
+  if (over) { vBar(); hBar(); } else { hBar(); vBar(); }
+}
+function meshDirty() {
+  const d = S.design; if (!d) return;
+  const k = clamp(Math.floor(3600 / Math.max(d.w, d.h)), 6, 24);
+  meshCanvas.k = k; meshCanvas.width = d.w * k; meshCanvas.height = d.h * k;
+  for (let y = 0; y < d.h; y++) for (let x = 0; x < d.w; x++) drawMeshCell(x, y);
+}
 function designDirty() {
   const d = S.design; if (!d) return;
+  meshDirty();
   designCanvas.width = d.w; designCanvas.height = d.h;
   const x = designCanvas.getContext("2d"), id = x.createImageData(d.w, d.h);
   for (let i = 0; i < d.px.length; i++) { const v = d.px[i]; if (v < 0) continue; const c = d.pal[v]; id.data[i * 4] = c[0]; id.data[i * 4 + 1] = c[1]; id.data[i * 4 + 2] = c[2]; id.data[i * 4 + 3] = 255; }
@@ -1198,6 +1232,51 @@ function fillGridGaps(G) {
     if (!changed) break;
   }
 }
+// A blurry picture leaves "in-between" colors where two colors meet (a pale ring where pink meets bare canvas).
+// A color that mostly sits between two neighbors and lies on the line between them in color space is folded into those neighbors.
+function cleanBlends(q, W, H, bareLab) {
+  for (let pass = 0; pass < 3; pass++) {
+    const labs = q.pal.map(c => rgb2lab(c[0], c[1], c[2])), P = q.pal.length;
+    const labOf = v => v >= 0 ? labs[v] : bareLab;
+    const total = new Int32Array(P), blend = new Int32Array(P), repl = new Int16Array(W * H).fill(-2);
+    const share = new Float32Array(P); { let n = 0; for (const v of q.px) if (v >= 0) { share[v]++; n++; } for (let k = 0; k < P; k++) share[k] /= n || 1; }
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const i = y * W + x, a = q.px[i]; if (a < 0) continue; total[a]++;
+      // Look both ways along each direction for the colors on either side of a one-stitch line.
+      const at = (X, Y) => (X < 0 || Y < 0 || X >= W || Y >= H) ? -1 : q.px[Y * W + X];
+      const pairs = [];
+      for (const [dx, dy] of [[1, 0], [0, 1], [1, 1], [1, -1]]) {
+        let pL = null, pR = null;
+        for (let r = 1; r <= 1 && pL === null; r++) { const v = at(x - dx * r, y - dy * r); if (v !== a) pL = v; }
+        for (let r = 1; r <= 1 && pR === null; r++) { const v = at(x + dx * r, y + dy * r); if (v !== a) pR = v; }
+        if (pL !== null && pR !== null && pL !== pR && labOf(pL) && labOf(pR)) pairs.push([pL, pR]);
+      }
+      const A = labs[a]; let best = null;
+      // Between two painted colors, only small colors count as blur; a real color can sit between two others. Next to bare canvas, any color can.
+      for (const [m0, m1] of pairs) {
+        if (m0 >= 0 && m1 >= 0 && share[a] > 0.02) continue;
+        const p0 = labOf(m0), p1 = labOf(m1), dv = [p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]], L2 = dv[0] ** 2 + dv[1] ** 2 + dv[2] ** 2;
+        if (L2 < 100) continue;
+        const t = ((A[0] - p0[0]) * dv[0] + (A[1] - p0[1]) * dv[1] + (A[2] - p0[2]) * dv[2]) / L2;
+        if (t < 0.12 || t > 0.88) continue;
+        const dist = Math.hypot(A[0] - p0[0] - t * dv[0], A[1] - p0[1] - t * dv[1], A[2] - p0[2] - t * dv[2]);
+        if (dist < 7 && (!best || dist < best.d)) best = { d: dist, to: t < 0.5 ? m0 : m1 };
+      }
+      if (best) { blend[a]++; repl[i] = best.to; }
+    }
+    let changed = false;
+    for (let a = 0; a < P; a++) {
+      if (!total[a] || blend[a] / total[a] < 0.55) continue;
+      changed = true;
+      // Nearest other color for stitches of this color that weren't on a boundary.
+      let nb = -1, nd = 1e9; for (let b = 0; b < P; b++) { if (b === a) continue; const d = Math.hypot(labs[a][0] - labs[b][0], labs[a][1] - labs[b][1], labs[a][2] - labs[b][2]); if (d < nd) { nd = d; nb = b; } }
+      for (let i = 0; i < q.px.length; i++) if (q.px[i] === a) q.px[i] = repl[i] !== -2 ? repl[i] : nb;
+    }
+    if (!changed) break;
+    q = compactPalette(q);
+  }
+  return q;
+}
 async function importPainted(file) {
   busy(true, "Opening the picture…", 0.05); await tick();
   try {
@@ -1230,7 +1309,7 @@ async function importPainted(file) {
       const L = rgb2lab(R / n, Gc / n, B / n); lab[k * 3] = L[0]; lab[k * 3 + 1] = L[1]; lab[k * 3 + 2] = L[2];
     }
     // Bare canvas: the color around the outside, flood-filled inward over matching stitches.
-    const empty = new Uint8Array(N);
+    const empty = new Uint8Array(N); let bareLab = null;
     if ($("bareEmpty").checked) {
       const ring = [];
       for (let i = 0; i < G.gx; i++) ring.push(i, (G.gy - 1) * G.gx + i);
@@ -1240,6 +1319,7 @@ async function importPainted(file) {
       const near = k => Math.hypot(lab[k * 3] - bare[0], lab[k * 3 + 1] - bare[1], lab[k * 3 + 2] - bare[2]) < 12;
       const close = ring.filter(k => G.ST[k] && near(k)).length / ring.length;
       if (close > 0.5) {
+        bareLab = bare;
         const st = ring.filter(k => G.ST[k] && near(k));
         st.forEach(k => empty[k] = 1);
         while (st.length) {
@@ -1262,9 +1342,20 @@ async function importPainted(file) {
     }
     if (W > 400 || H > 400) throw new Error(`That reads as ${W} × ${H} stitches, more than the 400 limit. Try a picture of a smaller canvas.`);
     pushUndo();
-    const q = quantize(rgba, W, H, S.nColors, false);
+    let q = quantize(rgba, W, H, S.nColors, false);
+    q = cleanBlends(q, W, H, bareLab);
     S.layers = []; S.exampleDesign = false;
     setDesign(q.pal, q.px, W, H);
+    // Fit picture position = o + U*col + V*row over the found crossings, then invert it to place the picture under the stitches.
+    const A = [[0, 0, 0], [0, 0, 0], [0, 0, 0]], bx = [0, 0, 0], by = [0, 0, 0];
+    for (let k = 0; k < N; k++) {
+      if (G.ST[k] !== 1) continue; const c = k % G.gx - i0, r = ((k / G.gx) | 0) - j0, v = [1, c, r];
+      for (let a = 0; a < 3; a++) { for (let b = 0; b < 3; b++) A[a][b] += v[a] * v[b]; bx[a] += v[a] * G.X[k]; by[a] += v[a] * G.Y[k]; }
+    }
+    const solve3 = (M, y) => { const m = M.map((row, i) => [...row, y[i]]); for (let c = 0; c < 3; c++) { let pv = c; for (let r = c + 1; r < 3; r++) if (Math.abs(m[r][c]) > Math.abs(m[pv][c])) pv = r; [m[c], m[pv]] = [m[pv], m[c]]; for (let r = 0; r < 3; r++) if (r !== c) { const f = m[r][c] / m[c][c]; for (let k = c; k < 4; k++) m[r][k] -= f * m[c][k]; } } return m.map((row, i) => row[3] / row[i]); };
+    const [ax, ux, vx] = solve3(A, bx), [ay, uy, vy] = solve3(A, by), det = ux * vy - vx * uy;
+    const a = vy / det, c = -vx / det, b = -uy / det, dd = ux / det;
+    S.original = { canvas, m: [a, b, c, dd, -(a * ax + c * ay) + 0.5, -(b * ax + dd * ay) + 0.5] };
     S.importInfo = { name: file.name, gx: G.gx, gy: G.gy, guessed: G.ST.reduce((a, v) => a + (v === 3), 0) };
     busy(false); setTab(1); fitView(); renderAll();
     setStatus("importStatus", `Read ${W} × ${H} painted stitches (${G.gx} × ${G.gy} intersections in the picture) with ${q.pal.length} colors. Change the number of colors and read it again, or fix stitches by hand.`, "ok");
@@ -1486,11 +1577,48 @@ async function exampleScan(mesh = 13, flip = false) {
   return c;
 }
 
+/* ---------------- original picture ---------------- */
+// S.original.m maps picture pixels to stitch cells; the design's own shift (sx, sy) moves it along with the stitches.
+function drawOriginal(alpha) {
+  const o = S.original, d = S.design, m = o.m;
+  vctx.save(); vctx.globalAlpha = alpha; vctx.translate(d.sx || 0, d.sy || 0);
+  vctx.transform(m[0], m[1], m[2], m[3], m[4], m[5]);
+  vctx.imageSmoothingEnabled = true; vctx.drawImage(o.canvas, 0, 0); vctx.restore();
+}
+function origBounds() {
+  const o = S.original, m = o.m, d = S.design, W = o.canvas.width, H = o.canvas.height;
+  const pts = [[0, 0], [W, 0], [0, H], [W, H]].map(([x, y]) => [m[0] * x + m[2] * y + m[4] + (d.sx || 0), m[1] * x + m[3] * y + m[5] + (d.sy || 0)]);
+  return [Math.min(...pts.map(p => p[0])), Math.min(...pts.map(p => p[1])), Math.max(...pts.map(p => p[0])), Math.max(...pts.map(p => p[1]))];
+}
+function shiftDesign(dx, dy) {
+  const d = S.design; if (!dx && !dy) return;
+  let x0 = 1e9, y0 = 1e9, x1 = -1, y1 = -1;
+  for (let i = 0; i < d.px.length; i++) if (d.px[i] >= 0) { const x = i % d.w, y = (i / d.w) | 0; x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
+  if (x1 < 0) return;
+  const padL = Math.max(0, -(x0 + dx)), padT = Math.max(0, -(y0 + dy));
+  const W = Math.min(400, Math.max(d.w, x1 + dx + 1) + padL), H = Math.min(400, Math.max(d.h, y1 + dy + 1) + padT);
+  const px = new Int16Array(W * H).fill(-1);
+  for (let i = 0; i < d.px.length; i++) { if (d.px[i] < 0) continue; const X = i % d.w + dx + padL, Y = ((i / d.w) | 0) + dy + padT; if (X >= 0 && Y >= 0 && X < W && Y < H) px[Y * W + X] = d.px[i]; }
+  pushUndo();
+  setDesign(d.pal, px, W, H, true, (d.sx || 0) + dx + padL, (d.sy || 0) + dy + padT);
+  if (padL || padT || W !== d.w || H !== d.h) fitView();
+  renderView();
+}
+function trimDesign() {
+  const d = S.design; let x0 = 1e9, y0 = 1e9, x1 = -1, y1 = -1;
+  for (let i = 0; i < d.px.length; i++) if (d.px[i] >= 0) { const x = i % d.w, y = (i / d.w) | 0; x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
+  if (x1 < 0) return;
+  const W = x1 - x0 + 1, H = y1 - y0 + 1; if (W === d.w && H === d.h) { toast("No empty edges to trim."); return; }
+  const px = new Int16Array(W * H);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) px[y * W + x] = d.px[(y + y0) * d.w + x + x0];
+  pushUndo(); setDesign(d.pal, px, W, H, true, (d.sx || 0) - x0, (d.sy || 0) - y0); fitView();
+}
+
 /* ---------------- view ---------------- */
 const view = $("view"), vctx = view.getContext("2d");
 const V = { s: 1, tx: 0, ty: 0 };
 function worldSize() {
-  if (S.view === "design") return S.design ? [S.design.w, S.design.h] : [60, 60];
+  if (S.view === "design" || S.view === "orig") return S.design ? [S.design.w, S.design.h] : [60, 60];
   return S.scan ? [S.scan.canvas.width, S.scan.canvas.height] : [2550, 3300];
 }
 function resize() {
@@ -1501,7 +1629,9 @@ function resize() {
 function fitView() {
   const r = view.getBoundingClientRect(), [w, h] = worldSize();
   let target = [0, 0, w, h];
-  if (S.view !== "design" && S.grid) {
+  if (S.view === "orig" && S.original) {
+    const b = origBounds(); target = [Math.min(0, b[0]), Math.min(0, b[1])]; target.push(Math.max(w, b[2]) - target[0], Math.max(h, b[3]) - target[1]);
+  } else if (S.view !== "design" && S.view !== "orig" && S.grid) {
     let minx = 1e9, miny = 1e9, maxx = -1e9, maxy = -1e9; const G = S.grid;
     for (let k = 0; k < G.gx * G.gy; k++) if (G.ST[k]) { minx = Math.min(minx, G.X[k]); maxx = Math.max(maxx, G.X[k]); miny = Math.min(miny, G.Y[k]); maxy = Math.max(maxy, G.Y[k]); }
     const pad = G.pitch * 4; target = [minx - pad, miny - pad, maxx - minx + pad * 2, maxy - miny + pad * 2];
@@ -1524,20 +1654,44 @@ function draw() {
   vctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--stage").trim() || "#17121C";
   vctx.fillRect(0, 0, cw, ch);
   const stat = [];
-  if (S.view === "design") {
+  if (S.view === "design" || S.view === "orig") {
     const d = S.design; if (!d) return;
+    const mv = drag && drag.type === "move" ? drag.delta : [0, 0];
     vctx.save(); vctx.translate(V.tx, V.ty); vctx.scale(V.s, V.s);
-    // Checker shows unprinted stitches.
-    vctx.fillStyle = "#ffffff"; vctx.fillRect(0, 0, d.w, d.h);
-    vctx.fillStyle = "#E7E2EC";
-    if (V.s > 3) for (let y = 0; y < d.h; y++) for (let x = 0; x < d.w; x++) if (d.px[y * d.w + x] < 0) { vctx.fillRect(x, y, 0.5, 0.5); vctx.fillRect(x + 0.5, y + 0.5, 0.5, 0.5); }
-    vctx.imageSmoothingEnabled = false; vctx.drawImage(designCanvas, 0, 0);
+    if (S.view === "orig") {
+      if (S.original) { drawOriginal(1); }
+      else { vctx.fillStyle = "#BCB2C8"; vctx.font = "1px Figtree, sans-serif"; }
+      vctx.restore();
+      vctx.save(); vctx.strokeStyle = COL.outline; vctx.lineWidth = 2; vctx.setLineDash([6, 4]); vctx.strokeRect(V.tx, V.ty, d.w * V.s, d.h * V.s); vctx.restore();
+      if (!S.original) { vctx.fillStyle = "#BCB2C8"; vctx.font = "600 15px Figtree, sans-serif"; vctx.textAlign = "center"; vctx.fillText("No original picture for this design.", cw / 2, ch / 2); }
+      stat.push("Original picture", `stitch frame ${d.w} × ${d.h}`);
+      $("vstat").innerHTML = stat.map(x => `<span>${x}</span>`).join("");
+      return;
+    }
+    vctx.translate(mv[0], mv[1]);
+    if (S.look === "mesh") {
+      vctx.imageSmoothingEnabled = true; vctx.imageSmoothingQuality = "high"; vctx.drawImage(meshCanvas, 0, 0, d.w, d.h);
+    } else {
+      // Checker shows unprinted stitches.
+      vctx.fillStyle = "#ffffff"; vctx.fillRect(0, 0, d.w, d.h);
+      vctx.fillStyle = "#E7E2EC";
+      if (V.s > 3) for (let y = 0; y < d.h; y++) for (let x = 0; x < d.w; x++) if (d.px[y * d.w + x] < 0) { vctx.fillRect(x, y, 0.5, 0.5); vctx.fillRect(x + 0.5, y + 0.5, 0.5, 0.5); }
+      vctx.imageSmoothingEnabled = false; vctx.drawImage(designCanvas, 0, 0);
+    }
+    if (S.original && S.origAlpha > 0) drawOriginal(S.origAlpha / 100);
     vctx.restore();
-    if (S.showGrid && V.s >= 5) {
+    if (mv[0] || mv[1]) { vctx.save(); vctx.strokeStyle = COL.outline; vctx.lineWidth = 2; vctx.setLineDash([6, 4]); vctx.strokeRect(V.tx, V.ty, d.w * V.s, d.h * V.s); vctx.restore(); }
+    if (S.showGrid && V.s >= 5 && S.look !== "mesh") {
       vctx.save(); vctx.lineWidth = 1;
       const x0 = Math.max(0, Math.floor(-V.tx / V.s)), x1 = Math.min(d.w, Math.ceil((cw - V.tx) / V.s)), y0 = Math.max(0, Math.floor(-V.ty / V.s)), y1 = Math.min(d.h, Math.ceil((ch - V.ty) / V.s));
       for (let x = x0; x <= x1; x++) { vctx.strokeStyle = x % 10 === 0 ? "rgba(20,10,30,.55)" : "rgba(20,10,30,.16)"; const X = Math.round(V.tx + x * V.s) + 0.5; vctx.beginPath(); vctx.moveTo(X, V.ty + y0 * V.s); vctx.lineTo(X, V.ty + y1 * V.s); vctx.stroke(); }
       for (let y = y0; y <= y1; y++) { vctx.strokeStyle = y % 10 === 0 ? "rgba(20,10,30,.55)" : "rgba(20,10,30,.16)"; const Y = Math.round(V.ty + y * V.s) + 0.5; vctx.beginPath(); vctx.moveTo(V.tx + x0 * V.s, Y); vctx.lineTo(V.tx + x1 * V.s, Y); vctx.stroke(); }
+      vctx.restore();
+    }
+    if (S.showGrid && V.s >= 3 && S.look === "mesh") {
+      vctx.save(); vctx.strokeStyle = "rgba(255,212,0,.55)"; vctx.lineWidth = 1;
+      for (let x = 10; x < d.w; x += 10) { const X = Math.round(V.tx + x * V.s) + 0.5; vctx.beginPath(); vctx.moveTo(X, V.ty); vctx.lineTo(X, V.ty + d.h * V.s); vctx.stroke(); }
+      for (let y = 10; y < d.h; y += 10) { const Y = Math.round(V.ty + y * V.s) + 0.5; vctx.beginPath(); vctx.moveTo(V.tx, Y); vctx.lineTo(V.tx + d.w * V.s, Y); vctx.stroke(); }
       vctx.restore();
     }
     // Center stitch.
@@ -1546,6 +1700,7 @@ function draw() {
     stat.push(`${d.w} × ${d.h} stitches`, `${(d.w / S.mesh).toFixed(2)} × ${(d.h / S.mesh).toFixed(2)} in on ${S.mesh} mesh`, `${d.pal.length} colors`);
     if (S.exampleDesign) stat.unshift("EX");
     if (hover.cell) stat.push(`col ${hover.cell[0] + 1}, row ${hover.cell[1] + 1}`);
+    if (mv[0] || mv[1]) stat.push(`moving ${mv[0] > 0 ? "+" : ""}${mv[0]}, ${mv[1] > 0 ? "+" : ""}${mv[1]}`);
   } else {
     if (!S.scan) { vctx.fillStyle = "#BCB2C8"; vctx.font = "600 15px Figtree, sans-serif"; vctx.textAlign = "center"; vctx.fillText("Load a scan on step 2, or try the example scan.", cw / 2, ch / 2); return; }
     const src = S.view === "prev" ? (previewStale ? buildPreview() : previewCanvas) : S.scan.canvas;
@@ -1622,8 +1777,9 @@ view.addEventListener("pointerdown", e => {
   const panReq = e.button === 1 || e.button === 2 || spaceDown;
   if (S.view === "design" && S.design && !panReq && S.tool !== "pan") {
     const cell = [Math.floor(wx), Math.floor(wy)];
-    if (cell[0] < 0 || cell[1] < 0 || cell[0] >= S.design.w || cell[1] >= S.design.h) { drag = { type: "pan", last: [sx, sy] }; return; }
+    if (S.tool !== "move" && (cell[0] < 0 || cell[1] < 0 || cell[0] >= S.design.w || cell[1] >= S.design.h)) { drag = { type: "pan", last: [sx, sy] }; return; }
     const i = cell[1] * S.design.w + cell[0];
+    if (S.tool === "move") { drag = { type: "move", start: [wx, wy], delta: [0, 0] }; return; }
     if (S.tool === "pick") { const v = S.design.px[i]; if (v >= 0) { S.sel = v; setTool("paint"); renderPalette(); } return; }
     pushUndo();
     if (S.tool === "fill") { floodFill(i, S.sel); designDirty(); renderView(); return; }
@@ -1660,6 +1816,7 @@ view.addEventListener("pointermove", e => {
   }
   const [wx, wy] = toWorld(sx, sy);
   if (drag.type === "pan") { V.tx += sx - drag.last[0]; V.ty += sy - drag.last[1]; drag.last = [sx, sy]; renderView(); }
+  else if (drag.type === "move") { const nd = [Math.round(wx - drag.start[0]), Math.round(wy - drag.start[1])]; if (nd[0] !== drag.delta[0] || nd[1] !== drag.delta[1]) { drag.delta = nd; renderView(); } }
   else if (drag.type === "paint") { const c = [Math.floor(wx), Math.floor(wy)]; paintLine(drag.last, c, drag.v); drag.last = c; }
   else if (drag.type === "node") { const G = S.grid; G.X[drag.k] = wx + drag.off[0]; G.Y[drag.k] = wy + drag.off[1]; G.ST[drag.k] = 4; drag.moved = true; renderView(); }
   else if (drag.type === "mark") { S.marks[drag.k] = [wx, wy]; updateH(); renderView(); }
@@ -1669,6 +1826,7 @@ const endPtr = e => {
   if (drag && drag.type === "node" && drag.moved) { computeCorners(); previewDirty(); updateCounts(); }
   if (drag && drag.type === "mark") setStatus("scanStatus", "Corner dot moved by hand.", "ok");
   if (drag && drag.type === "paint") designDirty();
+  if (drag && drag.type === "move") { const dl = drag.delta; drag = null; shiftDesign(dl[0], dl[1]); return; }
   if (ptrs.size < 2) drag = null;
 };
 view.addEventListener("pointerup", endPtr); view.addEventListener("pointercancel", endPtr);
@@ -1679,7 +1837,7 @@ function paintLine(a, b, v) {
   const d = S.design, n = Math.max(Math.abs(b[0] - a[0]), Math.abs(b[1] - a[1]), 1);
   for (let t = 0; t <= n; t++) {
     const x = Math.round(a[0] + (b[0] - a[0]) * t / n), y = Math.round(a[1] + (b[1] - a[1]) * t / n);
-    if (x >= 0 && y >= 0 && x < d.w && y < d.h) { d.px[y * d.w + x] = v; const c = v >= 0 ? d.pal[v] : null; const cx = designCanvas.getContext("2d"); if (c) { cx.fillStyle = hex(c); cx.fillRect(x, y, 1, 1); } else cx.clearRect(x, y, 1, 1); }
+    if (x >= 0 && y >= 0 && x < d.w && y < d.h) { d.px[y * d.w + x] = v; const c = v >= 0 ? d.pal[v] : null; const cx = designCanvas.getContext("2d"); if (c) { cx.fillStyle = hex(c); cx.fillRect(x, y, 1, 1); } else cx.clearRect(x, y, 1, 1); drawMeshCell(x, y); }
   }
   renderView();
 }
@@ -1698,9 +1856,9 @@ window.addEventListener("keyup", e => { if (e.code === "Space") spaceDown = fals
 /* ---------------- UI wiring ---------------- */
 function setStatus(id, msg, kind) { const el = $(id); el.hidden = false; el.textContent = msg; el.className = "status" + (kind ? " " + kind : ""); }
 function setView(v) {
-  if (v !== "design" && !S.scan && v !== "snap") v = "snap";
+  if (v !== "design" && v !== "orig" && !S.scan && v !== "snap") v = "snap";
   S.view = v;
-  [["vDesign", "design"], ["vSnap", "snap"], ["vMap", "map"], ["vPrev", "prev"]].forEach(([id, k]) => $(id).setAttribute("aria-pressed", k === v));
+  [["vDesign", "design"], ["vOrig", "orig"], ["vSnap", "snap"], ["vMap", "map"], ["vPrev", "prev"]].forEach(([id, k]) => $(id).setAttribute("aria-pressed", k === v));
   fitView();
 }
 function setTab(n) {
@@ -1737,7 +1895,11 @@ function updateUI() {
 function renderAll() { renderLayers(); renderPalette(); syncSizeInputs(); updateUI(); renderView(); }
 
 $("tab1").onclick = () => setTab(1); $("tab2").onclick = () => setTab(2); $("tab3").onclick = () => setTab(3);
-$("vDesign").onclick = () => setView("design"); $("vSnap").onclick = () => setView("snap"); $("vMap").onclick = () => setView("map"); $("vPrev").onclick = () => setView("prev");
+$("vDesign").onclick = () => setView("design"); $("vOrig").onclick = () => setView("orig");
+const setLook = l => { S.look = l; $("lookMesh").setAttribute("aria-pressed", l === "mesh"); $("lookBox").setAttribute("aria-pressed", l === "box"); store.set("ccp-look", l); renderView(); };
+$("lookMesh").onclick = () => setLook("mesh"); $("lookBox").onclick = () => setLook("box");
+$("trim").onclick = () => S.design && trimDesign();
+$("origAlpha").oninput = e => { S.origAlpha = +e.target.value; $("origOut").textContent = S.origAlpha + "%"; if (S.view !== "design") setView("design"); else renderView(); }; $("vSnap").onclick = () => setView("snap"); $("vMap").onclick = () => setView("map"); $("vPrev").onclick = () => setView("prev");
 $("zIn").onclick = () => zoomAt(1.4); $("zOut").onclick = () => zoomAt(1 / 1.4); $("zFit").onclick = fitView;
 document.querySelectorAll("[data-tool]").forEach(b => b.onclick = () => setTool(b.dataset.tool));
 $("undo").onclick = () => restore(S.undo, S.redo); $("redo").onclick = () => restore(S.redo, S.undo);
@@ -1778,7 +1940,7 @@ $("addArt").onchange = async e => {
   if (firstReal) { if (S.wSt < 20) S.wSt = 60; const a = S.layers[0].img.height / S.layers[0].img.width; S.hSt = clamp(Math.round(S.wSt * a), 4, 400); }
   setTab(1); renderLayers(); convert();
 };
-$("readPainted").onchange = e => { const f = e.target.files[0]; e.target.value = ""; if (!f) return; S.importFile = f; importPainted(f); };
+$("readPainted").onchange = e => { const f = e.target.files[0]; e.target.value = ""; if (!f) return; S.importFile = f; if (S.nColors < 12) { S.nColors = 12; $("nColors").value = 12; $("ncOut").textContent = 12; } importPainted(f); };
 $("bareEmpty").onchange = () => { if (S.importFile && !S.layers.length) importPainted(S.importFile); };
 $("openStitch").onchange = async e => {
   const f = e.target.files[0]; e.target.value = ""; if (!f) return;
@@ -1786,7 +1948,7 @@ $("openStitch").onchange = async e => {
     let d;
     if (/\.(oxs|xml)$/i.test(f.name)) d = parseOXS(await f.text()); else d = stitchImageToDesign(await loadImageFile(f));
     if (!d) throw new Error("No stitches were found in this file.");
-    pushUndo(); S.importFile = null; S.layers = []; S.exampleDesign = false; setDesign(d.pal, d.px, d.w, d.h); setTab(1); fitView(); renderAll();
+    pushUndo(); S.importFile = null; S.original = null; S.layers = []; S.exampleDesign = false; setDesign(d.pal, d.px, d.w, d.h); setTab(1); fitView(); renderAll();
     toast(`Opened ${d.w} × ${d.h} stitches, ${d.pal.length} colors.`);
   } catch (err) { toast(err.message, 5000); }
 };
@@ -1865,6 +2027,7 @@ $("testPage").onclick = testPagePdf;
   const adj = store.get("ccp-adj"); if (adj) Object.assign(S.adj, adj);
   const nd = store.get("ccp-nudge"); if (nd) S.nudge = nd;
   ["sat", "deepen", "contrast", "bleed"].forEach(k => $(k).value = S.adj[k]); $("rawColors").checked = S.adj.raw; adjOut(); nudgeOut();
+  const lk = store.get("ccp-look"); if (lk === "box") setLook("box");
   const saved = store.get("ccp-design");
   if (saved && saved.px && saved.px.length === saved.w * saved.h) {
     if (saved.mesh) setMesh(saved.mesh);
@@ -1875,6 +2038,7 @@ $("testPage").onclick = testPagePdf;
     S.layers = [Object.assign(layerDefaults("Strawberry (example)", exampleArtwork()), { example: true })];
     S.nColors = 8; $("nColors").value = 8; $("ncOut").textContent = 8;
     const q = quantize(flatten(), S.wSt, S.hSt, S.nColors, false);
+    S.original = { canvas: flatten.last, m: [0.25, 0, 0, 0.25, 0, 0] };
     S.exampleDesign = true; setDesign(q.pal, q.px, S.wSt, S.hSt);
   }
   new ResizeObserver(resize).observe(view);
