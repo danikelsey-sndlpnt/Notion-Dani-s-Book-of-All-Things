@@ -55,11 +55,17 @@ h1 { font-family: var(--display); font-weight: 800; font-size: clamp(21px, 3.2vw
 h1 span { color: var(--accent); }
 .sub { color: var(--ink-2); margin: 0; max-width: 62ch; }
 .app { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 410px); gap: 20px; align-items: start; }
-@media (max-width: 900px) { .app { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 1000px) { .app { grid-template-columns: minmax(0, 1fr) minmax(0, 330px); gap: 14px; } }
+@media (max-width: 700px) { .app { grid-template-columns: minmax(0, 1fr); } }
 
 /* Work surface */
 .stage { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 10px); display: grid; gap: 8px; min-width: 0; }
-@media (max-width: 900px) { .stage { position: static; } }
+@media (max-width: 700px) {
+  .stage { top: env(safe-area-inset-top, 0px); z-index: 6; background: var(--bg); padding-bottom: 8px; margin-inline: -4px; padding-inline: 4px; box-shadow: 0 8px 12px -10px rgba(0,0,0,.35); }
+  body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--bg); }
+  header.top { margin-bottom: 8px; }
+  header.top .sub { display: none; }
+}
 .vbar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .seg { display: inline-flex; background: var(--surface-2); border-radius: 10px; padding: 3px; gap: 2px; flex-wrap: wrap; }
 .seg button { border: 0; background: transparent; color: var(--ink-2); font: 600 13px var(--body); padding: 6px 11px; border-radius: 8px; cursor: pointer; }
@@ -67,8 +73,43 @@ h1 span { color: var(--accent); }
 .seg button:disabled { opacity: .45; cursor: not-allowed; }
 .spacer { flex: 1; }
 .screen { position: relative; background: var(--stage); border-radius: 16px; overflow: hidden; height: min(80vh, 900px); min-height: 360px; box-shadow: var(--shadow); }
-@media (max-width: 900px) { .screen { height: 62vh; } }
+@media (max-width: 1000px) { .screen { height: min(78vh, 760px); } }
+@media (max-width: 700px) { .screen { height: 48vh; height: 48svh; min-height: 260px; } }
+@media (max-width: 700px) {
+  .vbar { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .vbar::-webkit-scrollbar { display: none; }
+  .vbar .seg { flex-wrap: nowrap; flex: none; }
+  .vbar .seg button { padding: 6px 9px; }
+  #zOut, #zIn { display: none; }
+  .vbar .seg[aria-label="Zoom"] { order: -1; }
+  .vbar .spacer { display: none; }
+  .qbar button { padding: 7px 7px; }
+  .vstat { flex-wrap: nowrap; overflow: hidden; }
+  .vstat span { white-space: nowrap; font-size: 11px; }
+}
+/* Phones turned sideways: drop the intro and give the picture the height. */
+@media (max-height: 500px) {
+  .wrap { padding-block: 6px 24px; }
+  header.top { margin-bottom: 6px; }
+  header.top .sub { display: none; }
+  h1 { font-size: 18px; }
+  .screen { height: calc(100vh - 96px); height: calc(100svh - 96px); min-height: 220px; }
+  .stage { top: 4px; }
+  .vbar { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .vbar .seg { flex-wrap: nowrap; flex: none; }
+  .vbar .seg[aria-label="Zoom"] { order: -1; }
+  .vbar .spacer { display: none; }
+  #zOut, #zIn { display: none; }
+}
 .screen canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; display: block; }
+.qbar { position: absolute; left: 8px; right: 8px; top: 8px; display: grid; gap: 6px; pointer-events: none; }
+.qbar > div { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; pointer-events: auto; width: max-content; max-width: 100%; padding: 4px; border-radius: 12px; background: rgba(23,18,28,.82); backdrop-filter: blur(6px); }
+.qbar > div::-webkit-scrollbar { display: none; }
+.qbar button { flex: none; border: 0; background: transparent; color: #EEE9F3; font: 600 12px var(--body); padding: 7px 9px; border-radius: 8px; cursor: pointer; min-height: 34px; }
+.qbar button[aria-pressed=true] { background: #EEE9F3; color: #17121C; }
+.qbar .qsw { width: 34px; height: 34px; padding: 0; border-radius: 8px; border: 2px solid transparent; }
+.qbar .qsw[aria-pressed=true] { border-color: #fff; box-shadow: 0 0 0 2px #F06292; background-clip: padding-box; }
+.qbar .qsep { width: 1px; background: rgba(255,255,255,.2); margin: 4px 2px; flex: none; }
 .vstat { position: absolute; left: 10px; bottom: 10px; right: 10px; display: flex; flex-wrap: wrap; gap: 6px; pointer-events: none; }
 .vstat span { background: rgba(10,8,14,.72); color: #F1ECF6; font: 500 12px var(--mono); padding: 3px 8px; border-radius: 6px; font-variant-numeric: tabular-nums; }
 .vstat .ex { background: #9A6200; color: #fff; font-family: var(--body); font-weight: 700; }
@@ -196,6 +237,19 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
       </div>
       <div class="screen" id="screen">
         <canvas id="view"></canvas>
+        <div class="qbar" id="qbar">
+          <div role="toolbar" aria-label="Quick tools">
+            <button data-tool="paint" aria-pressed="true">Paint</button>
+            <button data-tool="fill" aria-pressed="false">Fill</button>
+            <button data-tool="erase" aria-pressed="false">Erase</button>
+            <button data-tool="pick" aria-pressed="false">Pick</button>
+            <button data-tool="pan" aria-pressed="false">Move view</button>
+            <span class="qsep"></span>
+            <button id="qUndo" aria-label="Undo">Undo</button>
+            <button id="qRedo" aria-label="Redo">Redo</button>
+          </div>
+          <div id="qpal" aria-label="Colors"></div>
+        </div>
         <div class="vstat" id="vstat"></div>
         <div class="busy" id="busy" hidden><div><span id="busyText">Working…</span><div class="meter"><i id="busyBar"></i></div></div></div>
       </div>
@@ -955,6 +1009,13 @@ function renderPalette() {
   ub.title = "Unprinted (bare canvas)"; ub.innerHTML = `<i style="background:repeating-linear-gradient(45deg,#EEECE7 0 4px,#D9D4DE 4px 8px)"></i><span class="dm">bare</span>${empty}`;
   ub.onclick = () => { setTool("erase"); renderPalette(); };
   box.appendChild(ub);
+  const qp = $("qpal"); qp.textContent = "";
+  d.pal.forEach((c, i) => {
+    const b = document.createElement("button"); b.className = "qsw"; b.style.background = hex(c); b.title = `${dmcLabel(nearestDmc(c))} ${nearestDmc(c)[1]}`;
+    b.setAttribute("aria-pressed", i === S.sel && S.tool !== "erase"); b.setAttribute("aria-label", b.title);
+    b.onclick = () => { S.sel = i; if (S.tool !== "fill") setTool("paint"); else renderPalette(); };
+    qp.appendChild(b);
+  });
   const sb = $("selbox"); sb.textContent = "";
   if (!d.pal.length) { sb.innerHTML = `<span class="hint">No colors yet. Add one below.</span>`; return; }
   const c = d.pal[S.sel] || d.pal[0], dm = nearestDmc(c);
@@ -2345,8 +2406,10 @@ function fitView() {
     for (let k = 0; k < G.gx * G.gy; k++) if (G.ST[k]) { minx = Math.min(minx, G.X[k]); maxx = Math.max(maxx, G.X[k]); miny = Math.min(miny, G.Y[k]); maxy = Math.max(maxy, G.Y[k]); }
     const pad = G.pitch * 4; target = [minx - pad, miny - pad, maxx - minx + pad * 2, maxy - miny + pad * 2];
   }
-  V.s = Math.min(r.width / target[2], r.height / target[3]) * 0.94;
-  V.tx = (r.width - target[2] * V.s) / 2 - target[0] * V.s; V.ty = (r.height - target[3] * V.s) / 2 - target[1] * V.s;
+  // Leave room for the quick toolbar on top and the info chips at the bottom.
+  const topPad = S.view === "design" && !$("qbar").hidden ? $("qbar").getBoundingClientRect().height + 10 : 0, botPad = 30, H = Math.max(80, r.height - topPad - botPad);
+  V.s = Math.min(r.width / target[2], H / target[3]) * 0.96;
+  V.tx = (r.width - target[2] * V.s) / 2 - target[0] * V.s; V.ty = topPad + (H - target[3] * V.s) / 2 - target[1] * V.s;
   renderView();
 }
 function zoomAt(f, cx, cy) {
@@ -2591,6 +2654,7 @@ function setStatus(id, msg, kind) { const el = $(id); el.hidden = false; el.text
 function setView(v) {
   if (v !== "design" && v !== "orig" && !S.scan && v !== "snap") v = "snap";
   S.view = v;
+  $("qbar").hidden = v !== "design";
   $("vNext").hidden = !(v === "map" && S.grid);
   [["vDesign", "design"], ["vOrig", "orig"], ["vSnap", "snap"], ["vMap", "map"], ["vPrev", "prev"]].forEach(([id, k]) => $(id).setAttribute("aria-pressed", k === v));
   fitView();
@@ -2642,7 +2706,7 @@ $("removeBg").onclick = () => S.design && removeBackground();
 $("origAlpha").oninput = e => { S.origAlpha = +e.target.value; $("origOut").textContent = S.origAlpha + "%"; if (S.view !== "design") setView("design"); else renderView(); }; $("vSnap").onclick = () => setView("snap"); $("vMap").onclick = () => setView("map"); $("vPrev").onclick = () => setView("prev");
 $("zIn").onclick = () => zoomAt(1.4); $("zOut").onclick = () => zoomAt(1 / 1.4); $("zFit").onclick = fitView;
 document.querySelectorAll("[data-tool]").forEach(b => b.onclick = () => { if (b.dataset.tool === "text") { openTextTool(); return; } setTool(b.dataset.tool); });
-$("undo").onclick = () => restore(S.undo, S.redo); $("redo").onclick = () => restore(S.redo, S.undo);
+$("undo").onclick = $("qUndo").onclick = () => restore(S.undo, S.redo); $("redo").onclick = $("qRedo").onclick = () => restore(S.redo, S.undo);
 $("showGrid").onchange = e => { S.showGrid = e.target.checked; renderView(); };
 $("nColors").oninput = e => { S.nColors = +e.target.value; $("ncOut").textContent = S.nColors; };
 $("nColors").onchange = redoFromSource;
