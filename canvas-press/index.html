@@ -300,6 +300,7 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
             <button class="btn small" id="libSaveNew" hidden>Save as new</button>
           </div>
           <p class="hint" id="libNote">Saved designs stay on this device, with their original picture, so you can open them later and keep editing.</p>
+          <div class="status err" id="storageWarn" hidden>This view can't keep saved designs after you close it (the browser is blocking storage here). To keep a design: click <b>Back up all (file)</b> after saving, and accept the save prompt. Next time, use <b>Open a backup</b> to bring it back. Opening the app in Safari or Chrome usually lets saving work.</div>
           <div class="hist" id="lib"></div>
           <div class="row">
             <button class="btn small" id="findLost">Find lost designs</button>
@@ -2564,7 +2565,7 @@ async function saveToLibrary(asNew) {
   else { e = { id: newId(), name, rec, time: Date.now() }; S.library.push(e); S.libId = e.id; }
   store.set("ccp-libid", S.libId);
   await saveLibrary(); $("libName").value = name;
-  toast(`Saved "${name}".`);
+  toast(S.storageOK === false ? `Saved "${name}" for now, but this view can't keep it after you close it. Click Back up all (file) to keep it.` : `Saved "${name}".`, S.storageOK === false ? 7000 : 2800);
 }
 async function openLibrary(id) {
   const e = S.library.find(x => x.id === id); if (!e) return;
@@ -2606,6 +2607,18 @@ async function restoreLibrary(file) {
     }
     await saveLibrary(); toast(`Added ${n} design${n === 1 ? "" : "s"} from the backup.`);
   } catch (err) { toast(err.message || "That backup couldn't be read.", 5000); }
+}
+
+/* ---------------- can this view save? ---------------- */
+async function checkStorage() {
+  let ok = false;
+  try { const k = "probe-" + newId(); await idb.set(k, 1); ok = (await idb.get(k)) === 1; await idb.del(k); } catch (e) { ok = false; }
+  let persisted = null;
+  try { if (navigator.storage && navigator.storage.persist) persisted = await navigator.storage.persist(); } catch (e) {}
+  S.storageOK = ok;
+  $("storageWarn").hidden = ok;
+  if (!ok) toast("Heads up: this view can't keep saved designs after you close it. Use Back up all (file) to keep them.", 7000);
+  return { ok, persisted };
 }
 
 /* ---------------- find lost designs ---------------- */
@@ -3627,7 +3640,7 @@ async function start(hot) {
   } else startExample();
   resize(); fitView(); renderAll();
   if (S.initials) applyInitials(S.initials); else iniSummary();
-  S.libId = store.get("ccp-libid"); loadLibrary();
+  S.libId = store.get("ccp-libid"); loadLibrary(); checkStorage();
   const [cur, hist] = await Promise.all([idb.get("current"), idb.get("history")]);
   if (Array.isArray(hist)) { S.history = hist.filter(valid); renderHistory(); }
   if (!(hot && valid(hot.design)) && valid(cur) && (!valid(ls) || (cur.time || 0) >= (ls.time || 0))) {
