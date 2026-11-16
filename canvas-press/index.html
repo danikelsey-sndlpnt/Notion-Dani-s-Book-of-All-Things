@@ -338,6 +338,14 @@ input:focus-visible, select:focus-visible, button:focus-visible { outline: 2px s
       <div class="sec" id="pane3" hidden>
         <div class="status err" id="printNeed">Load a scan and find its intersections on the Scan step first.</div>
         <div class="group">
+          <h3>Test first</h3>
+          <p class="hint">A grid of one-stitch lines every 5 stitches, with a blue center cross. Printed on scrap canvas, each line should sit on exactly one row of intersections. Your own design is kept and comes back with one click.</p>
+          <div class="row">
+            <button class="btn small" id="testPattern">Use the test pattern</button>
+            <button class="btn small" id="backToMine" hidden>Back to my design</button>
+          </div>
+        </div>
+        <div class="group">
           <h3>Place the design</h3>
           <div class="row">
             <label class="f">Move right <small>stitches</small><input type="number" id="ox" value="0" step="1"></label>
@@ -1536,6 +1544,30 @@ async function testPagePdf() {
 }
 const fileBase = () => "canvas-" + new Date().toISOString().slice(0, 10);
 
+/* ---------------- print test pattern ---------------- */
+function useTestPattern() {
+  const d = S.design;
+  if (d && !S.testing) store.set("ccp-before-test", { w: d.w, h: d.h, pal: d.pal, px: Array.from(d.px), sx: d.sx || 0, sy: d.sy || 0, original: !!S.original });
+  if (!S.testing) S.savedOriginal = S.original;
+  const n = clamp(S.mesh * 3, 30, 54), w = n + 1, h = n + 1, px = new Int16Array(w * h).fill(-1), c = Math.floor(n / 2);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const k = y * w + x;
+    if ((x - c) % 5 === 0 || (y - c) % 5 === 0) px[k] = 0;
+    if (x === c || y === c) px[k] = 1;
+    if ((x < 3 || x > w - 4) && (y < 3 || y > h - 4)) px[k] = 2;
+  }
+  S.testing = true; S.original = null; S.layers = []; S.importFile = null;
+  setDesign([[200, 30, 45], [25, 70, 200], [20, 140, 70]], px, w, h);
+  $("backToMine").hidden = false; renderAll(); previewDirty();
+  toast(`Test pattern on: ${w} × ${h} stitches. Check it in Preview, then print.`);
+}
+function backToMine() {
+  const b = store.get("ccp-before-test"); if (!b) return;
+  S.testing = false; S.original = S.savedOriginal || null;
+  setDesign(b.pal, Int16Array.from(b.px), b.w, b.h, false, b.sx, b.sy);
+  $("backToMine").hidden = true; renderAll(); previewDirty(); toast("Your design is back.");
+}
+
 /* ---------------- example content ---------------- */
 function exampleArtwork() {
   const c = document.createElement("canvas"); c.width = 240; c.height = 240; const x = c.getContext("2d");
@@ -2041,6 +2073,7 @@ $("printDpi").onchange = e => S.printDpi = +e.target.value;
 $("makePdf").onclick = makePrintPdf; $("makePng").onclick = makePrintPng;
 $("savePrev").onclick = async () => { if (!S.scan) return; const c = buildPreview(); await saveFile("canvas-preview.png", await canvasBlob(c)); };
 $("testPage").onclick = testPagePdf;
+$("testPattern").onclick = useTestPattern; $("backToMine").onclick = backToMine;
 
 /* ---------------- start ---------------- */
 (function init() {
