@@ -1,0 +1,1753 @@
+<title>Sookie's Canvas Press</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@600;800&family=Figtree:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+/* Layout: the work surface (design grid or scanned canvas) fills the left like a frame on a stand; the step panel sits right in three tabs; stacks on phones. */
+:root {
+  --bg: #F2F0F5;
+  --surface: #FFFFFF;
+  --surface-2: #E9E5EF;
+  --ink: #1D1626;
+  --ink-2: #4D4359;
+  --muted: #776C84;
+  --line: #D9D2E2;
+  --accent: #C2185B;
+  --accent-ink: #FFFFFF;
+  --accent-soft: #FBE0EC;
+  --thread: #127A7A;
+  --thread-soft: #D6EFEE;
+  --good: #2E7D4F;
+  --warn: #9A6200;
+  --warn-soft: #FBEBC8;
+  --bad: #B3261E;
+  --stage: #17121C;
+  --shadow: 0 1px 2px rgba(29,22,38,.06), 0 6px 20px rgba(29,22,38,.06);
+  --display: "Unbounded", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  --body: "Figtree", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #131017; --surface: #1C1822; --surface-2: #26202E; --ink: #EEE9F3; --ink-2: #BCB2C8;
+    --muted: #9488A2; --line: #342C3E; --accent: #F06292; --accent-ink: #1D0A13;
+    --accent-soft: #3D1A2A; --thread: #4FC3BF; --thread-soft: #163533; --good: #62C28B;
+    --warn: #E5AA45; --warn-soft: #3A2C10; --bad: #F27B72; --stage: #09070C;
+    --shadow: 0 1px 2px rgba(0,0,0,.35), 0 6px 20px rgba(0,0,0,.3);
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #131017; --surface: #1C1822; --surface-2: #26202E; --ink: #EEE9F3; --ink-2: #BCB2C8;
+  --muted: #9488A2; --line: #342C3E; --accent: #F06292; --accent-ink: #1D0A13;
+  --accent-soft: #3D1A2A; --thread: #4FC3BF; --thread-soft: #163533; --good: #62C28B;
+  --warn: #E5AA45; --warn-soft: #3A2C10; --bad: #F27B72; --stage: #09070C;
+  --shadow: 0 1px 2px rgba(0,0,0,.35), 0 6px 20px rgba(0,0,0,.3);
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { background: var(--bg); color: var(--ink); font-family: var(--body); font-size: 15px; line-height: 1.5; }
+.wrap { max-width: 1320px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 18px 48px; }
+header.top { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 20px; margin-bottom: 14px; }
+h1 { font-family: var(--display); font-weight: 800; font-size: clamp(21px, 3.2vw, 28px); letter-spacing: -.01em; margin: 0; text-wrap: balance; }
+h1 span { color: var(--accent); }
+.sub { color: var(--ink-2); margin: 0; max-width: 62ch; }
+.app { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 410px); gap: 20px; align-items: start; }
+@media (max-width: 900px) { .app { grid-template-columns: minmax(0, 1fr); } }
+
+/* Work surface */
+.stage { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 10px); display: grid; gap: 8px; min-width: 0; }
+@media (max-width: 900px) { .stage { position: static; } }
+.vbar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.seg { display: inline-flex; background: var(--surface-2); border-radius: 10px; padding: 3px; gap: 2px; flex-wrap: wrap; }
+.seg button { border: 0; background: transparent; color: var(--ink-2); font: 600 13px var(--body); padding: 6px 11px; border-radius: 8px; cursor: pointer; }
+.seg button[aria-pressed=true] { background: var(--surface); color: var(--ink); box-shadow: var(--shadow); }
+.seg button:disabled { opacity: .45; cursor: not-allowed; }
+.spacer { flex: 1; }
+.screen { position: relative; background: var(--stage); border-radius: 16px; overflow: hidden; height: min(80vh, 900px); min-height: 360px; box-shadow: var(--shadow); }
+@media (max-width: 900px) { .screen { height: 62vh; } }
+.screen canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; display: block; }
+.vstat { position: absolute; left: 10px; bottom: 10px; right: 10px; display: flex; flex-wrap: wrap; gap: 6px; pointer-events: none; }
+.vstat span { background: rgba(10,8,14,.72); color: #F1ECF6; font: 500 12px var(--mono); padding: 3px 8px; border-radius: 6px; font-variant-numeric: tabular-nums; }
+.vstat .ex { background: #9A6200; color: #fff; font-family: var(--body); font-weight: 700; }
+.busy { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(10,8,14,.55); color: #fff; font-weight: 700; }
+.busy div { display: grid; gap: 8px; justify-items: center; }
+.busy .meter { width: 220px; }
+
+/* Panel */
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 18px; box-shadow: var(--shadow); min-width: 0; }
+.tabs { display: flex; gap: 2px; padding: 6px; border-bottom: 1px solid var(--line); }
+.tabs button { flex: 1 1 0; border: 0; background: transparent; color: var(--ink-2); font: 600 14px var(--body); padding: 9px 8px; border-radius: 10px; cursor: pointer; display: flex; align-items: center; gap: 7px; justify-content: center; }
+.tabs button .n { font: 600 11px var(--display); width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; background: var(--surface-2); color: var(--muted); }
+.tabs button[aria-selected=true] { background: var(--accent-soft); color: var(--ink); }
+.tabs button[aria-selected=true] .n { background: var(--accent); color: var(--accent-ink); }
+.sec { padding: 18px; display: grid; gap: 20px; }
+.group { display: grid; gap: 10px; }
+.group + .group { border-top: 1px solid var(--line); padding-top: 18px; }
+.sec h3 { font-size: 12px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 0; }
+.hint { color: var(--muted); font-size: 13px; margin: 0; }
+.hint b { color: var(--ink-2); }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: end; }
+.row > * { min-width: 0; }
+label.f { display: grid; gap: 4px; font-size: 13px; font-weight: 600; color: var(--ink-2); flex: 1 1 110px; }
+label.f small { font-weight: 500; color: var(--muted); font-variant-numeric: tabular-nums; }
+input[type=number], input[type=text], select {
+  font: 500 15px var(--body); color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; width: 100%; min-width: 0;
+}
+input[type=range] { width: 100%; accent-color: var(--accent); }
+input[type=color] { width: 38px; height: 34px; border: 1px solid var(--line); border-radius: 8px; padding: 2px; background: var(--surface); cursor: pointer; }
+input:focus-visible, select:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.btn { font: 700 14px var(--body); border-radius: 10px; padding: 9px 14px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
+.btn.thread { background: var(--thread); color: #fff; border-color: transparent; }
+.btn.small { padding: 6px 10px; font-size: 13px; }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+.btn.wide { width: 100%; }
+.file-btn { position: relative; overflow: hidden; }
+.file-btn input { position: absolute; inset: 0; opacity: 0; cursor: pointer; font-size: 0; }
+.tog { display: flex; gap: 8px; align-items: center; font-size: 14px; }
+.tog input { accent-color: var(--accent); width: 17px; height: 17px; }
+.tools { display: flex; flex-wrap: wrap; gap: 4px; }
+.tools button { border: 1px solid var(--line); background: var(--surface); color: var(--ink-2); font: 600 13px var(--body); padding: 6px 10px; border-radius: 8px; cursor: pointer; }
+.tools button[aria-pressed=true] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.layers { display: grid; gap: 8px; }
+.layer { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; display: grid; gap: 8px; }
+.layer .lh { display: flex; gap: 8px; align-items: center; }
+.layer .lh .name { flex: 1; min-width: 0; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.layer .lc { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 12px; font-size: 12px; color: var(--muted); }
+.layer .lc label { display: grid; gap: 2px; min-width: 0; }
+.layer .lc input, .layer .lc select { width: 100%; min-width: 0; }
+.sec, .group, .layers, .layer { grid-template-columns: minmax(0, 1fr); }
+.sec > *, .group > *, .layer { min-width: 0; }
+.icon-btn { border: 1px solid var(--line); background: var(--surface); color: var(--ink-2); min-width: 28px; height: 28px; border-radius: 8px; cursor: pointer; display: grid; place-items: center; font-size: 13px; padding: 0 6px; }
+.pal { display: grid; grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); gap: 6px; }
+.sw { border: 1px solid var(--line); border-radius: 10px; padding: 5px; background: var(--surface); cursor: pointer; display: grid; gap: 3px; text-align: left; font: 500 11px var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.sw i { display: block; height: 22px; border-radius: 6px; border: 1px solid rgba(0,0,0,.12); }
+.sw[aria-pressed=true] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.selbox { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 10px; border-radius: 12px; background: var(--surface-2); font-size: 13px; }
+.selbox select { width: auto; flex: 1 1 120px; font-size: 13px; padding: 6px 8px; }
+.stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.stat { border: 1px solid var(--line); border-radius: 10px; padding: 7px 8px; display: grid; gap: 1px; }
+.stat b { font: 600 16px var(--display); font-variant-numeric: tabular-nums; }
+.stat span { font-size: 11px; color: var(--muted); display: flex; gap: 5px; align-items: center; }
+.dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; flex: none; }
+.key { display: grid; gap: 4px; font-size: 13px; color: var(--ink-2); }
+.key div { display: flex; gap: 8px; align-items: center; }
+.status { font-size: 13px; padding: 8px 12px; border-radius: 10px; background: var(--surface-2); color: var(--ink-2); }
+.status.err { background: var(--warn-soft); color: var(--warn); }
+.status.ok { background: var(--thread-soft); color: var(--thread); }
+.meter { height: 8px; background: rgba(255,255,255,.2); border-radius: 999px; overflow: hidden; }
+.meter i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .15s; }
+.checklist { margin: 0; padding-left: 18px; display: grid; gap: 4px; color: var(--ink-2); font-size: 13px; }
+.nudge { display: grid; grid-template-columns: repeat(3, 36px); grid-template-rows: repeat(3, 32px); gap: 4px; }
+.nudge button { border: 1px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 8px; cursor: pointer; font-size: 14px; }
+.nudge span { display: grid; place-items: center; font: 500 11px var(--mono); color: var(--muted); }
+.toast { position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom, 0px) + 20px); transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 10px; font-weight: 600; font-size: 14px; z-index: 20; max-width: calc(100vw - 32px); }
+.badge { display: inline-block; font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; padding: 2px 8px; border-radius: 999px; background: var(--warn-soft); color: var(--warn); }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <h1>Sookie's <span>Canvas Press</span></h1>
+    <p class="sub">Turn artwork into a stitch grid, scan your canvas once, and print straight onto its real threads. Everything stays in your browser.</p>
+  </header>
+
+  <div class="app">
+    <section class="stage" aria-label="Work surface">
+      <div class="vbar">
+        <div class="seg" role="group" aria-label="View">
+          <button id="vDesign" aria-pressed="true">Design</button>
+          <button id="vSnap" aria-pressed="false">Snapshot</button>
+          <button id="vMap" aria-pressed="false">Map</button>
+          <button id="vPrev" aria-pressed="false">Preview</button>
+        </div>
+        <span class="spacer"></span>
+        <div class="seg" role="group" aria-label="Zoom">
+          <button id="zOut" aria-label="Zoom out">−</button>
+          <button id="zFit">Fit</button>
+          <button id="zIn" aria-label="Zoom in">+</button>
+        </div>
+      </div>
+      <div class="screen" id="screen">
+        <canvas id="view"></canvas>
+        <div class="vstat" id="vstat"></div>
+        <div class="busy" id="busy" hidden><div><span id="busyText">Working…</span><div class="meter"><i id="busyBar"></i></div></div></div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="tabs" role="tablist">
+        <button role="tab" id="tab1" aria-selected="true"><span class="n">1</span>Design</button>
+        <button role="tab" id="tab2" aria-selected="false"><span class="n">2</span>Scan</button>
+        <button role="tab" id="tab3" aria-selected="false"><span class="n">3</span>Print</button>
+      </div>
+
+      <!-- 1 DESIGN -->
+      <div class="sec" id="pane1">
+        <div class="group">
+          <h3>Artwork</h3>
+          <div class="row">
+            <label class="btn primary file-btn">Add artwork or layers<input type="file" id="addArt" multiple accept="image/png,image/jpeg,image/webp,image/gif,.psd,application/pdf,.pdf"></label>
+            <label class="btn file-btn">Open stitch file<input type="file" id="openStitch" accept="image/png,image/gif,.oxs,.xml"></label>
+          </div>
+          <p class="hint">PNG, JPG, PSD or PDF. Each file becomes a layer, and the layers are flattened into one picture. <b>Open stitch file</b> takes an image with one pixel per stitch, or an OXS chart, with no color changes.</p>
+          <div class="layers" id="layers"></div>
+          <div class="row">
+            <label class="f">Behind the artwork
+              <select id="bgMode"><option value="white">White</option><option value="color">A color</option><option value="none">Leave unprinted</option></select>
+            </label>
+            <input type="color" id="bgColor" value="#ffffff" aria-label="Background color" hidden>
+          </div>
+        </div>
+
+        <div class="group">
+          <h3>Canvas and size</h3>
+          <div class="row">
+            <label class="f">Mesh
+              <select id="mesh"><option>10</option><option>12</option><option selected>13</option><option>14</option><option>18</option></select>
+            </label>
+            <label class="f">Width <small id="wIn"></small><input type="number" id="wSt" min="4" max="400" value="60"></label>
+            <label class="f">Height <small id="hIn"></small><input type="number" id="hSt" min="4" max="400" value="60"></label>
+          </div>
+          <label class="tog"><input type="checkbox" id="lock" checked> Keep the artwork's proportions</label>
+        </div>
+
+        <div class="group">
+          <h3>Colors</h3>
+          <div class="row">
+            <label class="f">Number of colors <small id="ncOut">12</small><input type="range" id="nColors" min="2" max="48" value="12"></label>
+          </div>
+          <label class="tog"><input type="checkbox" id="dither"> Blend shades with speckles (for photos)</label>
+          <button class="btn thread wide" id="convert">Convert to stitches</button>
+          <p class="hint" id="convHint">Converting again replaces hand edits. Undo brings them back.</p>
+        </div>
+
+        <div class="group">
+          <h3>Edit stitches</h3>
+          <div class="tools" role="group" aria-label="Tools">
+            <button data-tool="paint" aria-pressed="true">Paint</button>
+            <button data-tool="fill" aria-pressed="false">Fill</button>
+            <button data-tool="pick" aria-pressed="false">Pick color</button>
+            <button data-tool="erase" aria-pressed="false">Erase</button>
+            <button data-tool="pan" aria-pressed="false">Move view</button>
+          </div>
+          <div class="row">
+            <button class="btn small" id="undo">Undo</button>
+            <button class="btn small" id="redo">Redo</button>
+            <label class="tog"><input type="checkbox" id="showGrid" checked> Grid lines</label>
+          </div>
+          <div class="pal" id="pal"></div>
+          <div class="selbox" id="selbox"></div>
+          <div class="row">
+            <input type="color" id="newColor" value="#3a7bd5" aria-label="New color">
+            <button class="btn small" id="addColor">Add this color</button>
+          </div>
+        </div>
+
+        <div class="group">
+          <h3>Save the design</h3>
+          <div class="row">
+            <button class="btn small" id="saveStitchPng">Stitch image (PNG)</button>
+            <button class="btn small" id="saveChart">Chart (PNG)</button>
+          </div>
+          <p class="hint">The stitch image has one pixel per stitch. Open it later with <b>Open stitch file</b> to keep editing.</p>
+        </div>
+      </div>
+
+      <!-- 2 SCAN -->
+      <div class="sec" id="pane2" hidden>
+        <div class="group">
+          <h3>Carrier sheet</h3>
+          <p class="hint">Print once on plain letter paper at <b>100% / Actual Size</b>. Tape your canvas inside the black window and leave the four corner dots uncovered. The dots tell the app exactly where the page sits in the scan, so each scan stands on its own. Reuse the sheet as long as the dots stay clean.</p>
+          <button class="btn" id="carrierPdf">Save Carrier sheet (PDF)</button>
+        </div>
+
+        <div class="group">
+          <h3>Scan the canvas</h3>
+          <ul class="checklist">
+            <li>300 or 600 dpi, grayscale or color</li>
+            <li>The whole US Letter page, auto-crop and enhancements off</li>
+            <li>Save as PDF, PNG or JPG</li>
+          </ul>
+          <div class="row">
+            <label class="btn primary file-btn">Load my scan<input type="file" id="scanFile" accept="application/pdf,.pdf,image/png,image/jpeg,image/webp"></label>
+            <button class="btn" id="exampleScan">Try an example scan</button>
+          </div>
+          <div class="row">
+            <label class="f">Scan resolution (dpi)<input type="number" id="dpi" min="100" max="1200" value="300"></label>
+            <label class="f">Canvas mesh<select id="mesh2"><option>10</option><option>12</option><option selected>13</option><option>14</option><option>18</option></select></label>
+          </div>
+          <label class="tog"><input type="checkbox" id="darkThreads"> My threads are darker than the background</label>
+          <button class="btn thread wide" id="findGrid" disabled>Find the intersections</button>
+          <div class="status" id="scanStatus">No scan loaded yet.</div>
+        </div>
+
+        <div class="group" id="mapGroup" hidden>
+          <h3>Check the map</h3>
+          <div class="stats">
+            <div class="stat"><b id="nFound">0</b><span><i class="dot" style="background:#2BB5A8"></i>Found</span></div>
+            <div class="stat"><b id="nCheck">0</b><span><i class="dot" style="background:#F2A93B"></i>Check</span></div>
+            <div class="stat"><b id="nMiss">0</b><span><i class="dot" style="background:#E5484D"></i>Guessed</span></div>
+            <div class="stat"><b id="nMoved">0</b><span><i class="dot" style="background:#E86FD0"></i>Moved</span></div>
+          </div>
+          <p class="hint" id="meshNote"></p>
+          <button class="btn wide" id="nextCheck">Next to check</button>
+          <p class="hint">Drag any point onto its intersection. Arrow keys move the selected point by one pixel. Drag the purple corner dots if the app missed one.</p>
+          <div class="row">
+            <button class="btn small" id="pickCenter" aria-pressed="false">Pick center intersection</button>
+            <button class="btn small" id="refit">Re-guess red points</button>
+            <label class="tog"><input type="checkbox" id="showPts" checked> Show points</label>
+          </div>
+          <details class="key">
+            <summary class="hint" style="cursor:pointer">What the marks mean</summary>
+            <div><i class="dot" style="background:#2BB5A8"></i>Found clearly in the scan</div>
+            <div><i class="dot" style="background:#F2A93B"></i>Found, but the scan was faint here</div>
+            <div><i class="dot" style="background:#E5484D"></i>Not found, guessed from its neighbors</div>
+            <div><i class="dot" style="background:#E86FD0"></i>Moved by you</div>
+            <div><i class="dot" style="background:#FFD400"></i>Center of the design</div>
+            <div><i class="dot" style="background:#8E5CF7"></i>Carrier corner dot</div>
+          </details>
+          <div class="row">
+            <button class="btn small" id="saveSnap">Save snapshot (PNG)</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 3 PRINT -->
+      <div class="sec" id="pane3" hidden>
+        <div class="status err" id="printNeed">Load a scan and find its intersections on the Scan step first.</div>
+        <div class="group">
+          <h3>Place the design</h3>
+          <div class="row">
+            <label class="f">Move right <small>stitches</small><input type="number" id="ox" value="0" step="1"></label>
+            <label class="f">Move down <small>stitches</small><input type="number" id="oy" value="0" step="1"></label>
+            <button class="btn small" id="recenter">Center</button>
+          </div>
+          <div class="status" id="fitStatus"></div>
+        </div>
+        <div class="group">
+          <h3>Color on canvas</h3>
+          <p class="hint">Ink on canvas looks lighter and duller than on screen. These push it back. Watch the Preview.</p>
+          <label class="f">Richness <small id="satOut"></small><input type="range" id="sat" min="80" max="180" value="125"></label>
+          <label class="f">Deepen <small id="deepOut"></small><input type="range" id="deepen" min="0" max="30" value="8"></label>
+          <label class="f">Contrast <small id="conOut"></small><input type="range" id="contrast" min="80" max="140" value="105"></label>
+          <label class="f">Ink reach past each stitch <small id="bleedOut"></small><input type="range" id="bleed" min="0" max="30" value="8"></label>
+          <label class="tog"><input type="checkbox" id="rawColors"> Print my exact colors (no adjusting)</label>
+        </div>
+        <div class="group">
+          <h3>Printer nudge</h3>
+          <div class="row" style="align-items:center">
+            <div class="nudge">
+              <span></span><button id="nU" aria-label="Nudge up">↑</button><span></span>
+              <button id="nL" aria-label="Nudge left">←</button><span id="nudgeOut">0,0</span><button id="nR" aria-label="Nudge right">→</button>
+              <span></span><button id="nD" aria-label="Nudge down">↓</button><span></span>
+            </div>
+            <p class="hint" style="flex:1 1 160px">Each tap moves the print 1/200 inch. Only needed if a print lands off. Your nudge is remembered on this device.</p>
+          </div>
+          <button class="btn small" id="testPage">Test page for plain paper (PDF)</button>
+          <p class="hint">Print it on plain paper, lay it on the Carrier and hold both up to a window. The crosshairs should sit on the four dots and the outline on your canvas.</p>
+        </div>
+        <div class="group">
+          <h3>Make the print file</h3>
+          <div class="row">
+            <label class="f">Print resolution<select id="printDpi"><option value="300" selected>300 dpi</option><option value="600">600 dpi (large file)</option></select></label>
+          </div>
+          <button class="btn primary wide" id="makePdf">Save print file (PDF)</button>
+          <div class="row">
+            <button class="btn small" id="makePng">Save print image (PNG)</button>
+            <button class="btn small" id="savePrev">Save preview (PNG)</button>
+          </div>
+          <ul class="checklist">
+            <li>Print at 100% / Actual Size, Best quality</li>
+            <li>Load the Carrier alone with the paper guides snug</li>
+            <li>Turn off paper width detection if part of the print goes missing</li>
+          </ul>
+          <div class="status" id="printStatus" hidden></div>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+const tick = () => new Promise(r => setTimeout(r, 0));
+const PDFJS = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
+const PDFJS_WORKER = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+const COL = { found: "#2BB5A8", check: "#F2A93B", miss: "#E5484D", moved: "#E86FD0", center: "#FFD400", mark: "#8E5CF7", sel: "#FF7A1A", outline: "#F06292" };
+
+// Carrier geometry, inches from the page's top-left corner.
+const PAGE = { w: 8.5, h: 11 };
+const MARKS = [[0.45, 0.45], [8.05, 0.45], [0.45, 10.55], [8.05, 10.55]];
+const MARK_R = 0.1, ORIENT = [1.0, 0.45], ORIENT_R = 0.05;
+const WINDOW = { x: 0.75, y: 0.75, w: 7.0, h: 9.5 };
+
+const S = {
+  mesh: 13, wSt: 60, hSt: 60, lock: true, nColors: 12, dither: false, bgMode: "white", bg: "#ffffff",
+  layers: [], design: null, sel: 0, tool: "paint", undo: [], redo: [], exampleDesign: false,
+  scan: null, grid: null, marks: null, marksFound: false, H: null, darkThreads: false,
+  place: { ox: 0, oy: 0 }, center: null,
+  adj: { sat: 125, deepen: 8, contrast: 105, bleed: 8, raw: false },
+  nudge: { x: 0, y: 0 }, printDpi: 300,
+  view: "design", showPts: true, showGrid: true, pickCenter: false, checked: new Set(), selNode: -1,
+};
+const store = {
+  get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} },
+};
+
+function toast(msg, ms = 2800) { const t = $("toast"); t.textContent = msg; t.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => t.hidden = true, ms); }
+function busy(on, text, frac) {
+  $("busy").hidden = !on; if (text) $("busyText").textContent = text;
+  if (frac != null) $("busyBar").style.width = Math.round(frac * 100) + "%";
+}
+
+/* ---------------- color ---------------- */
+const LIN = new Float32Array(256);
+for (let i = 0; i < 256; i++) { const c = i / 255; LIN[i] = c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); }
+function rgb2lab(r, g, b) {
+  const R = LIN[r | 0], G = LIN[g | 0], B = LIN[b | 0];
+  let x = (R * 0.4124 + G * 0.3576 + B * 0.1805) / 0.95047, y = R * 0.2126 + G * 0.7152 + B * 0.0722, z = (R * 0.0193 + G * 0.1192 + B * 0.9505) / 1.08883;
+  const f = t => t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116;
+  x = f(x); y = f(y); z = f(z);
+  return [116 * y - 16, 500 * (x - y), 200 * (y - z)];
+}
+function lab2rgb(L, a, b) {
+  let y = (L + 16) / 116, x = a / 500 + y, z = y - b / 200;
+  const fi = t => { const t3 = t * t * t; return t3 > 0.008856 ? t3 : (t - 16 / 116) / 7.787; };
+  x = fi(x) * 0.95047; y = fi(y); z = fi(z) * 1.08883;
+  const R = x * 3.2406 - y * 1.5372 - z * 0.4986, G = -x * 0.9689 + y * 1.8758 + z * 0.0415, B = x * 0.0557 - y * 0.2040 + z * 1.0570;
+  const g = c => { c = c <= 0.0031308 ? 12.92 * c : 1.055 * Math.pow(Math.max(c, 0), 1 / 2.4) - 0.055; return clamp(Math.round(c * 255), 0, 255); };
+  return [g(R), g(G), g(B)];
+}
+const hex = c => "#" + c.map(v => v.toString(16).padStart(2, "0")).join("");
+const unhex = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+function adjustColor(c) {
+  if (S.adj.raw) return c;
+  let [L, a, b] = rgb2lab(c[0], c[1], c[2]);
+  const k = S.adj.sat / 100;
+  L = 50 + (L - 50) * (S.adj.contrast / 100);
+  L = L - S.adj.deepen * (L / 100) * 1.2;
+  return lab2rgb(clamp(L, 0, 100), a * k, b * k);
+}
+
+/* ---------------- files ---------------- */
+let downloadsCap = null;
+(window.claude && window.claude.use ? window.claude.use("downloads") : Promise.resolve(null)).then(d => { downloadsCap = d; }).catch(() => {});
+async function saveFile(name, blob) {
+  if (downloadsCap) {
+    try { await downloadsCap.save({ filename: name, data: blob }); toast("Saved " + name); return; }
+    catch (e) { if (e && e.code === "declined") { toast("Save cancelled."); return; } }
+  }
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  toast("Saved " + name);
+}
+const canvasBlob = (c, type = "image/png", q) => new Promise(r => c.toBlob(r, type, q));
+function loadImageFile(file) {
+  return new Promise((res, rej) => {
+    const url = URL.createObjectURL(file); const im = new Image();
+    im.onload = () => { const c = document.createElement("canvas"); c.width = im.naturalWidth; c.height = im.naturalHeight; c.getContext("2d").drawImage(im, 0, 0); URL.revokeObjectURL(url); res(c); };
+    im.onerror = () => { URL.revokeObjectURL(url); rej(new Error("This image could not be opened.")); };
+    im.src = url;
+  });
+}
+let pdfjsP = null;
+function loadPdfjs() {
+  if (pdfjsP) return pdfjsP;
+  pdfjsP = new Promise((res, rej) => {
+    const s = document.createElement("script"); s.src = PDFJS;
+    s.onload = () => { const lib = window.pdfjsLib; lib.GlobalWorkerOptions.workerSrc = PDFJS_WORKER; res(lib); };
+    s.onerror = () => { pdfjsP = null; rej(new Error("The PDF reader did not load.")); };
+    document.head.appendChild(s);
+  });
+  return pdfjsP;
+}
+// Scanner PDFs usually wrap one JPEG per page. Used when the PDF reader is unavailable.
+async function pdfLargestJpeg(buf) {
+  const u8 = new Uint8Array(buf); let str = "";
+  for (let i = 0; i < u8.length; i += 65536) str += String.fromCharCode.apply(null, u8.subarray(i, i + 65536));
+  let best = null, at = 0;
+  while ((at = str.indexOf("/DCTDecode", at)) !== -1) {
+    const s = str.indexOf("stream", at); if (s < 0) break;
+    let p = s + 6; if (str[p] === "\r") p++; if (str[p] === "\n") p++;
+    const e = str.indexOf("endstream", p); if (e < 0) break;
+    if (!best || e - p > best[1] - best[0]) best = [p, e];
+    at = e;
+  }
+  if (!best) return null;
+  const bmp = await createImageBitmap(new Blob([u8.subarray(best[0], best[1])], { type: "image/jpeg" }));
+  const c = document.createElement("canvas"); c.width = bmp.width; c.height = bmp.height; c.getContext("2d").drawImage(bmp, 0, 0);
+  return c;
+}
+async function pdfToCanvas(buf, dpi) {
+  try {
+    const lib = await loadPdfjs();
+    const doc = await lib.getDocument({ data: new Uint8Array(buf.slice(0)) }).promise;
+    const page = await doc.getPage(1);
+    const vp = page.getViewport({ scale: dpi / 72 });
+    const c = document.createElement("canvas"); c.width = Math.round(vp.width); c.height = Math.round(vp.height);
+    const x = c.getContext("2d"); x.fillStyle = "#fff"; x.fillRect(0, 0, c.width, c.height);
+    await page.render({ canvasContext: x, viewport: vp }).promise;
+    return { canvas: c, dpi, pageW: vp.width / dpi };
+  } catch (e) {
+    const c = await pdfLargestJpeg(buf);
+    if (c) return { canvas: c, dpi: null };
+    throw new Error("This PDF could not be read. Try saving the scan as PNG or JPG.");
+  }
+}
+function parsePSD(buf) {
+  const dv = new DataView(buf), u8 = new Uint8Array(buf);
+  if (dv.getUint32(0) !== 0x38425053) throw new Error("This is not a PSD file.");
+  if (dv.getUint16(4) !== 1) throw new Error("Large-document PSB files are not supported. Save as PSD or PNG.");
+  const ch = dv.getUint16(12), h = dv.getUint32(14), w = dv.getUint32(18), depth = dv.getUint16(22), mode = dv.getUint16(24);
+  if (depth !== 8 && depth !== 16) throw new Error("Only 8 or 16 bit PSD files are supported.");
+  let p = 26; p += 4 + dv.getUint32(p); p += 4 + dv.getUint32(p); p += 4 + dv.getUint32(p);
+  const comp = dv.getUint16(p); p += 2;
+  const bpc = depth / 8, rowB = w * bpc, planes = [];
+  const nUse = Math.min(ch, mode === 4 ? 4 : 3);
+  if (comp === 0) {
+    for (let c = 0; c < nUse; c++) { planes.push(u8.subarray(p, p + rowB * h)); p += rowB * h; }
+  } else if (comp === 1) {
+    const counts = new Array(ch * h); for (let k = 0; k < ch * h; k++) counts[k] = dv.getUint16(p + k * 2);
+    p += ch * h * 2;
+    for (let c = 0; c < nUse; c++) {
+      const pl = new Uint8Array(rowB * h);
+      for (let y = 0; y < h; y++) {
+        let q = p, end = p + counts[c * h + y], o = y * rowB;
+        while (q < end && o < (y + 1) * rowB) {
+          let n = u8[q++]; if (n > 127) n -= 256;
+          if (n >= 0) { for (let k = 0; k <= n; k++) pl[o++] = u8[q++]; }
+          else if (n > -128) { const v = u8[q++]; for (let k = 0; k < 1 - n; k++) pl[o++] = v; }
+        }
+        p = end;
+      }
+      planes.push(pl);
+    }
+  } else throw new Error("This PSD uses compression the app can't read. Save with Maximize Compatibility on, or export PNG.");
+  const c = document.createElement("canvas"); c.width = w; c.height = h;
+  const x = c.getContext("2d"), id = x.createImageData(w, h), d = id.data;
+  const at = (pl, i) => pl[i * bpc];
+  for (let i = 0; i < w * h; i++) {
+    let r, g, b;
+    if (mode === 3 && planes.length >= 3) { r = at(planes[0], i); g = at(planes[1], i); b = at(planes[2], i); }
+    else if (mode === 4 && planes.length >= 4) { const k = at(planes[3], i) / 255; r = at(planes[0], i) * k; g = at(planes[1], i) * k; b = at(planes[2], i) * k; }
+    else { r = g = b = at(planes[0], i); }
+    d[i * 4] = r; d[i * 4 + 1] = g; d[i * 4 + 2] = b; d[i * 4 + 3] = 255;
+  }
+  x.putImageData(id, 0, 0);
+  return c;
+}
+async function fileToCanvas(file, dpiForPdf = 150) {
+  const name = file.name.toLowerCase();
+  if (name.endsWith(".psd")) return { canvas: parsePSD(await file.arrayBuffer()) };
+  if (name.endsWith(".pdf") || file.type === "application/pdf") return await pdfToCanvas(await file.arrayBuffer(), dpiForPdf);
+  return { canvas: await loadImageFile(file) };
+}
+
+/* ---------------- PDF writer (no library) ---------------- */
+const enc = new TextEncoder();
+async function deflate(u8) {
+  const cs = new CompressionStream("deflate");
+  const out = new Blob([u8]).stream().pipeThrough(cs);
+  return new Uint8Array(await new Response(out).arrayBuffer());
+}
+async function canvasToPdfImage(c) {
+  const w = c.width, h = c.height;
+  if (typeof CompressionStream !== "undefined") {
+    const d = c.getContext("2d").getImageData(0, 0, w, h).data, rgb = new Uint8Array(w * h * 3);
+    for (let i = 0, j = 0; i < d.length; i += 4) { rgb[j++] = d[i]; rgb[j++] = d[i + 1]; rgb[j++] = d[i + 2]; }
+    return { w, h, filter: "FlateDecode", data: await deflate(rgb) };
+  }
+  const blob = await canvasBlob(c, "image/jpeg", 0.95);
+  return { w, h, filter: "DCTDecode", data: new Uint8Array(await blob.arrayBuffer()) };
+}
+function buildPdf(content, image) {
+  const chunks = [], offs = []; let len = 0;
+  const push = b => { const u = typeof b === "string" ? enc.encode(b) : b; chunks.push(u); len += u.length; };
+  const obj = (n, body, stream) => {
+    offs[n] = len; push(n + " 0 obj\n" + body);
+    if (stream) { push("\nstream\n"); push(stream); push("\nendstream"); }
+    push("\nendobj\n");
+  };
+  push("%PDF-1.4\n%\xE2\xE3\xCF\xD3\n");
+  const res = "<< /Font << /F1 5 0 R >>" + (image ? " /XObject << /Im0 6 0 R >>" : "") + " >>";
+  obj(1, "<< /Type /Catalog /Pages 2 0 R >>");
+  obj(2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>");
+  obj(3, "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources " + res + " /Contents 4 0 R >>");
+  const cs = enc.encode(content);
+  obj(4, "<< /Length " + cs.length + " >>", cs);
+  obj(5, "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>");
+  const n = image ? 6 : 5;
+  if (image) obj(6, "<< /Type /XObject /Subtype /Image /Width " + image.w + " /Height " + image.h + " /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /" + image.filter + " /Length " + image.data.length + " >>", image.data);
+  const xref = len;
+  let x = "xref\n0 " + (n + 1) + "\n0000000000 65535 f \n";
+  for (let i = 1; i <= n; i++) x += String(offs[i]).padStart(10, "0") + " 00000 n \n";
+  push(x + "trailer\n<< /Size " + (n + 1) + " /Root 1 0 R >>\nstartxref\n" + xref + "\n%%EOF\n");
+  return new Blob(chunks, { type: "application/pdf" });
+}
+// PDF drawing helpers; input in inches from top-left.
+const pt = v => (v * 72).toFixed(2), ptY = v => ((PAGE.h - v) * 72).toFixed(2);
+function pdfCircle(cx, cy, r) {
+  const k = 0.5523 * r, X = v => pt(v), Y = v => ptY(v);
+  return `${X(cx + r)} ${Y(cy)} m ${X(cx + r)} ${Y(cy - k)} ${X(cx + k)} ${Y(cy - r)} ${X(cx)} ${Y(cy - r)} c ` +
+    `${X(cx - k)} ${Y(cy - r)} ${X(cx - r)} ${Y(cy - k)} ${X(cx - r)} ${Y(cy)} c ` +
+    `${X(cx - r)} ${Y(cy + k)} ${X(cx - k)} ${Y(cy + r)} ${X(cx)} ${Y(cy + r)} c ` +
+    `${X(cx + k)} ${Y(cy + r)} ${X(cx + r)} ${Y(cy + k)} ${X(cx + r)} ${Y(cy)} c f\n`;
+}
+const pdfText = (x, y, size, s) => `BT /F1 ${size} Tf ${pt(x)} ${ptY(y)} Td (${s.replace(/[()\\]/g, "\\$&")}) Tj ET\n`;
+function carrierPdf() {
+  let c = "0 g\n";
+  c += `${pt(WINDOW.x)} ${ptY(WINDOW.y + WINDOW.h)} ${pt(WINDOW.w)} ${pt(WINDOW.h)} re f\n`;
+  for (const [x, y] of MARKS) c += pdfCircle(x, y, MARK_R);
+  c += pdfCircle(ORIENT[0], ORIENT[1], ORIENT_R);
+  c += "0.35 g\n" + pdfText(2.2, 0.42, 7, "Sookie's Canvas Press Carrier  -  print at 100% / Actual Size");
+  c += pdfText(2.2, 0.56, 7, "Tape the canvas inside the black window. Keep the four dots uncovered. This edge goes in first.");
+  return buildPdf(c);
+}
+
+/* ---------------- design: flatten + quantize ---------------- */
+function layerDefaults(name, canvas) { return { name, img: canvas, visible: true, opacity: 100, scale: 100, ox: 0, oy: 0, fit: "contain" }; }
+function flatten() {
+  const W = S.wSt, H = S.hSt, k = 4, c = document.createElement("canvas");
+  c.width = W * k; c.height = H * k;
+  const x = c.getContext("2d");
+  if (S.bgMode !== "none") { x.fillStyle = S.bgMode === "white" ? "#ffffff" : S.bg; x.fillRect(0, 0, c.width, c.height); }
+  x.imageSmoothingEnabled = true; x.imageSmoothingQuality = "high";
+  for (const L of S.layers) {
+    if (!L.visible) continue;
+    const iw = L.img.width, ih = L.img.height;
+    const base = L.fit === "cover" ? Math.max(c.width / iw, c.height / ih) : Math.min(c.width / iw, c.height / ih);
+    const sc = base * L.scale / 100, dw = iw * sc, dh = ih * sc;
+    x.globalAlpha = L.opacity / 100;
+    x.drawImage(L.img, (c.width - dw) / 2 + L.ox / 100 * c.width, (c.height - dh) / 2 + L.oy / 100 * c.height, dw, dh);
+  }
+  x.globalAlpha = 1;
+  const d = x.getImageData(0, 0, c.width, c.height).data, out = new Float32Array(W * H * 4);
+  for (let sy = 0; sy < H; sy++) for (let sx = 0; sx < W; sx++) {
+    let r = 0, g = 0, b = 0, a = 0;
+    for (let yy = 0; yy < k; yy++) for (let xx = 0; xx < k; xx++) {
+      const i = ((sy * k + yy) * c.width + sx * k + xx) * 4, al = d[i + 3];
+      r += d[i] * al; g += d[i + 1] * al; b += d[i + 2] * al; a += al;
+    }
+    const o = (sy * W + sx) * 4;
+    if (a > 0) { out[o] = r / a; out[o + 1] = g / a; out[o + 2] = b / a; }
+    out[o + 3] = a / (k * k);
+  }
+  return out;
+}
+function quantize(rgba, W, H, n, dither) {
+  const N = W * H, lab = new Float32Array(N * 3), opaque = new Uint8Array(N);
+  const uniq = new Map();
+  for (let i = 0; i < N; i++) {
+    if (rgba[i * 4 + 3] < 128) continue;
+    opaque[i] = 1;
+    const r = Math.round(rgba[i * 4]), g = Math.round(rgba[i * 4 + 1]), b = Math.round(rgba[i * 4 + 2]);
+    const L = rgb2lab(r, g, b); lab[i * 3] = L[0]; lab[i * 3 + 1] = L[1]; lab[i * 3 + 2] = L[2];
+    const key = (r << 16) | (g << 8) | b, u = uniq.get(key);
+    if (u) u.w++; else uniq.set(key, { w: 1, l: L });
+  }
+  const U = [...uniq.values()];
+  if (!U.length) return { pal: [], px: new Int16Array(N).fill(-1) };
+  let cents;
+  if (U.length <= n) cents = U.map(u => u.l.slice());
+  else {
+    U.sort((a, b) => b.w - a.w);
+    cents = [U[0].l.slice()];
+    const dmin = new Float32Array(U.length).fill(1e9);
+    while (cents.length < n) {
+      const c = cents[cents.length - 1]; let best = -1, bi = 0;
+      for (let i = 0; i < U.length; i++) {
+        const l = U[i].l, d = (l[0] - c[0]) ** 2 + (l[1] - c[1]) ** 2 + (l[2] - c[2]) ** 2;
+        if (d < dmin[i]) dmin[i] = d;
+        const s = dmin[i] * Math.sqrt(U[i].w); if (s > best) { best = s; bi = i; }
+      }
+      cents.push(U[bi].l.slice());
+    }
+    for (let it = 0; it < 12; it++) {
+      const acc = cents.map(() => [0, 0, 0, 0]);
+      for (const u of U) {
+        let bi = 0, bd = 1e18;
+        for (let k = 0; k < cents.length; k++) { const c = cents[k], d = (u.l[0] - c[0]) ** 2 + (u.l[1] - c[1]) ** 2 + (u.l[2] - c[2]) ** 2; if (d < bd) { bd = d; bi = k; } }
+        const a = acc[bi]; a[0] += u.l[0] * u.w; a[1] += u.l[1] * u.w; a[2] += u.l[2] * u.w; a[3] += u.w;
+      }
+      acc.forEach((a, k) => { if (a[3]) cents[k] = [a[0] / a[3], a[1] / a[3], a[2] / a[3]]; });
+    }
+  }
+  const nearest = (L, A, B) => { let bi = 0, bd = 1e18; for (let k = 0; k < cents.length; k++) { const c = cents[k], d = (L - c[0]) ** 2 + (A - c[1]) ** 2 + (B - c[2]) ** 2; if (d < bd) { bd = d; bi = k; } } return bi; };
+  const px = new Int16Array(N).fill(-1);
+  if (dither) {
+    const e = new Float32Array(lab);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const i = y * W + x; if (!opaque[i]) continue;
+      const L = e[i * 3], A = e[i * 3 + 1], B = e[i * 3 + 2], k = nearest(L, A, B); px[i] = k;
+      const er = [L - cents[k][0], A - cents[k][1], B - cents[k][2]];
+      const spread = (dx, dy, f) => { const xx = x + dx, yy = y + dy; if (xx < 0 || xx >= W || yy >= H) return; const j = yy * W + xx; if (!opaque[j]) return; for (let q = 0; q < 3; q++) e[j * 3 + q] += er[q] * f; };
+      spread(1, 0, 7 / 16); spread(-1, 1, 3 / 16); spread(0, 1, 5 / 16); spread(1, 1, 1 / 16);
+    }
+  } else for (let i = 0; i < N; i++) if (opaque[i]) px[i] = nearest(lab[i * 3], lab[i * 3 + 1], lab[i * 3 + 2]);
+  const pal = cents.map(c => lab2rgb(c[0], c[1], c[2]));
+  return compactPalette({ pal, px });
+}
+function compactPalette(d) {
+  const used = new Int32Array(d.pal.length); for (const v of d.px) if (v >= 0) used[v]++;
+  const order = d.pal.map((c, i) => i).filter(i => used[i]).sort((a, b) => used[b] - used[a]);
+  const remap = new Int16Array(d.pal.length).fill(-1); order.forEach((o, n) => remap[o] = n);
+  const px = d.px.map(v => v >= 0 ? remap[v] : -1);
+  return { pal: order.map(o => d.pal[o]), px };
+}
+function setDesign(pal, px, w, h, keepSel) {
+  S.design = { w, h, pal, px };
+  if (!keepSel) S.sel = 0;
+  S.wSt = w; S.hSt = h; syncSizeInputs();
+  designDirty();
+}
+function convert() {
+  if (!S.layers.length) { toast("Add artwork first."); return; }
+  pushUndo();
+  const rgba = flatten();
+  const q = quantize(rgba, S.wSt, S.hSt, S.nColors, S.dither);
+  setDesign(q.pal, q.px, S.wSt, S.hSt);
+  S.exampleDesign = S.layers.every(l => l.example);
+  fitView(); renderAll();
+}
+
+/* ---------------- design editing ---------------- */
+function pushUndo() {
+  if (!S.design) return;
+  S.undo.push({ w: S.design.w, h: S.design.h, pal: S.design.pal.map(c => c.slice()), px: S.design.px.slice() });
+  if (S.undo.length > 60) S.undo.shift();
+  S.redo.length = 0;
+}
+function restore(from, to) {
+  const s = from.pop(); if (!s) return;
+  to.push({ w: S.design.w, h: S.design.h, pal: S.design.pal.map(c => c.slice()), px: S.design.px.slice() });
+  S.design = s; S.wSt = s.w; S.hSt = s.h; syncSizeInputs();
+  if (S.sel >= s.pal.length) S.sel = 0;
+  designDirty(); renderAll();
+}
+function floodFill(i0, v) {
+  const d = S.design, t = d.px[i0]; if (t === v) return;
+  const st = [i0];
+  while (st.length) {
+    const i = st.pop(); if (d.px[i] !== t) continue;
+    d.px[i] = v; const x = i % d.w, y = (i / d.w) | 0;
+    if (x > 0) st.push(i - 1); if (x < d.w - 1) st.push(i + 1); if (y > 0) st.push(i - d.w); if (y < d.h - 1) st.push(i + d.w);
+  }
+}
+let designCanvas = document.createElement("canvas");
+function designDirty() {
+  const d = S.design; if (!d) return;
+  designCanvas.width = d.w; designCanvas.height = d.h;
+  const x = designCanvas.getContext("2d"), id = x.createImageData(d.w, d.h);
+  for (let i = 0; i < d.px.length; i++) { const v = d.px[i]; if (v < 0) continue; const c = d.pal[v]; id.data[i * 4] = c[0]; id.data[i * 4 + 1] = c[1]; id.data[i * 4 + 2] = c[2]; id.data[i * 4 + 3] = 255; }
+  x.putImageData(id, 0, 0);
+  renderPalette(); previewDirty();
+  clearTimeout(designDirty.t);
+  designDirty.t = setTimeout(() => store.set("ccp-design", { w: d.w, h: d.h, pal: d.pal, px: Array.from(d.px), mesh: S.mesh, example: S.exampleDesign }), 400);
+}
+function renderPalette() {
+  const d = S.design, box = $("pal"); box.textContent = "";
+  if (!d) return;
+  const counts = new Int32Array(d.pal.length); let empty = 0;
+  for (const v of d.px) v >= 0 ? counts[v]++ : empty++;
+  d.pal.forEach((c, i) => {
+    const b = document.createElement("button"); b.className = "sw"; b.setAttribute("aria-pressed", i === S.sel);
+    b.title = hex(c);
+    b.innerHTML = `<i style="background:${hex(c)}"></i>${counts[i]}`;
+    b.onclick = () => { S.sel = i; if (S.tool === "erase" || S.tool === "pick" || S.tool === "pan") setTool("paint"); renderPalette(); };
+    box.appendChild(b);
+  });
+  const sb = $("selbox"); sb.textContent = "";
+  if (!d.pal.length) { sb.innerHTML = `<span class="hint">No colors yet. Add one below.</span>`; return; }
+  const c = d.pal[S.sel] || d.pal[0];
+  const picker = document.createElement("input"); picker.type = "color"; picker.value = hex(c); picker.id = "selColor"; picker.setAttribute("aria-label", "Change this color");
+  picker.oninput = () => { d.pal[S.sel] = unhex(picker.value); designDirty(); renderView(); };
+  picker.onchange = () => {};
+  picker.onfocus = () => pushUndo();
+  const lbl = document.createElement("span"); lbl.innerHTML = `<b>${hex(c)}</b> · ${counts[S.sel] || 0} stitches · ${empty} unprinted`;
+  const sel = document.createElement("select"); sel.id = "mergeInto"; sel.setAttribute("aria-label", "Replace with");
+  sel.innerHTML = `<option value="">Replace all with…</option><option value="-1">Unprinted (no ink)</option>` + d.pal.map((p, i) => i === S.sel ? "" : `<option value="${i}">${hex(p)}</option>`).join("");
+  sel.onchange = () => {
+    if (sel.value === "") return; const to = +sel.value; pushUndo();
+    d.px = d.px.map(v => v === S.sel ? to : v);
+    const cp = compactPalette(d); d.pal = cp.pal; d.px = cp.px; S.sel = 0; designDirty(); renderView();
+  };
+  sb.append(picker, lbl, sel);
+}
+function syncSizeInputs() {
+  $("wSt").value = S.wSt; $("hSt").value = S.hSt;
+  $("wIn").textContent = (S.wSt / S.mesh).toFixed(2) + " in"; $("hIn").textContent = (S.hSt / S.mesh).toFixed(2) + " in";
+}
+function setTool(t) { S.tool = t; document.querySelectorAll("[data-tool]").forEach(b => b.setAttribute("aria-pressed", b.dataset.tool === t)); }
+
+function renderLayers() {
+  const box = $("layers"); box.textContent = "";
+  S.layers.forEach((L, idx) => {
+    const el = document.createElement("div"); el.className = "layer";
+    el.innerHTML = `<div class="lh"><input type="checkbox" ${L.visible ? "checked" : ""} aria-label="Show layer" data-k="visible"><span class="name">${idx + 1}. ${L.name.replace(/[<>&]/g, "")}${L.example ? ' <span class="badge">Example</span>' : ""}</span>
+      <button class="icon-btn" data-a="up" aria-label="Move layer up">↑</button><button class="icon-btn" data-a="down" aria-label="Move layer down">↓</button><button class="icon-btn" data-a="del" aria-label="Remove layer">✕</button></div>
+      <div class="lc">
+        <label>Opacity ${L.opacity}%<input type="range" min="0" max="100" value="${L.opacity}" data-k="opacity"></label>
+        <label>Size ${L.scale}%<input type="range" min="20" max="300" value="${L.scale}" data-k="scale"></label>
+        <label>Left / right<input type="range" min="-60" max="60" value="${L.ox}" data-k="ox"></label>
+        <label>Up / down<input type="range" min="-60" max="60" value="${L.oy}" data-k="oy"></label>
+        <label>Fit <select data-k="fit" style="font-size:12px;padding:4px 6px"><option value="contain" ${L.fit === "contain" ? "selected" : ""}>Whole picture</option><option value="cover" ${L.fit === "cover" ? "selected" : ""}>Fill the area</option></select></label>
+      </div>`;
+    el.querySelectorAll("[data-k]").forEach(inp => {
+      const k = inp.dataset.k;
+      const apply = () => { L[k] = inp.type === "checkbox" ? inp.checked : inp.tagName === "SELECT" ? inp.value : +inp.value; };
+      inp.addEventListener("input", () => { apply(); const lb = inp.closest("label"); if (lb && inp.type === "range") lb.firstChild.textContent = lb.firstChild.textContent.replace(/-?\d+%?$/, inp.value + (k === "opacity" || k === "scale" ? "%" : "")); });
+      inp.addEventListener("change", () => { apply(); convert(); });
+    });
+    el.querySelectorAll("[data-a]").forEach(b => b.onclick = () => {
+      const a = b.dataset.a;
+      if (a === "del") S.layers.splice(idx, 1);
+      if (a === "up" && idx > 0) [S.layers[idx - 1], S.layers[idx]] = [S.layers[idx], S.layers[idx - 1]];
+      if (a === "down" && idx < S.layers.length - 1) [S.layers[idx + 1], S.layers[idx]] = [S.layers[idx], S.layers[idx + 1]];
+      renderLayers(); if (S.layers.length) convert();
+    });
+    box.appendChild(el);
+  });
+  if (!S.layers.length) box.innerHTML = `<p class="hint">No artwork layers. The stitches below can still be edited.</p>`;
+}
+
+function parseOXS(text) {
+  const doc = new DOMParser().parseFromString(text, "text/xml");
+  const props = doc.querySelector("properties");
+  const W = +(props && props.getAttribute("chartwidth")), H = +(props && props.getAttribute("chartheight"));
+  const items = [...doc.querySelectorAll("palette > palette_item, palette_item")];
+  const pal = [], map = new Map();
+  items.forEach(it => {
+    const idx = it.getAttribute("index"), col = (it.getAttribute("color") || "").replace("#", "");
+    const num = (it.getAttribute("number") || "").toLowerCase();
+    if (idx === "0" || num === "cloth" || col.length !== 6) return;
+    map.set(idx, pal.length); pal.push(unhex("#" + col));
+  });
+  const st = [...doc.querySelectorAll("fullstitches > stitch, fullstitches stitch")];
+  let w = W, h = H;
+  if (!w || !h) { st.forEach(s => { w = Math.max(w || 0, +s.getAttribute("x") + 1); h = Math.max(h || 0, +s.getAttribute("y") + 1); }); }
+  if (!w || !h) throw new Error("This OXS file has no stitches.");
+  const px = new Int16Array(w * h).fill(-1);
+  st.forEach(s => { const x = +s.getAttribute("x"), y = +s.getAttribute("y"), v = map.get(s.getAttribute("palindex")); if (v != null && x < w && y < h) px[y * w + x] = v; });
+  return compactPalette({ pal, px }).pal.length ? { w, h, ...compactPalette({ pal, px }) } : null;
+}
+function stitchImageToDesign(c) {
+  const w = c.width, h = c.height;
+  if (w > 400 || h > 400) throw new Error("A stitch image has one pixel per stitch, so it should be 400 pixels or smaller. Use Add artwork for pictures.");
+  const d = c.getContext("2d").getImageData(0, 0, w, h).data, idx = new Map(), pal = [], px = new Int16Array(w * h).fill(-1);
+  for (let i = 0; i < w * h; i++) {
+    if (d[i * 4 + 3] < 128) continue;
+    const k = (d[i * 4] << 16) | (d[i * 4 + 1] << 8) | d[i * 4 + 2];
+    if (!idx.has(k)) { if (pal.length >= 256) throw new Error("This image has more than 256 colors. Use Add artwork to reduce them."); idx.set(k, pal.length); pal.push([d[i * 4], d[i * 4 + 1], d[i * 4 + 2]]); }
+    px[i] = idx.get(k);
+  }
+  return { w, h, ...compactPalette({ pal, px }) };
+}
+
+/* ---------------- image processing ---------------- */
+function filt1d(inp, out, n, r, mode, dq) {
+  if (mode === 0) {
+    let s = 0; const W = 2 * r + 1;
+    for (let k = -r; k <= r; k++) s += inp[clamp(k, 0, n - 1)];
+    for (let i = 0; i < n; i++) { out[i] = s / W; s += inp[Math.min(i + r + 1, n - 1)] - inp[Math.max(i - r, 0)]; }
+    return;
+  }
+  let head = 0, tail = 0; const isMax = mode === 1;
+  for (let i = 0; i < n + r; i++) {
+    if (i < n) { const v = inp[i]; while (tail > head && (isMax ? inp[dq[tail - 1]] <= v : inp[dq[tail - 1]] >= v)) tail--; dq[tail++] = i; }
+    const c = i - r;
+    if (c >= 0) { while (dq[head] < c - r) head++; out[c] = inp[dq[head]]; }
+  }
+}
+function filter2d(src, w, h, r, mode) {
+  const out = new Float32Array(w * h), m = Math.max(w, h), a = new Float32Array(m), b = new Float32Array(m), dq = new Int32Array(m + 2);
+  for (let y = 0; y < h; y++) { const o = y * w; for (let x = 0; x < w; x++) a[x] = src[o + x]; filt1d(a, b, w, r, mode, dq); for (let x = 0; x < w; x++) out[o + x] = b[x]; }
+  for (let x = 0; x < w; x++) { for (let y = 0; y < h; y++) a[y] = out[y * w + x]; filt1d(a, b, h, r, mode, dq); for (let y = 0; y < h; y++) out[y * w + x] = b[y]; }
+  return out;
+}
+function bilinear(img, w, h, x, y) {
+  x = clamp(x, 0, w - 1.001); y = clamp(y, 0, h - 1.001);
+  const x0 = x | 0, y0 = y | 0, fx = x - x0, fy = y - y0, i = y0 * w + x0;
+  return img[i] * (1 - fx) * (1 - fy) + img[i + 1] * fx * (1 - fy) + img[i + w] * (1 - fx) * fy + img[i + w + 1] * fx * fy;
+}
+function otsu(vals, maxV) {
+  const bins = 256, hist = new Float64Array(bins);
+  for (const v of vals) hist[clamp(Math.floor(v / maxV * (bins - 1)), 0, bins - 1)]++;
+  let tot = vals.length, sum = 0; for (let i = 0; i < bins; i++) sum += i * hist[i];
+  let sB = 0, wB = 0, best = 0, th = 0;
+  for (let i = 0; i < bins; i++) {
+    wB += hist[i]; if (!wB) continue; const wF = tot - wB; if (!wF) break;
+    sB += i * hist[i]; const mB = sB / wB, mF = (sum - sB) / wF, v = wB * wF * (mB - mF) ** 2;
+    if (v > best) { best = v; th = i; }
+  }
+  return (th + 0.5) / (bins - 1) * maxV;
+}
+function homography(src, dst) {
+  const A = [], B = [];
+  for (let k = 0; k < 4; k++) {
+    const [x, y] = src[k], [u, v] = dst[k];
+    A.push([x, y, 1, 0, 0, 0, -u * x, -u * y]); B.push(u);
+    A.push([0, 0, 0, x, y, 1, -v * x, -v * y]); B.push(v);
+  }
+  for (let c = 0; c < 8; c++) {
+    let p = c; for (let r = c + 1; r < 8; r++) if (Math.abs(A[r][c]) > Math.abs(A[p][c])) p = r;
+    [A[c], A[p]] = [A[p], A[c]]; [B[c], B[p]] = [B[p], B[c]];
+    if (Math.abs(A[c][c]) < 1e-12) return null;
+    for (let r = 0; r < 8; r++) { if (r === c) continue; const f = A[r][c] / A[c][c]; for (let k = c; k < 8; k++) A[r][k] -= f * A[c][k]; B[r] -= f * B[c]; }
+  }
+  return B.map((b, i) => b / A[i][i]);
+}
+const applyH = (h, x, y) => { const w = h[6] * x + h[7] * y + 1; return [(h[0] * x + h[1] * y + h[2]) / w, (h[3] * x + h[4] * y + h[5]) / w]; };
+
+/* ---------------- scan loading ---------------- */
+async function loadScan(canvas, dpi, name, example) {
+  const PROC = 300;
+  let c = canvas;
+  if (dpi > PROC * 1.1) {
+    const f = PROC / dpi; c = document.createElement("canvas");
+    c.width = Math.round(canvas.width * f); c.height = Math.round(canvas.height * f);
+    const x = c.getContext("2d"); x.imageSmoothingQuality = "high"; x.drawImage(canvas, 0, 0, c.width, c.height);
+    dpi = PROC;
+  }
+  S.scan = { canvas: c, dpi, name, example: !!example, gray: null };
+  S.grid = null; S.center = null; S.checked.clear(); S.selNode = -1; S.place = { ox: 0, oy: 0 }; $("ox").value = 0; $("oy").value = 0;
+  $("dpi").value = Math.round(dpi);
+  $("findGrid").disabled = false;
+  computeGray();
+  findMarks();
+  setStatus("scanStatus", `${name}: ${c.width} × ${c.height} px at ${Math.round(dpi)} dpi. ` + (S.marksFound ? "Found all four Carrier dots." : "Carrier dots not found, so the page edges are used. Drag the purple dots onto the Carrier dots if you used one."), S.marksFound ? "ok" : "err");
+  setView("snap"); fitView(); updateUI();
+  await findGrid();
+}
+function computeGray() {
+  const c = S.scan.canvas, w = c.width, h = c.height, d = c.getContext("2d", { willReadFrequently: true }).getImageData(0, 0, w, h).data;
+  const g = new Float32Array(w * h);
+  for (let i = 0; i < w * h; i++) g[i] = d[i * 4] * 0.299 + d[i * 4 + 1] * 0.587 + d[i * 4 + 2] * 0.114;
+  S.scan.gray = g;
+}
+function rotateScan180() {
+  const c = S.scan.canvas, r = document.createElement("canvas"); r.width = c.width; r.height = c.height;
+  const x = r.getContext("2d"); x.translate(c.width, c.height); x.rotate(Math.PI); x.drawImage(c, 0, 0);
+  S.scan.canvas = r; computeGray();
+}
+function detectMarksOnce() {
+  const { gray: g, canvas: c, dpi } = S.scan, w = c.width, h = c.height;
+  const R = Math.round(1.2 * dpi), areaExp = Math.PI * (MARK_R * dpi) ** 2;
+  const found = [];
+  const corners = [[0, 0], [w - R, 0], [0, h - R], [w - R, h - R]];
+  for (const [x0, y0] of corners) {
+    const rw = Math.min(R, w), rh = Math.min(R, h), vals = [];
+    for (let y = 0; y < rh; y += 3) for (let x = 0; x < rw; x += 3) vals.push(g[(y0 + y) * w + x0 + x]);
+    vals.sort((a, b) => a - b);
+    const white = vals[Math.floor(vals.length * 0.92)], th = white * 0.45;
+    if (white < 120) { found.push(null); continue; }
+    const seen = new Uint8Array(rw * rh); let best = null;
+    for (let y = 0; y < rh; y++) for (let x = 0; x < rw; x++) {
+      const k = y * rw + x; if (seen[k] || g[(y0 + y) * w + x0 + x] >= th) continue;
+      const st = [k]; seen[k] = 1; let n = 0, sx = 0, sy = 0, sw = 0, minx = x, maxx = x, miny = y, maxy = y, edge = false;
+      while (st.length) {
+        const q = st.pop(), qx = q % rw, qy = (q / rw) | 0, v = g[(y0 + qy) * w + x0 + qx];
+        n++; const wt = white - v; sx += qx * wt; sy += qy * wt; sw += wt;
+        if (qx < minx) minx = qx; if (qx > maxx) maxx = qx; if (qy < miny) miny = qy; if (qy > maxy) maxy = qy;
+        if (qx === 0 || qy === 0 || qx === rw - 1 || qy === rh - 1) edge = true;
+        if (n > areaExp * 6) { edge = true; }
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const nx = qx + dx, ny = qy + dy; if (nx < 0 || ny < 0 || nx >= rw || ny >= rh) continue;
+          const nk = ny * rw + nx; if (seen[nk] || g[(y0 + ny) * w + x0 + nx] >= th) continue; seen[nk] = 1; st.push(nk);
+        }
+      }
+      const bw = maxx - minx + 1, bh = maxy - miny + 1, fill = n / (bw * bh);
+      if (edge || n < areaExp * 0.45 || n > areaExp * 2.2 || bw / bh > 1.4 || bh / bw > 1.4 || fill < 0.6) continue;
+      const score = Math.abs(Math.log(n / areaExp));
+      if (!best || score < best.score) best = { x: x0 + sx / sw, y: y0 + sy / sw, score };
+    }
+    found.push(best ? [best.x, best.y] : null);
+  }
+  return found;
+}
+function findMarks() {
+  const dpi = S.scan.dpi;
+  let f = detectMarksOnce();
+  const ok = f.every(Boolean);
+  if (ok) {
+    // Orientation dot sits right of the top-left mark. If it's missing there but present at the opposite corner, the sheet went in upside down.
+    const g = S.scan.gray, w = S.scan.canvas.width, h = S.scan.canvas.height;
+    const sampleAt = (u, v) => { const H = homography(MARKS.map(m => [m[0], m[1]]), f); const p = applyH(H, u, v); return bilinear(g, w, h, p[0], p[1]); };
+    const here = sampleAt(ORIENT[0], ORIENT[1]), flipped = sampleAt(PAGE.w - ORIENT[0], PAGE.h - ORIENT[1]);
+    if (flipped < here * 0.6) { rotateScan180(); f = detectMarksOnce(); toast("The scan was upside down, so it was turned around."); }
+  }
+  S.marksFound = f.every(Boolean);
+  S.marks = MARKS.map((m, k) => f[k] && S.marksFound ? f[k] : [m[0] * dpi, m[1] * dpi]);
+  updateH();
+}
+function updateH() { S.H = homography(S.marks, MARKS); }
+const scanToPage = (x, y) => S.H ? applyH(S.H, x, y) : [x / S.scan.dpi, y / S.scan.dpi];
+
+/* ---------------- intersection finding ---------------- */
+async function findGrid() {
+  if (!S.scan) return;
+  S.mesh = +$("mesh2").value; S.darkThreads = $("darkThreads").checked;
+  const dpi = +$("dpi").value || S.scan.dpi;
+  const c = S.scan.canvas, w = c.width, h = c.height;
+  let g = S.scan.gray;
+  if (S.darkThreads) { const inv = new Float32Array(g.length); for (let i = 0; i < g.length; i++) inv[i] = 255 - g[i]; g = inv; }
+  const procDpi = S.scan.dpi * (S.scan.dpi === dpi ? 1 : 1);
+  let p0 = procDpi / S.mesh;
+  busy(true, "Reading the threads…", 0.05); await tick();
+
+  // 1. Canvas area: thread/hole texture makes the local spread high; black backing and paper are flat.
+  const rT = Math.max(2, Math.round(p0 * 0.75));
+  const sq = new Float32Array(g.length); for (let i = 0; i < g.length; i++) sq[i] = g[i] * g[i];
+  const m1 = filter2d(g, w, h, rT, 0); busy(true, null, 0.15); await tick();
+  const m2 = filter2d(sq, w, h, rT, 0); busy(true, null, 0.25); await tick();
+  const F = 4, mw = Math.ceil(w / F), mh = Math.ceil(h / F), sd = new Float32Array(mw * mh);
+  for (let y = 0; y < mh; y++) for (let x = 0; x < mw; x++) { const i = Math.min(y * F, h - 1) * w + Math.min(x * F, w - 1); sd[y * mw + x] = Math.sqrt(Math.max(0, m2[i] - m1[i] * m1[i])); }
+  const th = otsu(sd, 128);
+  const mask = new Uint8Array(mw * mh); for (let i = 0; i < sd.length; i++) mask[i] = sd[i] > th ? 1 : 0;
+  const inMask = (x, y) => { const mx = (x / F) | 0, my = (y / F) | 0; return mx >= 0 && my >= 0 && mx < mw && my < mh && mask[my * mw + mx] === 1; };
+
+  // 2. Smooth so each crossing becomes a bright peak, then find the peaks.
+  const r1 = Math.max(1, Math.round(p0 * 0.16));
+  let b = filter2d(g, w, h, r1, 0); b = filter2d(b, w, h, r1, 0); busy(true, "Finding crossings…", 0.4); await tick();
+  const mx = filter2d(b, w, h, Math.max(1, Math.round(p0 * 0.33)), 1); busy(true, null, 0.55); await tick();
+  const mn = filter2d(b, w, h, Math.max(2, Math.round(p0 * 0.55)), 2); busy(true, null, 0.65); await tick();
+  let peaks = [];
+  for (let y = 2; y < h - 2; y++) for (let x = 2; x < w - 2; x++) {
+    const i = y * w + x; const v = b[i];
+    if (v !== mx[i] || v - mn[i] < 6) continue;
+    if (!inMask(x, y)) continue;
+    const dx = (b[i + 1] - b[i - 1]) / 2, dxx = b[i + 1] - 2 * v + b[i - 1], dy = (b[i + w] - b[i - w]) / 2, dyy = b[i + w] - 2 * v + b[i - w];
+    const ox = dxx < 0 ? clamp(-dx / dxx, -0.5, 0.5) : 0, oy = dyy < 0 ? clamp(-dy / dyy, -0.5, 0.5) : 0;
+    peaks.push({ x: x + ox, y: y + oy, s: v - mn[i] });
+  }
+  if (peaks.length < 20) { busy(false); setStatus("scanStatus", "No thread crossings found. Check the mesh size and that the canvas sits on a dark background.", "err"); return; }
+  const sArr = peaks.map(p => p.s).sort((a, c2) => a - c2), sMed = sArr[sArr.length >> 1];
+  peaks = peaks.filter(p => p.s > sMed * 0.3);
+  busy(true, "Measuring the mesh…", 0.75); await tick();
+
+  // 3. Spatial index; estimate spacing and angle from neighbors near the middle.
+  const hashCell = p0, hw = Math.ceil(w / hashCell) + 1, hash = new Map();
+  peaks.forEach((p, k) => { const key = ((p.y / hashCell) | 0) * hw + ((p.x / hashCell) | 0); (hash.get(key) || hash.set(key, []).get(key)).push(k); });
+  const near = (x, y, rad, skip) => {
+    const cx = (x / hashCell) | 0, cy = (y / hashCell) | 0, R = Math.ceil(rad / hashCell); let best = -1, bd = rad * rad;
+    for (let yy = cy - R; yy <= cy + R; yy++) for (let xx = cx - R; xx <= cx + R; xx++) {
+      const L = hash.get(yy * hw + xx); if (!L) continue;
+      for (const k of L) { if (skip && skip(k)) continue; const d = (peaks[k].x - x) ** 2 + (peaks[k].y - y) ** 2; if (d < bd) { bd = d; best = k; } }
+    }
+    return best;
+  };
+  let cxm = 0, cym = 0; peaks.forEach(p => { cxm += p.x; cym += p.y; }); cxm /= peaks.length; cym /= peaks.length;
+  const central = peaks.map((p, k) => [k, (p.x - cxm) ** 2 + (p.y - cym) ** 2]).sort((a, c2) => a[1] - c2[1]).slice(0, 3000).map(a => a[0]);
+  const ds = []; let C4 = 0, S4 = 0;
+  for (const k of central) {
+    const p = peaks[k], j = near(p.x, p.y, p0 * 1.8, q => q === k); if (j < 0) continue;
+    const dx = peaks[j].x - p.x, dy = peaks[j].y - p.y, d = Math.hypot(dx, dy);
+    ds.push(d); const a = Math.atan2(dy, dx) * 4; C4 += Math.cos(a); S4 += Math.sin(a);
+  }
+  ds.sort((a, c2) => a - c2);
+  const pitch = ds.length ? ds[ds.length >> 1] : p0, theta = Math.atan2(S4, C4) / 4;
+  const meshSeen = procDpi / pitch;
+  const U = [pitch * Math.cos(theta), pitch * Math.sin(theta)], V = [-pitch * Math.sin(theta), pitch * Math.cos(theta)];
+
+  // 4. Grow the grid outward from the middle, one neighbor at a time.
+  const used = new Uint8Array(peaks.length), nodes = new Map(), KEY = (i, j) => (i + 4096) * 8192 + (j + 4096);
+  const verify = (x, y, s) => {
+    const v = bilinear(b, w, h, x, y); let dark = 0;
+    for (const [sx, sy] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+      const hx = x + (U[0] * sx + V[0] * sy) / 2, hy = y + (U[1] * sx + V[1] * sy) / 2;
+      if (bilinear(b, w, h, hx, hy) < v - 0.3 * s) dark++;
+    }
+    return dark;
+  };
+  const seedK = near(cxm, cym, pitch * 6, null);
+  if (seedK < 0) { busy(false); setStatus("scanStatus", "Couldn't find a starting point in the middle of the canvas.", "err"); return; }
+  used[seedK] = 1;
+  const seed = { i: 0, j: 0, x: peaks[seedK].x, y: peaks[seedK].y, st: 1, s: peaks[seedK].s, miss: 0, u: U.slice(), v: V.slice() };
+  nodes.set(KEY(0, 0), seed);
+  let qa = [seed], qb = [], steps = 0;
+  const MAXN = 250000;
+  while ((qa.length || qb.length) && nodes.size < MAXN) {
+    const n = qa.length ? qa.shift() : qb.shift();
+    for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const ni = n.i + di, nj = n.j + dj, key = KEY(ni, nj); if (nodes.has(key)) continue;
+      const step = di ? [n.u[0] * di, n.u[1] * di] : [n.v[0] * dj, n.v[1] * dj];
+      let px = n.x + step[0], py = n.y + step[1];
+      // Use any already placed neighbors of the target to sharpen the guess.
+      let ax = px, ay = py, an = 1;
+      for (const [ei, ej] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const o = nodes.get(KEY(ni + ei, nj + ej)); if (!o || o === n || o.st === 3) continue;
+        ax += o.x - (ei ? o.u[0] * ei : o.v[0] * ej); ay += o.y - (ei ? o.u[1] * ei : o.v[1] * ej); an++;
+      }
+      px = ax / an; py = ay / an;
+      if (px < 1 || py < 1 || px > w - 2 || py > h - 2 || !inMask(px, py)) continue;
+      const k = near(px, py, pitch * 0.33, q => used[q] === 1);
+      let node;
+      if (k >= 0 && verify(peaks[k].x, peaks[k].y, peaks[k].s) >= 3) {
+        used[k] = 1; const p = peaks[k];
+        const real = [p.x - n.x, p.y - n.y];
+        const u = n.u.slice(), v = n.v.slice();
+        if (di && n.st !== 3) { u[0] = u[0] * 0.5 + real[0] * di * 0.5; u[1] = u[1] * 0.5 + real[1] * di * 0.5; }
+        if (dj && n.st !== 3) { v[0] = v[0] * 0.5 + real[0] * dj * 0.5; v[1] = v[1] * 0.5 + real[1] * dj * 0.5; }
+        const strong = p.s >= sMed * 0.45 && verify(p.x, p.y, p.s) === 4;
+        node = { i: ni, j: nj, x: p.x, y: p.y, st: strong ? 1 : 2, s: p.s, miss: 0, u, v };
+        nodes.set(key, node); qa.push(node);
+      } else {
+        if (n.miss >= 2) continue;
+        node = { i: ni, j: nj, x: px, y: py, st: 3, s: 0, miss: n.miss + 1, u: n.u.slice(), v: n.v.slice() };
+        nodes.set(key, node); qb.push(node);
+      }
+    }
+    if (++steps % 4000 === 0) { busy(true, `Mapping intersections… ${nodes.size}`, 0.8); await tick(); }
+  }
+  // Drop guessed points that aren't enclosed by real ones (the ring past the canvas edge).
+  const isReal = (i, j) => { const o = nodes.get(KEY(i, j)); return o && o.st !== 3; };
+  const enclosed = (n) => {
+    const side = (di, dj) => { for (let s = 1; s <= 3; s++) if (isReal(n.i + di * s, n.j + dj * s)) return true; return false; };
+    return (side(1, 0) && side(-1, 0)) || (side(0, 1) && side(0, -1));
+  };
+  for (const [k, n] of nodes) if (n.st === 3 && !enclosed(n)) nodes.delete(k);
+
+  // 5. Pack into a dense grid.
+  let imin = 1e9, imax = -1e9, jmin = 1e9, jmax = -1e9;
+  for (const n of nodes.values()) { imin = Math.min(imin, n.i); imax = Math.max(imax, n.i); jmin = Math.min(jmin, n.j); jmax = Math.max(jmax, n.j); }
+  const gx = imax - imin + 1, gy = jmax - jmin + 1;
+  const G = { gx, gy, X: new Float32Array(gx * gy), Y: new Float32Array(gx * gy), ST: new Uint8Array(gx * gy), pitch, theta, meshSeen };
+  for (const n of nodes.values()) { const k = (n.j - jmin) * gx + (n.i - imin); G.X[k] = n.x; G.Y[k] = n.y; G.ST[k] = n.st; }
+  // Measure spacing from neighboring found points; nearest-neighbor estimates run short.
+  let dsum = 0, dn = 0;
+  for (let j = 0; j < gy; j++) for (let i = 0; i < gx - 1; i++) { const k = j * gx + i; if (G.ST[k] === 1 && G.ST[k + 1] === 1) { dsum += Math.hypot(G.X[k + 1] - G.X[k], G.Y[k + 1] - G.Y[k]); dn++; } }
+  for (let j = 0; j < gy - 1; j++) for (let i = 0; i < gx; i++) { const k = j * gx + i; if (G.ST[k] === 1 && G.ST[k + gx] === 1) { dsum += Math.hypot(G.X[k + gx] - G.X[k], G.Y[k + gx] - G.Y[k]); dn++; } }
+  if (dn) { G.pitch = dsum / dn; G.meshSeen = procDpi / G.pitch; }
+  const meshOut = G.meshSeen;
+  S.grid = G;
+  refitGuessed(); computeCorners();
+  // Default center: the intersection closest to the middle of the found area.
+  let sx = 0, sy = 0, cnt = 0; for (let k = 0; k < gx * gy; k++) if (G.ST[k] === 1) { sx += G.X[k]; sy += G.Y[k]; cnt++; }
+  S.center = nearestNode(sx / cnt, sy / cnt);
+  S.checked.clear(); S.selNode = -1;
+  busy(false);
+  const note = Math.abs(meshOut - S.mesh) > S.mesh * 0.08 ? ` The spacing looks like ${meshOut.toFixed(1)} mesh, not ${S.mesh}. Change the mesh and find again if that's wrong.` : ` Spacing measured at ${meshOut.toFixed(2)} mesh, tilted ${(theta * 180 / Math.PI).toFixed(2)}°.`;
+  $("meshNote").textContent = `${gx} × ${gy} intersections mapped.` + note;
+  setStatus("scanStatus", (S.marksFound ? "Carrier dots found. " : "No Carrier dots: using page edges. ") + `Mapped ${gx} × ${gy} intersections.`, "ok");
+  previewDirty(); setView("map"); updateUI(); renderAll();
+}
+function nearestNode(x, y) {
+  const G = S.grid; let best = -1, bd = 1e18;
+  for (let k = 0; k < G.gx * G.gy; k++) { if (!G.ST[k]) continue; const d = (G.X[k] - x) ** 2 + (G.Y[k] - y) ** 2; if (d < bd) { bd = d; best = k; } }
+  return best < 0 ? null : { i: best % G.gx, j: (best / G.gx) | 0, d: Math.sqrt(bd) };
+}
+function refitGuessed() {
+  const G = S.grid, { gx, gy } = G;
+  const at = (i, j) => (i >= 0 && j >= 0 && i < gx && j < gy && G.ST[j * gx + i]) ? j * gx + i : -1;
+  for (let it = 0; it < 6; it++) {
+    for (let j = 0; j < gy; j++) for (let i = 0; i < gx; i++) {
+      const k = j * gx + i; if (G.ST[k] !== 3) continue;
+      let sx = 0, sy = 0, n = 0;
+      for (const [di, dj] of [[1, 0], [0, 1]]) {
+        const a = at(i - di, j - dj), b = at(i + di, j + dj);
+        if (a >= 0 && b >= 0) { sx += (G.X[a] + G.X[b]) / 2; sy += (G.Y[a] + G.Y[b]) / 2; n++; }
+      }
+      if (n) { G.X[k] = sx / n; G.Y[k] = sy / n; }
+    }
+  }
+}
+function nodeP(i, j) {
+  const G = S.grid, { gx, gy } = G;
+  const get = (a, b) => (a >= 0 && b >= 0 && a < gx && b < gy && G.ST[b * gx + a]) ? [G.X[b * gx + a], G.Y[b * gx + a]] : null;
+  const p = get(i, j); if (p) return p;
+  let sx = 0, sy = 0, n = 0;
+  for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+    const a = get(i + di, j + dj), b = get(i + 2 * di, j + 2 * dj);
+    if (a && b) { sx += 2 * a[0] - b[0]; sy += 2 * a[1] - b[1]; n++; }
+  }
+  return n ? [sx / n, sy / n] : null;
+}
+function computeCorners() {
+  const G = S.grid, cw = G.gx + 1, ch = G.gy + 1;
+  G.CX = new Float32Array(cw * ch).fill(NaN); G.CY = new Float32Array(cw * ch).fill(NaN);
+  for (let b = -1; b < G.gy; b++) for (let a = -1; a < G.gx; a++) {
+    const p = [nodeP(a, b), nodeP(a + 1, b), nodeP(a, b + 1), nodeP(a + 1, b + 1)];
+    let q = null;
+    if (p.every(Boolean)) q = [(p[0][0] + p[1][0] + p[2][0] + p[3][0]) / 4, (p[0][1] + p[1][1] + p[2][1] + p[3][1]) / 4];
+    else if (p[0] && p[3]) q = [(p[0][0] + p[3][0]) / 2, (p[0][1] + p[3][1]) / 2];
+    else if (p[1] && p[2]) q = [(p[1][0] + p[2][0]) / 2, (p[1][1] + p[2][1]) / 2];
+    if (q) { const k = (b + 1) * cw + (a + 1); G.CX[k] = q[0]; G.CY[k] = q[1]; }
+  }
+}
+function corner(a, b) {
+  const G = S.grid; if (a < -1 || b < -1 || a >= G.gx || b >= G.gy) return null;
+  const k = (b + 1) * (G.gx + 1) + (a + 1); const x = G.CX[k]; return isNaN(x) ? null : [x, G.CY[k]];
+}
+function placement() {
+  const d = S.design, G = S.grid; if (!d || !G || !S.center) return null;
+  return { i0: S.center.i - Math.floor(d.w / 2) + S.place.ox, j0: S.center.j - Math.floor(d.h / 2) + S.place.oy };
+}
+function stitchQuad(i, j) {
+  const q = [corner(i - 1, j - 1), corner(i, j - 1), corner(i, j), corner(i - 1, j)];
+  return q.every(Boolean) ? q : null;
+}
+function forEachStitch(fn) {
+  const d = S.design, pl = placement(); if (!pl) return { off: 0, total: 0 };
+  let off = 0, total = 0;
+  for (let r = 0; r < d.h; r++) for (let c = 0; c < d.w; c++) {
+    const v = d.px[r * d.w + c]; if (v < 0) continue; total++;
+    const i = pl.i0 + c, j = pl.j0 + r, G = S.grid;
+    const onCanvas = i >= 0 && j >= 0 && i < G.gx && j < G.gy && G.ST[j * G.gx + i];
+    const q = stitchQuad(i, j);
+    if (!q || !onCanvas) { off++; continue; }
+    fn(q, v, i, j);
+  }
+  return { off, total };
+}
+function grow(q, f) {
+  const cx = (q[0][0] + q[1][0] + q[2][0] + q[3][0]) / 4, cy = (q[0][1] + q[1][1] + q[2][1] + q[3][1]) / 4;
+  return q.map(p => [cx + (p[0] - cx) * f, cy + (p[1] - cy) * f]);
+}
+
+/* ---------------- preview + print ---------------- */
+let previewCanvas = null, previewStale = true;
+function previewDirty() { previewStale = true; clearTimeout(previewDirty.t); previewDirty.t = setTimeout(() => { if (S.view === "prev" || S.view === "map") renderView(); updateFit(); }, 60); }
+function buildPreview() {
+  if (!S.scan) return null;
+  const c = S.scan.canvas;
+  if (!previewCanvas) previewCanvas = document.createElement("canvas");
+  previewCanvas.width = c.width; previewCanvas.height = c.height;
+  const x = previewCanvas.getContext("2d");
+  x.drawImage(c, 0, 0);
+  if (S.grid && S.design) {
+    const pal = S.design.pal.map(adjustColor).map(hex), f = 1 + S.adj.bleed / 100;
+    x.globalCompositeOperation = "multiply";
+    forEachStitch((q, v) => { const g = grow(q, f); x.fillStyle = pal[v]; x.beginPath(); x.moveTo(g[0][0], g[0][1]); for (let k = 1; k < 4; k++) x.lineTo(g[k][0], g[k][1]); x.closePath(); x.fill(); });
+    x.globalCompositeOperation = "source-over";
+  }
+  previewStale = false;
+  return previewCanvas;
+}
+function updateFit() {
+  const el = $("fitStatus");
+  if (!S.grid || !S.design) { el.textContent = "Waiting for a design and a mapped scan."; el.className = "status"; return; }
+  const r = forEachStitch(() => {});
+  const pl = placement();
+  el.className = "status " + (r.off ? "err" : "ok");
+  el.textContent = r.off ? `${r.off} of ${r.total} stitches fall off the mapped canvas. Move the design or make it smaller.` : `All ${r.total} stitches land on mapped intersections. Design corner at intersection ${pl.i0 + 1}, ${pl.j0 + 1}.`;
+}
+async function renderPrint(dpi) {
+  const W = Math.round(PAGE.w * dpi), H = Math.round(PAGE.h * dpi);
+  const c = document.createElement("canvas"); c.width = W; c.height = H;
+  const x = c.getContext("2d"); x.fillStyle = "#fff"; x.fillRect(0, 0, W, H);
+  const pal = S.design.pal.map(adjustColor).map(hex), f = 1 + S.adj.bleed / 100;
+  const nx = S.nudge.x / 200, ny = S.nudge.y / 200;
+  const r = forEachStitch((q, v) => {
+    const g = grow(q, f).map(p => { const pg = scanToPage(p[0], p[1]); return [(pg[0] + nx) * dpi, (pg[1] + ny) * dpi]; });
+    x.fillStyle = pal[v]; x.beginPath(); x.moveTo(g[0][0], g[0][1]); for (let k = 1; k < 4; k++) x.lineTo(g[k][0], g[k][1]); x.closePath(); x.fill();
+  });
+  return { canvas: c, ...r };
+}
+function canPrint() {
+  if (!S.design) { toast("Make a design first."); return false; }
+  if (!S.grid) { toast("Load a scan and find its intersections first."); return false; }
+  return true;
+}
+async function makePrintPdf() {
+  if (!canPrint()) return;
+  busy(true, "Building the print file…", 0.3); await tick();
+  try {
+    const r = await renderPrint(S.printDpi); busy(true, null, 0.7); await tick();
+    const img = await canvasToPdfImage(r.canvas);
+    const blob = buildPdf("q 612 0 0 792 0 0 cm /Im0 Do Q\n", img);
+    busy(false);
+    printSummary(r);
+    await saveFile(fileBase() + "-print.pdf", blob);
+  } catch (e) { busy(false); setStatus("printStatus", "The print file could not be made: " + e.message, "err"); }
+}
+async function makePrintPng() {
+  if (!canPrint()) return;
+  busy(true, "Building the print image…", 0.4); await tick();
+  const r = await renderPrint(S.printDpi); busy(false); printSummary(r);
+  await saveFile(fileBase() + `-print-${S.printDpi}dpi.png`, await canvasBlob(r.canvas));
+}
+function printSummary(r) {
+  setStatus("printStatus", `${r.total - r.off} stitches in the file` + (r.off ? `, ${r.off} left out because they fall off the canvas.` : ".") + ` Print it on letter paper at 100% with the Carrier fed the same way you scanned it, top edge first.`, r.off ? "err" : "ok");
+}
+async function testPagePdf() {
+  if (!S.scan) { toast("Load a scan first."); return; }
+  const nx = S.nudge.x / 200, ny = S.nudge.y / 200;
+  let c = "0.2 0.2 0.2 RG 0.6 w\n";
+  for (const [mx, my] of MARKS) {
+    const X = mx + nx, Y = my + ny;
+    c += `${pt(X - 0.25)} ${ptY(Y)} m ${pt(X + 0.25)} ${ptY(Y)} l S ${pt(X)} ${ptY(Y - 0.25)} m ${pt(X)} ${ptY(Y + 0.25)} l S\n`;
+    c += `${pt(X - MARK_R)} ${ptY(Y + MARK_R)} ${pt(2 * MARK_R)} ${pt(2 * MARK_R)} re S\n`;
+  }
+  if (S.grid && S.design) {
+    const d = S.design, pl = placement();
+    const path = [];
+    const toP = p => { const pg = scanToPage(p[0], p[1]); return [pg[0] + nx, pg[1] + ny]; };
+    for (let cI = 0; cI <= d.w; cI++) { const p = corner(pl.i0 + cI - 1, pl.j0 - 1); if (p) path.push(toP(p)); }
+    for (let rI = 1; rI <= d.h; rI++) { const p = corner(pl.i0 + d.w - 1, pl.j0 + rI - 1); if (p) path.push(toP(p)); }
+    for (let cI = d.w - 1; cI >= 0; cI--) { const p = corner(pl.i0 + cI - 1, pl.j0 + d.h - 1); if (p) path.push(toP(p)); }
+    for (let rI = d.h - 1; rI >= 1; rI--) { const p = corner(pl.i0 - 1, pl.j0 + rI - 1); if (p) path.push(toP(p)); }
+    if (path.length > 2) { c += "0.76 0.09 0.36 RG 0.8 w\n" + path.map((p, k) => `${pt(p[0])} ${ptY(p[1])} ${k ? "l" : "m"}`).join(" ") + " h S\n"; }
+    const cp = S.grid ? nodeP(S.center.i, S.center.j) : null;
+    if (cp) { const p = toP(cp); c += `${pt(p[0] - 0.08)} ${ptY(p[1] - 0.08)} m ${pt(p[0] + 0.08)} ${ptY(p[1] + 0.08)} l S ${pt(p[0] - 0.08)} ${ptY(p[1] + 0.08)} m ${pt(p[0] + 0.08)} ${ptY(p[1] - 0.08)} l S\n`; }
+  }
+  c += "0.35 g\n" + pdfText(2.2, 0.42, 7, "Test page - plain paper only. Crosshairs should sit on the Carrier dots.");
+  await saveFile(fileBase() + "-test-page.pdf", buildPdf(c));
+}
+const fileBase = () => "canvas-" + new Date().toISOString().slice(0, 10);
+
+/* ---------------- example content ---------------- */
+function exampleArtwork() {
+  const c = document.createElement("canvas"); c.width = 240; c.height = 240; const x = c.getContext("2d");
+  x.fillStyle = "#F7D6E3"; x.fillRect(0, 0, 240, 240);
+  x.fillStyle = "#FBEAF1"; for (let i = 0; i < 240; i += 30) for (let j = 0; j < 240; j += 30) { x.beginPath(); x.arc(i + ((j / 30) % 2) * 15, j, 4, 0, 7); x.fill(); }
+  const body = new Path2D(); body.moveTo(120, 214); body.bezierCurveTo(40, 172, 28, 84, 72, 72); body.bezierCurveTo(98, 64, 142, 64, 168, 72); body.bezierCurveTo(212, 84, 200, 172, 120, 214);
+  x.fillStyle = "#D7263D"; x.fill(body);
+  x.save(); x.clip(body); x.fillStyle = "#EF5B6B"; x.beginPath(); x.ellipse(88, 110, 26, 40, -0.3, 0, 7); x.fill();
+  x.fillStyle = "#A3172D"; x.beginPath(); x.ellipse(160, 160, 46, 60, 0.4, 0, 7); x.fill(); x.restore();
+  x.fillStyle = "#FFD166";
+  for (let yy = 92; yy < 200; yy += 22) for (let xx = 60; xx < 190; xx += 24) { const px = xx + ((yy / 22) % 2) * 12; if (x.isPointInPath(body, px, yy)) { x.beginPath(); x.ellipse(px, yy, 3.5, 5.5, 0, 0, 7); x.fill(); } }
+  x.fillStyle = "#2A9D5C"; x.beginPath();
+  for (let k = 0; k < 14; k++) { const a = Math.PI + k / 14 * Math.PI, r = k % 2 ? 22 : 52; x.lineTo(120 + Math.cos(a) * r, 78 + Math.sin(a) * r * 0.55); }
+  x.closePath(); x.fill();
+  x.fillStyle = "#1B6B3A"; x.fillRect(114, 28, 12, 40);
+  return c;
+}
+async function exampleScan(mesh = 13, flip = false) {
+  const dpi = 300, W = Math.round(PAGE.w * dpi), H = Math.round(PAGE.h * dpi);
+  const c = document.createElement("canvas"); c.width = W; c.height = H; const x = c.getContext("2d");
+  x.fillStyle = "#f4f4f2"; x.fillRect(0, 0, W, H);
+  x.save(); x.translate(18, -11); x.rotate(0.004);
+  x.fillStyle = "#141414";
+  x.fillRect(WINDOW.x * dpi, WINDOW.y * dpi, WINDOW.w * dpi, WINDOW.h * dpi);
+  for (const [mx, my] of MARKS) { x.beginPath(); x.arc(mx * dpi, my * dpi, MARK_R * dpi, 0, 7); x.fill(); }
+  x.beginPath(); x.arc(ORIENT[0] * dpi, ORIENT[1] * dpi, ORIENT_R * dpi, 0, 7); x.fill();
+  // 13 mesh canvas, slightly crooked, with uneven threads.
+  const p = dpi / mesh, cw = 6.0 * dpi, ch = 7.0 * dpi;
+  x.save(); x.translate(4.25 * dpi, 5.4 * dpi); x.rotate(0.021); x.translate(-cw / 2, -ch / 2);
+  const nV = Math.floor(cw / p), nH = Math.floor(ch / p);
+  let rnd = 7; const rand = () => (rnd = (rnd * 16807) % 2147483647) / 2147483647;
+  const vx = [], hy = []; let acc = 0; for (let k = 0; k <= nV; k++) { vx.push(acc); acc += p * (1 + (rand() - 0.5) * 0.06); }
+  acc = 0; for (let k = 0; k <= nH; k++) { hy.push(acc); acc += p * (1 + (rand() - 0.5) * 0.06); }
+  x.lineCap = "butt";
+  for (let pass = 0; pass < 2; pass++) {
+    const list = pass ? hy : vx;
+    list.forEach((pos, k) => {
+      const shade = 214 + rand() * 30; x.strokeStyle = `rgb(${shade},${shade},${shade - 6})`; x.lineWidth = p * (0.4 + rand() * 0.1);
+      x.beginPath();
+      for (let s = 0; s <= 40; s++) {
+        const t = s / 40, along = t * (pass ? cw : ch), wob = 1.6 * Math.sin(along / 160 + k * 0.7) + 1.2 * Math.sin(along / 47 + k);
+        if (pass) x.lineTo(along, pos + wob); else x.lineTo(pos + wob, along);
+      }
+      x.stroke();
+    });
+  }
+  x.restore();
+  // A strip of tape across one corner of the canvas.
+  x.save(); x.translate(1.7 * dpi, 2.3 * dpi); x.rotate(-0.6); x.fillStyle = "rgba(235,232,210,0.55)"; x.fillRect(-0.9 * dpi, -0.28 * dpi, 1.8 * dpi, 0.56 * dpi); x.restore();
+  x.restore();
+  const d = x.getImageData(0, 0, W, H);
+  for (let i = 0; i < d.data.length; i += 4) { const n = (rand() - 0.5) * 14; d.data[i] += n; d.data[i + 1] += n; d.data[i + 2] += n; }
+  x.putImageData(d, 0, 0);
+  if (flip) { const r = document.createElement("canvas"); r.width = W; r.height = H; const y = r.getContext("2d"); y.translate(W, H); y.rotate(Math.PI); y.drawImage(c, 0, 0); return r; }
+  return c;
+}
+
+/* ---------------- view ---------------- */
+const view = $("view"), vctx = view.getContext("2d");
+const V = { s: 1, tx: 0, ty: 0 };
+function worldSize() {
+  if (S.view === "design") return S.design ? [S.design.w, S.design.h] : [60, 60];
+  return S.scan ? [S.scan.canvas.width, S.scan.canvas.height] : [2550, 3300];
+}
+function resize() {
+  const r = view.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+  view.width = Math.round(r.width * dpr); view.height = Math.round(r.height * dpr);
+  renderView();
+}
+function fitView() {
+  const r = view.getBoundingClientRect(), [w, h] = worldSize();
+  let target = [0, 0, w, h];
+  if (S.view !== "design" && S.grid) {
+    let minx = 1e9, miny = 1e9, maxx = -1e9, maxy = -1e9; const G = S.grid;
+    for (let k = 0; k < G.gx * G.gy; k++) if (G.ST[k]) { minx = Math.min(minx, G.X[k]); maxx = Math.max(maxx, G.X[k]); miny = Math.min(miny, G.Y[k]); maxy = Math.max(maxy, G.Y[k]); }
+    const pad = G.pitch * 4; target = [minx - pad, miny - pad, maxx - minx + pad * 2, maxy - miny + pad * 2];
+  }
+  V.s = Math.min(r.width / target[2], r.height / target[3]) * 0.94;
+  V.tx = (r.width - target[2] * V.s) / 2 - target[0] * V.s; V.ty = (r.height - target[3] * V.s) / 2 - target[1] * V.s;
+  renderView();
+}
+function zoomAt(f, cx, cy) {
+  const r = view.getBoundingClientRect(); if (cx == null) { cx = r.width / 2; cy = r.height / 2; }
+  const ns = clamp(V.s * f, 0.02, 200); f = ns / V.s;
+  V.tx = cx - (cx - V.tx) * f; V.ty = cy - (cy - V.ty) * f; V.s = ns; renderView();
+}
+const toWorld = (sx, sy) => [(sx - V.tx) / V.s, (sy - V.ty) / V.s];
+let raf = 0;
+function renderView() { if (!raf) raf = requestAnimationFrame(() => { raf = 0; draw(); }); }
+function draw() {
+  const dpr = window.devicePixelRatio || 1, cw = view.width / dpr, ch = view.height / dpr;
+  vctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  vctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--stage").trim() || "#17121C";
+  vctx.fillRect(0, 0, cw, ch);
+  const stat = [];
+  if (S.view === "design") {
+    const d = S.design; if (!d) return;
+    vctx.save(); vctx.translate(V.tx, V.ty); vctx.scale(V.s, V.s);
+    // Checker shows unprinted stitches.
+    vctx.fillStyle = "#ffffff"; vctx.fillRect(0, 0, d.w, d.h);
+    vctx.fillStyle = "#E7E2EC";
+    if (V.s > 3) for (let y = 0; y < d.h; y++) for (let x = 0; x < d.w; x++) if (d.px[y * d.w + x] < 0) { vctx.fillRect(x, y, 0.5, 0.5); vctx.fillRect(x + 0.5, y + 0.5, 0.5, 0.5); }
+    vctx.imageSmoothingEnabled = false; vctx.drawImage(designCanvas, 0, 0);
+    vctx.restore();
+    if (S.showGrid && V.s >= 5) {
+      vctx.save(); vctx.lineWidth = 1;
+      const x0 = Math.max(0, Math.floor(-V.tx / V.s)), x1 = Math.min(d.w, Math.ceil((cw - V.tx) / V.s)), y0 = Math.max(0, Math.floor(-V.ty / V.s)), y1 = Math.min(d.h, Math.ceil((ch - V.ty) / V.s));
+      for (let x = x0; x <= x1; x++) { vctx.strokeStyle = x % 10 === 0 ? "rgba(20,10,30,.55)" : "rgba(20,10,30,.16)"; const X = Math.round(V.tx + x * V.s) + 0.5; vctx.beginPath(); vctx.moveTo(X, V.ty + y0 * V.s); vctx.lineTo(X, V.ty + y1 * V.s); vctx.stroke(); }
+      for (let y = y0; y <= y1; y++) { vctx.strokeStyle = y % 10 === 0 ? "rgba(20,10,30,.55)" : "rgba(20,10,30,.16)"; const Y = Math.round(V.ty + y * V.s) + 0.5; vctx.beginPath(); vctx.moveTo(V.tx + x0 * V.s, Y); vctx.lineTo(V.tx + x1 * V.s, Y); vctx.stroke(); }
+      vctx.restore();
+    }
+    // Center stitch.
+    const cx = V.tx + (Math.floor(d.w / 2) + 0.5) * V.s, cy = V.ty + (Math.floor(d.h / 2) + 0.5) * V.s, r = Math.max(4, V.s * 0.35);
+    vctx.strokeStyle = COL.center; vctx.lineWidth = 2; vctx.beginPath(); vctx.moveTo(cx - r, cy - r); vctx.lineTo(cx + r, cy + r); vctx.moveTo(cx + r, cy - r); vctx.lineTo(cx - r, cy + r); vctx.stroke();
+    stat.push(`${d.w} × ${d.h} stitches`, `${(d.w / S.mesh).toFixed(2)} × ${(d.h / S.mesh).toFixed(2)} in on ${S.mesh} mesh`, `${d.pal.length} colors`);
+    if (S.exampleDesign) stat.unshift("EX");
+    if (hover.cell) stat.push(`col ${hover.cell[0] + 1}, row ${hover.cell[1] + 1}`);
+  } else {
+    if (!S.scan) { vctx.fillStyle = "#BCB2C8"; vctx.font = "600 15px Figtree, sans-serif"; vctx.textAlign = "center"; vctx.fillText("Load a scan on step 2, or try the example scan.", cw / 2, ch / 2); return; }
+    const src = S.view === "prev" ? (previewStale ? buildPreview() : previewCanvas) : S.scan.canvas;
+    vctx.save(); vctx.translate(V.tx, V.ty); vctx.scale(V.s, V.s);
+    vctx.imageSmoothingEnabled = V.s < 2; vctx.drawImage(src, 0, 0);
+    vctx.restore();
+    if (S.view === "map") drawMap(cw, ch);
+    if (S.view === "prev" && S.design && S.grid) drawOutline(0.5);
+    if (S.scan.example) stat.push("EX");
+    stat.push(S.scan.name);
+    if (S.grid) stat.push(`${S.grid.gx} × ${S.grid.gy} intersections`);
+    stat.push(`${Math.round(V.s * 100)}%`);
+  }
+  $("vstat").innerHTML = stat.map(s => s === "EX" ? `<span class="ex">Example</span>` : `<span>${String(s).replace(/[<>&]/g, "")}</span>`).join("");
+}
+const W2S = (x, y) => [V.tx + x * V.s, V.ty + y * V.s];
+function drawOutline(alpha) {
+  const d = S.design, pl = placement(); if (!pl) return;
+  const pts = [corner(pl.i0 - 1, pl.j0 - 1), corner(pl.i0 + d.w - 1, pl.j0 - 1), corner(pl.i0 + d.w - 1, pl.j0 + d.h - 1), corner(pl.i0 - 1, pl.j0 + d.h - 1)];
+  vctx.save(); vctx.globalAlpha = alpha; vctx.strokeStyle = COL.outline; vctx.lineWidth = 2; vctx.setLineDash([6, 4]);
+  vctx.beginPath(); let any = false;
+  pts.forEach(p => { if (!p) return; const s = W2S(p[0], p[1]); any ? vctx.lineTo(s[0], s[1]) : vctx.moveTo(s[0], s[1]); any = true; });
+  vctx.closePath(); vctx.stroke(); vctx.restore();
+}
+function drawMap(cw, ch) {
+  const G = S.grid;
+  // Carrier dots.
+  S.marks.forEach(m => {
+    const [x, y] = W2S(m[0], m[1]), r = Math.max(7, MARK_R * S.scan.dpi * V.s);
+    vctx.strokeStyle = COL.mark; vctx.lineWidth = 2.5; vctx.beginPath(); vctx.moveTo(x, y - r); vctx.lineTo(x + r, y); vctx.lineTo(x, y + r); vctx.lineTo(x - r, y); vctx.closePath(); vctx.stroke();
+  });
+  if (!G) return;
+  if (S.design) drawOutline(0.9);
+  if (!S.showPts) return;
+  const ps = G.pitch * V.s, big = ps >= 9, arm = clamp(ps * 0.22, 2, 9);
+  const inView = (x, y) => x > -20 && y > -20 && x < cw + 20 && y < ch + 20;
+  const colors = [null, COL.found, COL.check, COL.miss, COL.moved];
+  vctx.lineWidth = big ? 1.6 : 1;
+  for (let st = 1; st <= 4; st++) {
+    if (!big && st === 1) continue;
+    vctx.strokeStyle = colors[st]; vctx.fillStyle = colors[st]; vctx.beginPath();
+    for (let k = 0; k < G.gx * G.gy; k++) {
+      if (G.ST[k] !== st) continue;
+      const [x, y] = W2S(G.X[k], G.Y[k]); if (!inView(x, y)) continue;
+      if (big) { vctx.moveTo(x - arm, y); vctx.lineTo(x + arm, y); vctx.moveTo(x, y - arm); vctx.lineTo(x, y + arm); }
+      else { vctx.rect(x - 1.5, y - 1.5, 3, 3); }
+    }
+    big ? vctx.stroke() : vctx.fill();
+  }
+  if (big && S.checked.size) {
+    vctx.strokeStyle = "rgba(255,255,255,.8)"; vctx.lineWidth = 1; vctx.beginPath();
+    for (const k of S.checked) { const [x, y] = W2S(G.X[k], G.Y[k]); vctx.moveTo(x + arm + 2, y); vctx.arc(x, y, arm + 2, 0, 7); }
+    vctx.stroke();
+  }
+  if (S.center) {
+    const p = nodeP(S.center.i, S.center.j);
+    if (p) { const [x, y] = W2S(p[0], p[1]), r = Math.max(6, ps * 0.35); vctx.strokeStyle = COL.center; vctx.lineWidth = 2.5; vctx.beginPath(); vctx.moveTo(x - r, y - r); vctx.lineTo(x + r, y + r); vctx.moveTo(x + r, y - r); vctx.lineTo(x - r, y + r); vctx.stroke(); }
+  }
+  if (S.selNode >= 0) {
+    const [x, y] = W2S(G.X[S.selNode], G.Y[S.selNode]), r = Math.max(7, ps * 0.42);
+    vctx.strokeStyle = COL.sel; vctx.lineWidth = 2; vctx.strokeRect(x - r, y - r, r * 2, r * 2);
+  }
+}
+
+/* ---------------- pointer input ---------------- */
+const ptrs = new Map(); let drag = null; const hover = { cell: null };
+let spaceDown = false;
+view.addEventListener("pointerdown", e => {
+  view.setPointerCapture(e.pointerId);
+  const r = view.getBoundingClientRect(), sx = e.clientX - r.left, sy = e.clientY - r.top;
+  ptrs.set(e.pointerId, [sx, sy]);
+  if (ptrs.size === 2) { const [a, b] = [...ptrs.values()]; drag = { type: "pinch", d: Math.hypot(a[0] - b[0], a[1] - b[1]), c: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2] }; return; }
+  const [wx, wy] = toWorld(sx, sy);
+  const panReq = e.button === 1 || e.button === 2 || spaceDown;
+  if (S.view === "design" && S.design && !panReq && S.tool !== "pan") {
+    const cell = [Math.floor(wx), Math.floor(wy)];
+    if (cell[0] < 0 || cell[1] < 0 || cell[0] >= S.design.w || cell[1] >= S.design.h) { drag = { type: "pan", last: [sx, sy] }; return; }
+    const i = cell[1] * S.design.w + cell[0];
+    if (S.tool === "pick") { const v = S.design.px[i]; if (v >= 0) { S.sel = v; setTool("paint"); renderPalette(); } return; }
+    pushUndo();
+    if (S.tool === "fill") { floodFill(i, S.sel); designDirty(); renderView(); return; }
+    drag = { type: "paint", v: S.tool === "erase" ? -1 : S.sel, last: cell };
+    paintLine(cell, cell, drag.v); return;
+  }
+  if (S.view === "map" && S.grid && !panReq) {
+    if (S.pickCenter) {
+      const n = nearestNode(wx, wy); if (n) { S.center = { i: n.i, j: n.j }; S.place = { ox: 0, oy: 0 }; $("ox").value = 0; $("oy").value = 0; }
+      S.pickCenter = false; $("pickCenter").setAttribute("aria-pressed", "false"); previewDirty(); renderView(); return;
+    }
+    const tol = Math.max(8 / V.s, 0);
+    for (let k = 0; k < 4; k++) { const m = S.marks[k]; if (Math.hypot(m[0] - wx, m[1] - wy) < Math.max(tol * 1.5, MARK_R * S.scan.dpi)) { drag = { type: "mark", k }; return; } }
+    if (S.showPts) {
+      const n = nearestNode(wx, wy);
+      if (n && n.d < Math.max(tol, S.grid.pitch * 0.3) && S.grid.pitch * V.s >= 9) { S.selNode = n.j * S.grid.gx + n.i; drag = { type: "node", k: S.selNode, off: [S.grid.X[S.selNode] - wx, S.grid.Y[S.selNode] - wy] }; renderView(); return; }
+    }
+  }
+  drag = { type: "pan", last: [sx, sy] };
+});
+view.addEventListener("pointermove", e => {
+  const r = view.getBoundingClientRect(), sx = e.clientX - r.left, sy = e.clientY - r.top;
+  if (ptrs.has(e.pointerId)) ptrs.set(e.pointerId, [sx, sy]);
+  if (S.view === "design" && S.design) {
+    const [wx, wy] = toWorld(sx, sy), c = [Math.floor(wx), Math.floor(wy)];
+    const inside = c[0] >= 0 && c[1] >= 0 && c[0] < S.design.w && c[1] < S.design.h;
+    const prev = hover.cell; hover.cell = inside ? c : null;
+    if (!drag && (String(prev) !== String(hover.cell))) renderView();
+  }
+  if (!drag) return;
+  if (drag.type === "pinch" && ptrs.size === 2) {
+    const [a, b] = [...ptrs.values()], d = Math.hypot(a[0] - b[0], a[1] - b[1]), c = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+    V.tx += c[0] - drag.c[0]; V.ty += c[1] - drag.c[1]; zoomAt(d / drag.d, c[0], c[1]); drag.d = d; drag.c = c; return;
+  }
+  const [wx, wy] = toWorld(sx, sy);
+  if (drag.type === "pan") { V.tx += sx - drag.last[0]; V.ty += sy - drag.last[1]; drag.last = [sx, sy]; renderView(); }
+  else if (drag.type === "paint") { const c = [Math.floor(wx), Math.floor(wy)]; paintLine(drag.last, c, drag.v); drag.last = c; }
+  else if (drag.type === "node") { const G = S.grid; G.X[drag.k] = wx + drag.off[0]; G.Y[drag.k] = wy + drag.off[1]; G.ST[drag.k] = 4; drag.moved = true; renderView(); }
+  else if (drag.type === "mark") { S.marks[drag.k] = [wx, wy]; updateH(); renderView(); }
+});
+const endPtr = e => {
+  ptrs.delete(e.pointerId);
+  if (drag && drag.type === "node" && drag.moved) { computeCorners(); previewDirty(); updateCounts(); }
+  if (drag && drag.type === "mark") setStatus("scanStatus", "Corner dot moved by hand.", "ok");
+  if (drag && drag.type === "paint") designDirty();
+  if (ptrs.size < 2) drag = null;
+};
+view.addEventListener("pointerup", endPtr); view.addEventListener("pointercancel", endPtr);
+view.addEventListener("pointerleave", () => { if (hover.cell) { hover.cell = null; renderView(); } });
+view.addEventListener("contextmenu", e => e.preventDefault());
+view.addEventListener("wheel", e => { e.preventDefault(); const r = view.getBoundingClientRect(); zoomAt(Math.exp(-e.deltaY * 0.0015), e.clientX - r.left, e.clientY - r.top); }, { passive: false });
+function paintLine(a, b, v) {
+  const d = S.design, n = Math.max(Math.abs(b[0] - a[0]), Math.abs(b[1] - a[1]), 1);
+  for (let t = 0; t <= n; t++) {
+    const x = Math.round(a[0] + (b[0] - a[0]) * t / n), y = Math.round(a[1] + (b[1] - a[1]) * t / n);
+    if (x >= 0 && y >= 0 && x < d.w && y < d.h) { d.px[y * d.w + x] = v; const c = v >= 0 ? d.pal[v] : null; const cx = designCanvas.getContext("2d"); if (c) { cx.fillStyle = hex(c); cx.fillRect(x, y, 1, 1); } else cx.clearRect(x, y, 1, 1); }
+  }
+  renderView();
+}
+window.addEventListener("keydown", e => {
+  if (e.target.matches("input, select, textarea")) return;
+  if (e.code === "Space") { spaceDown = true; if (S.view !== "design" || S.design) e.preventDefault(); }
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") { e.preventDefault(); e.shiftKey ? restore(S.redo, S.undo) : restore(S.undo, S.redo); return; }
+  if (S.view === "map" && S.selNode >= 0 && e.key.startsWith("Arrow")) {
+    e.preventDefault(); const G = S.grid, k = S.selNode, st = e.shiftKey ? 3 : 1;
+    if (e.key === "ArrowLeft") G.X[k] -= st; if (e.key === "ArrowRight") G.X[k] += st; if (e.key === "ArrowUp") G.Y[k] -= st; if (e.key === "ArrowDown") G.Y[k] += st;
+    G.ST[k] = 4; computeCorners(); previewDirty(); updateCounts(); renderView();
+  }
+});
+window.addEventListener("keyup", e => { if (e.code === "Space") spaceDown = false; });
+
+/* ---------------- UI wiring ---------------- */
+function setStatus(id, msg, kind) { const el = $(id); el.hidden = false; el.textContent = msg; el.className = "status" + (kind ? " " + kind : ""); }
+function setView(v) {
+  if (v !== "design" && !S.scan && v !== "snap") v = "snap";
+  S.view = v;
+  [["vDesign", "design"], ["vSnap", "snap"], ["vMap", "map"], ["vPrev", "prev"]].forEach(([id, k]) => $(id).setAttribute("aria-pressed", k === v));
+  fitView();
+}
+function setTab(n) {
+  [1, 2, 3].forEach(k => { $("tab" + k).setAttribute("aria-selected", k === n); $("pane" + k).hidden = k !== n; });
+  if (n === 1) setView("design");
+  if (n === 2) { if (!S.scan) runExample(); else setView(S.grid ? "map" : "snap"); }
+  if (n === 3) { if (S.scan) setView("prev"); updateFit(); }
+}
+function updateCounts() {
+  const G = S.grid; if (!G) return; const c = [0, 0, 0, 0, 0];
+  for (let k = 0; k < G.gx * G.gy; k++) c[G.ST[k]]++;
+  $("nFound").textContent = c[1]; $("nCheck").textContent = c[2]; $("nMiss").textContent = c[3]; $("nMoved").textContent = c[4];
+  const left = checkList().filter(k => !S.checked.has(k)).length;
+  $("nextCheck").textContent = left ? `Next to check (${left} in the design area)` : "Nothing left to check in the design area";
+  $("nextCheck").disabled = !left;
+}
+function checkList() {
+  const G = S.grid, out = []; if (!G) return out;
+  const pl = placement(), d = S.design;
+  for (let k = 0; k < G.gx * G.gy; k++) {
+    if (G.ST[k] !== 2 && G.ST[k] !== 3) continue;
+    if (pl) { const i = k % G.gx, j = (k / G.gx) | 0; if (i < pl.i0 - 1 || j < pl.j0 - 1 || i > pl.i0 + d.w || j > pl.j0 + d.h) continue; }
+    out.push(k);
+  }
+  return out;
+}
+function updateUI() {
+  const has = !!S.scan;
+  ["vSnap", "vMap", "vPrev"].forEach(id => $(id).disabled = !has);
+  $("mapGroup").hidden = !S.grid;
+  $("printNeed").hidden = !!S.grid;
+  updateCounts(); updateFit();
+}
+function renderAll() { renderLayers(); renderPalette(); syncSizeInputs(); updateUI(); renderView(); }
+
+$("tab1").onclick = () => setTab(1); $("tab2").onclick = () => setTab(2); $("tab3").onclick = () => setTab(3);
+$("vDesign").onclick = () => setView("design"); $("vSnap").onclick = () => setView("snap"); $("vMap").onclick = () => setView("map"); $("vPrev").onclick = () => setView("prev");
+$("zIn").onclick = () => zoomAt(1.4); $("zOut").onclick = () => zoomAt(1 / 1.4); $("zFit").onclick = fitView;
+document.querySelectorAll("[data-tool]").forEach(b => b.onclick = () => setTool(b.dataset.tool));
+$("undo").onclick = () => restore(S.undo, S.redo); $("redo").onclick = () => restore(S.redo, S.undo);
+$("showGrid").onchange = e => { S.showGrid = e.target.checked; renderView(); };
+$("nColors").oninput = e => { S.nColors = +e.target.value; $("ncOut").textContent = S.nColors; };
+$("nColors").onchange = () => { if (S.layers.length) convert(); };
+$("dither").onchange = e => { S.dither = e.target.checked; if (S.layers.length) convert(); };
+$("bgMode").onchange = e => { S.bgMode = e.target.value; $("bgColor").hidden = S.bgMode !== "color"; if (S.layers.length) convert(); };
+$("bgColor").onchange = e => { S.bg = e.target.value; if (S.layers.length) convert(); };
+$("convert").onclick = convert;
+function setMesh(m) { S.mesh = m; $("mesh").value = m; $("mesh2").value = m; syncSizeInputs(); renderView(); }
+$("mesh").onchange = e => setMesh(+e.target.value);
+$("mesh2").onchange = e => setMesh(+e.target.value);
+const aspect = () => { const L = S.layers.find(l => l.visible); return L ? L.img.height / L.img.width : (S.design ? S.design.h / S.design.w : 1); };
+function resizeDesign(w, h) {
+  if (S.layers.length) { S.wSt = w; S.hSt = h; convert(); return; }
+  if (!S.design) return;
+  pushUndo(); const d = S.design, px = new Int16Array(w * h);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) px[y * w + x] = d.px[Math.min(d.h - 1, Math.floor(y * d.h / h)) * d.w + Math.min(d.w - 1, Math.floor(x * d.w / w))];
+  setDesign(d.pal, px, w, h, true); fitView();
+}
+$("wSt").onchange = e => { const w = clamp(+e.target.value | 0, 4, 400); const h = S.lock ? clamp(Math.round(w * aspect()), 4, 400) : S.hSt; resizeDesign(w, h); };
+$("hSt").onchange = e => { const h = clamp(+e.target.value | 0, 4, 400); const w = S.lock ? clamp(Math.round(h / aspect()), 4, 400) : S.wSt; resizeDesign(w, h); };
+$("lock").onchange = e => S.lock = e.target.checked;
+$("addColor").onclick = () => { if (!S.design) return; pushUndo(); S.design.pal.push(unhex($("newColor").value)); S.sel = S.design.pal.length - 1; setTool("paint"); designDirty(); };
+
+$("addArt").onchange = async e => {
+  const files = [...e.target.files]; e.target.value = "";
+  if (!files.length) return;
+  busy(true, "Opening artwork…", 0.3);
+  const firstReal = !S.layers.some(l => !l.example);
+  if (firstReal) S.layers = [];
+  try {
+    for (const f of files) { const r = await fileToCanvas(f, 150); S.layers.push(layerDefaults(f.name, r.canvas)); }
+  } catch (err) { busy(false); toast(err.message, 5000); renderLayers(); return; }
+  busy(false);
+  if (firstReal) { if (S.wSt < 20) S.wSt = 60; const a = S.layers[0].img.height / S.layers[0].img.width; S.hSt = clamp(Math.round(S.wSt * a), 4, 400); }
+  setTab(1); renderLayers(); convert();
+};
+$("openStitch").onchange = async e => {
+  const f = e.target.files[0]; e.target.value = ""; if (!f) return;
+  try {
+    let d;
+    if (/\.(oxs|xml)$/i.test(f.name)) d = parseOXS(await f.text()); else d = stitchImageToDesign(await loadImageFile(f));
+    if (!d) throw new Error("No stitches were found in this file.");
+    pushUndo(); S.layers = []; S.exampleDesign = false; setDesign(d.pal, d.px, d.w, d.h); setTab(1); fitView(); renderAll();
+    toast(`Opened ${d.w} × ${d.h} stitches, ${d.pal.length} colors.`);
+  } catch (err) { toast(err.message, 5000); }
+};
+$("saveStitchPng").onclick = async () => { if (!S.design) return; await saveFile("design-" + S.design.w + "x" + S.design.h + ".png", await canvasBlob(designCanvas)); };
+$("saveChart").onclick = async () => {
+  const d = S.design; if (!d) return; const cs = 16, m = 30;
+  const c = document.createElement("canvas"); c.width = d.w * cs + m * 2; c.height = d.h * cs + m * 2 + 40 + Math.ceil(d.pal.length / 6) * 26;
+  const x = c.getContext("2d"); x.fillStyle = "#fff"; x.fillRect(0, 0, c.width, c.height);
+  x.imageSmoothingEnabled = false; x.drawImage(designCanvas, m, m, d.w * cs, d.h * cs);
+  for (let i = 0; i <= d.w; i++) { x.fillStyle = i % 10 === 0 ? "#222" : "rgba(0,0,0,.2)"; x.fillRect(m + i * cs, m, 1, d.h * cs); }
+  for (let j = 0; j <= d.h; j++) { x.fillStyle = j % 10 === 0 ? "#222" : "rgba(0,0,0,.2)"; x.fillRect(m, m + j * cs, d.w * cs, 1); }
+  x.fillStyle = "#222"; x.font = "11px sans-serif"; x.textAlign = "center";
+  for (let i = 10; i <= d.w; i += 10) x.fillText(i, m + i * cs, m - 8);
+  x.textAlign = "right"; for (let j = 10; j <= d.h; j += 10) x.fillText(j, m - 6, m + j * cs + 4);
+  const counts = new Int32Array(d.pal.length); for (const v of d.px) if (v >= 0) counts[v]++;
+  x.textAlign = "left"; x.font = "12px sans-serif";
+  d.pal.forEach((p, k) => { const cx = m + (k % 6) * 150, cy = m + d.h * cs + 30 + Math.floor(k / 6) * 26; x.fillStyle = hex(p); x.fillRect(cx, cy, 20, 18); x.strokeStyle = "#999"; x.strokeRect(cx, cy, 20, 18); x.fillStyle = "#222"; x.fillText(`${hex(p)}  ${counts[k]}`, cx + 26, cy + 13); });
+  await saveFile("chart-" + d.w + "x" + d.h + ".png", await canvasBlob(c));
+};
+
+$("carrierPdf").onclick = () => saveFile("carrier-sheet.pdf", carrierPdf());
+$("scanFile").onchange = async e => {
+  const f = e.target.files[0]; e.target.value = ""; if (!f) return;
+  busy(true, "Opening the scan…", 0.1);
+  try {
+    let canvas, dpi;
+    if (/\.pdf$/i.test(f.name) || f.type === "application/pdf") { const r = await pdfToCanvas(await f.arrayBuffer(), 300); canvas = r.canvas; dpi = r.dpi || canvas.width / 8.5; }
+    else { canvas = await loadImageFile(f); dpi = canvas.width / 8.5; }
+    for (const s of [150, 200, 240, 300, 400, 600, 1200]) if (Math.abs(dpi - s) / s < 0.04) dpi = s;
+    busy(false);
+    await loadScan(canvas, dpi, f.name, false);
+  } catch (err) { busy(false); setStatus("scanStatus", err.message, "err"); }
+};
+async function runExample() {
+  busy(true, "Making an example scan…", 0.05); await tick();
+  const c = await exampleScan(); busy(false);
+  await loadScan(c, 300, "Example scan, 13 mesh", true);
+}
+$("exampleScan").onclick = runExample;
+$("findGrid").onclick = () => findGrid();
+$("darkThreads").onchange = () => { if (S.scan) findGrid(); };
+$("dpi").onchange = e => { if (!S.scan) return; const v = +e.target.value; if (v > 50) { toast("Re-reading at " + v + " dpi"); S.scan.dpi = v; findMarks(); findGrid(); } };
+$("showPts").onchange = e => { S.showPts = e.target.checked; renderView(); };
+$("pickCenter").onclick = () => { S.pickCenter = !S.pickCenter; $("pickCenter").setAttribute("aria-pressed", S.pickCenter); if (S.pickCenter) { setView("map"); toast("Click the intersection where the design's center stitch should go."); } };
+$("refit").onclick = () => { if (!S.grid) return; refitGuessed(); computeCorners(); previewDirty(); renderView(); toast("Red points re-guessed from their neighbors."); };
+$("nextCheck").onclick = () => {
+  const list = checkList().filter(k => !S.checked.has(k)); if (!list.length) { updateCounts(); return; }
+  // Nearest unchecked point to the current one keeps the walk local.
+  const G = S.grid, cur = S.selNode >= 0 ? [G.X[S.selNode], G.Y[S.selNode]] : null;
+  let k = list[0];
+  if (cur) { let bd = 1e18; for (const q of list) { const d = (G.X[q] - cur[0]) ** 2 + (G.Y[q] - cur[1]) ** 2; if (d < bd) { bd = d; k = q; } } }
+  if (S.selNode >= 0) S.checked.add(S.selNode);
+  S.checked.add(k); S.selNode = k;
+  if (S.view !== "map") setView("map");
+  const r = view.getBoundingClientRect(); V.s = 60 / G.pitch; V.tx = r.width / 2 - G.X[k] * V.s; V.ty = r.height / 2 - G.Y[k] * V.s;
+  updateCounts(); renderView();
+};
+$("saveSnap").onclick = async () => { if (!S.scan) return; await saveFile("canvas-snapshot.png", await canvasBlob(S.scan.canvas)); };
+
+const placeChanged = () => { S.place.ox = +$("ox").value | 0; S.place.oy = +$("oy").value | 0; previewDirty(); updateCounts(); renderView(); };
+$("ox").oninput = placeChanged; $("oy").oninput = placeChanged;
+$("recenter").onclick = () => { $("ox").value = 0; $("oy").value = 0; placeChanged(); };
+const adjOut = () => { $("satOut").textContent = S.adj.sat + "%"; $("deepOut").textContent = S.adj.deepen; $("conOut").textContent = S.adj.contrast + "%"; $("bleedOut").textContent = S.adj.bleed + "%"; };
+["sat", "deepen", "contrast", "bleed"].forEach(k => $(k).oninput = e => { S.adj[k] = +e.target.value; adjOut(); previewDirty(); store.set("ccp-adj", S.adj); });
+$("rawColors").onchange = e => { S.adj.raw = e.target.checked; previewDirty(); store.set("ccp-adj", S.adj); };
+const nudgeOut = () => { $("nudgeOut").textContent = `${S.nudge.x},${S.nudge.y}`; store.set("ccp-nudge", S.nudge); };
+$("nU").onclick = () => { S.nudge.y--; nudgeOut(); }; $("nD").onclick = () => { S.nudge.y++; nudgeOut(); };
+$("nL").onclick = () => { S.nudge.x--; nudgeOut(); }; $("nR").onclick = () => { S.nudge.x++; nudgeOut(); };
+$("printDpi").onchange = e => S.printDpi = +e.target.value;
+$("makePdf").onclick = makePrintPdf; $("makePng").onclick = makePrintPng;
+$("savePrev").onclick = async () => { if (!S.scan) return; const c = buildPreview(); await saveFile("canvas-preview.png", await canvasBlob(c)); };
+$("testPage").onclick = testPagePdf;
+
+/* ---------------- start ---------------- */
+(function init() {
+  const adj = store.get("ccp-adj"); if (adj) Object.assign(S.adj, adj);
+  const nd = store.get("ccp-nudge"); if (nd) S.nudge = nd;
+  ["sat", "deepen", "contrast", "bleed"].forEach(k => $(k).value = S.adj[k]); $("rawColors").checked = S.adj.raw; adjOut(); nudgeOut();
+  const saved = store.get("ccp-design");
+  if (saved && saved.px && saved.px.length === saved.w * saved.h) {
+    if (saved.mesh) setMesh(saved.mesh);
+    S.exampleDesign = !!saved.example;
+    if (S.exampleDesign) S.layers = [Object.assign(layerDefaults("Strawberry (example)", exampleArtwork()), { example: true })];
+    setDesign(saved.pal, Int16Array.from(saved.px), saved.w, saved.h);
+  } else {
+    S.layers = [Object.assign(layerDefaults("Strawberry (example)", exampleArtwork()), { example: true })];
+    S.nColors = 8; $("nColors").value = 8; $("ncOut").textContent = 8;
+    const q = quantize(flatten(), S.wSt, S.hSt, S.nColors, false);
+    S.exampleDesign = true; setDesign(q.pal, q.px, S.wSt, S.hSt);
+  }
+  new ResizeObserver(resize).observe(view);
+  resize(); fitView(); renderAll();
+})();
+</script>
