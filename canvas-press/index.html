@@ -285,7 +285,7 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
             <button class="btn small" id="trim">Trim empty edges</button>
             <button class="btn small" id="removeBg">Remove background</button>
           </div>
-          <label class="f" id="origRow">Original picture on top <small id="origOut">0%</small><input type="range" id="origAlpha" min="0" max="100" value="0"></label>
+          <label class="f" id="origRow">Original picture on top <small id="origOut">0%</small><small>You can keep editing with it on. Slide to 0% to see your stitches' true colors.</small><input type="range" id="origAlpha" min="0" max="100" value="0"></label>
           <p class="hint"><b>Text</b>: pick the words, font, size and color, then click on the design where the text goes. It becomes regular stitches you can edit. Press Esc to stop placing.</p>
           <p class="hint"><b>Crop</b>: drag a box over the part you want to keep. <b>Remove background</b> clears the color around the outside edge of the design (and colors very close to it) so those stitches print as bare canvas. Undo brings either one back.</p>
           <p class="hint"><b>Move stitches</b>: drag the design to shift it. The original picture moves with it, so you can see what you moved. The frame grows if stitches go past the edge.</p>
@@ -878,7 +878,6 @@ function convert() {
 // Once stitches are edited by hand, settings changes no longer re-read the picture on their own.
 function startEditing() {
   S.edited = true;
-  if (S.origAlpha > 0) { S.origAlpha = 0; $("origAlpha").value = 0; $("origOut").textContent = "0%"; toast("Original hidden while you edit. Slide it back up to compare, or use the Original view."); }
 }
 function redoFromSource() {
   const run = async () => { if (S.edited) await archiveDesign("before re-reading"); S.edited = false; $("redoBar").hidden = true; if (S.layers.length) convert(); else if (S.importFile) importPainted(S.importFile); };
@@ -2424,6 +2423,7 @@ function draw() {
     stat.push(`${d.w} × ${d.h} stitches`, `${(d.w / S.mesh).toFixed(2)} × ${(d.h / S.mesh).toFixed(2)} in on ${S.mesh} mesh`, `${d.pal.length} colors`);
     if (S.exampleDesign) stat.unshift("EX");
     if (hover.cell) stat.push(`col ${hover.cell[0] + 1}, row ${hover.cell[1] + 1}`);
+    if (S.original && S.origAlpha > 0) stat.push(`Original on top ${S.origAlpha}%`);
     if (mv[0] || mv[1]) stat.push(`moving ${mv[0] > 0 ? "+" : ""}${mv[0]}, ${mv[1] > 0 ? "+" : ""}${mv[1]}`);
   } else {
     if (!S.scan) { vctx.fillStyle = "#BCB2C8"; vctx.font = "600 15px Figtree, sans-serif"; vctx.textAlign = "center"; vctx.fillText("Load a scan on step 2, or try the example scan.", cw / 2, ch / 2); return; }
