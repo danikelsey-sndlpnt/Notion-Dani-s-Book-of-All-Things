@@ -24,6 +24,9 @@ Reading a PDF uses pdf.js from cdnjs. If that can't load, the app pulls the scan
 
 ## More tools
 
+- **My designs**: save designs by name (with their original picture and initials) and open them later to keep editing. Save changes updates the open design; Save as new keeps both. Designs are stored on the device; Back up all downloads them as a file and Open a backup loads them anywhere.
+- **Big Move button** on the picture switches to moving the view and back.
+
 - **DMC colors**: every color shows its closest DMC floss number. **Pick DMC** chooses an exact DMC color, **Add a DMC color** adds one, and **Change all colors to their closest DMC** converts the whole design. **Replace all with** shows color swatches with their DMC numbers.
 - **Color key (PDF)**: a printable sheet with the design picture, each design color beside its closest DMC swatch, DMC number and name, and stitch counts. It's on the Design step (Save the design) and the Print step.
 - **Initials**: on the Print step, **Add initials** opens a pop-up for the letters, font, height, color (design colors or any DMC) and position. By default they go bottom right, 2 inches below the design. They print with the design and appear in Preview and the color key.

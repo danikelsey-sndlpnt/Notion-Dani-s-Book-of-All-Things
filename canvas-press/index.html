@@ -110,6 +110,11 @@ h1 span { color: var(--accent); }
 .qbar .qsw { width: 34px; height: 34px; padding: 0; border-radius: 8px; border: 2px solid transparent; }
 .qbar .qsw[aria-pressed=true] { border-color: #fff; box-shadow: 0 0 0 2px #F06292; background-clip: padding-box; }
 .qbar .qsep { width: 1px; background: rgba(255,255,255,.2); margin: 4px 2px; flex: none; }
+.bigmove { position: absolute; right: calc(12px + env(safe-area-inset-right, 0px)); bottom: 44px; width: 64px; height: 64px; border-radius: 50%; border: 2px solid rgba(255,255,255,.75); background: rgba(23,18,28,.85); color: #fff; display: grid; place-items: center; align-content: center; gap: 0; cursor: pointer; box-shadow: 0 4px 14px rgba(0,0,0,.4); z-index: 2; }
+.bigmove svg { width: 26px; height: 26px; }
+.bigmove span { font: 700 11px var(--body); }
+.bigmove[aria-pressed=true] { background: #F06292; border-color: #fff; color: #1D0A13; }
+.hrow .acts { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 .vstat { position: absolute; left: 10px; bottom: 10px; right: 10px; display: flex; flex-wrap: wrap; gap: 6px; pointer-events: none; }
 .vstat span { background: rgba(10,8,14,.72); color: #F1ECF6; font: 500 12px var(--mono); padding: 3px 8px; border-radius: 6px; font-variant-numeric: tabular-nums; }
 .vstat .ex { background: #9A6200; color: #fff; font-family: var(--body); font-weight: 700; }
@@ -251,6 +256,7 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
           </div>
           <div id="qpal" aria-label="Colors"></div>
         </div>
+        <button class="bigmove" id="bigMove" aria-pressed="false" aria-label="Move view"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2l3 3h-2v4h4V7l3 3-3 3v-2h-4v4h2l-3 3-3-3h2v-4H7v2l-3-3 3-3v2h4V5H9z" fill="currentColor"/></svg><span>Move</span></button>
         <div class="vstat" id="vstat"></div>
         <div class="busy" id="busy" hidden><div><span id="busyText">Working…</span><div class="meter"><i id="busyBar"></i></div></div></div>
       </div>
@@ -265,6 +271,20 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
 
       <!-- 1 DESIGN -->
       <div class="sec" id="pane1">
+        <div class="group">
+          <h3>My designs</h3>
+          <div class="row">
+            <label class="f">Name<input type="text" id="libName" placeholder="Christmas stove" maxlength="60" autocomplete="off"></label>
+            <button class="btn primary small" id="libSave">Save</button>
+            <button class="btn small" id="libSaveNew" hidden>Save as new</button>
+          </div>
+          <p class="hint" id="libNote">Saved designs stay on this device, with their original picture, so you can open them later and keep editing.</p>
+          <div class="hist" id="lib"></div>
+          <div class="row">
+            <button class="btn small" id="libBackup">Back up all (file)</button>
+            <label class="btn small file-btn">Open a backup<input type="file" id="libRestore" accept=".json,application/json"></label>
+          </div>
+        </div>
         <div class="group" id="histGroup" hidden>
           <h3>Earlier designs</h3>
           <p class="hint">Saved on this device whenever a design gets replaced. Restoring keeps the one you have now in this list too.</p>
@@ -1124,7 +1144,7 @@ function syncSizeInputs() {
   $("sizeNote").textContent = `${S.wSt} × ${S.hSt} stitches = ${(S.wSt / S.mesh).toFixed(2)} × ${(S.hSt / S.mesh).toFixed(2)} in on ${S.mesh} mesh.` + (S.finish ? ` Sized for: ${S.finish.name} (${S.finish.w} × ${S.finish.h} in inside).` : "");
   const cn = $("copyNote"); if (cn) cn.textContent = copyPlan();
 }
-function setTool(t) { S.tool = t; document.querySelectorAll("[data-tool]").forEach(b => b.setAttribute("aria-pressed", b.dataset.tool === t)); if (S.design) renderPalette(); }
+function setTool(t) { S.tool = t; document.querySelectorAll("[data-tool]").forEach(b => b.setAttribute("aria-pressed", b.dataset.tool === t)); const bm = $("bigMove"); if (bm) bm.setAttribute("aria-pressed", t === "pan"); if (S.design) renderPalette(); }
 
 function renderLayers() {
   const box = $("layers"); box.textContent = "";
@@ -2379,6 +2399,85 @@ function snapAllToDmc() {
   toast(`Colors changed to DMC.${merged ? ` ${merged} matched the same DMC and were merged.` : ""} Undo brings them back.`);
 }
 
+/* ---------------- my designs (library) ---------------- */
+S.library = []; S.libId = null;
+async function loadLibrary() { const l = await idb.get("library"); S.library = Array.isArray(l) ? l : []; renderLibrary(); }
+async function saveLibrary() { await idb.set("library", S.library); renderLibrary(); }
+function renderLibrary() {
+  const box = $("lib"); box.textContent = "";
+  const cur = S.library.find(e => e.id === S.libId);
+  $("libSave").textContent = cur ? "Save changes" : "Save"; $("libSaveNew").hidden = !cur;
+  if (cur && document.activeElement !== $("libName") && !$("libName").value) $("libName").value = cur.name;
+  if (!S.library.length) { box.innerHTML = `<p class="hint">No saved designs yet. Name this one and click Save.</p>`; return; }
+  [...S.library].sort((a, b) => b.time - a.time).forEach(e => {
+    const row = document.createElement("div"); row.className = "hrow";
+    const t = new Date(e.time), info = document.createElement("div");
+    info.innerHTML = `<div class="t"></div><div class="m">${e.rec.w} × ${e.rec.h} stitches · ${e.rec.mesh || 13} mesh · ${t.toLocaleDateString([], { month: "short", day: "numeric" })} ${t.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</div>`;
+    info.querySelector(".t").textContent = e.name + (e.id === S.libId ? " (open now)" : "");
+    const acts = document.createElement("div"); acts.className = "acts";
+    const open = document.createElement("button"); open.className = "btn small"; open.textContent = "Open"; open.onclick = () => openLibrary(e.id);
+    const del = document.createElement("button"); del.className = "btn small"; del.textContent = "Delete";
+    del.onclick = async () => {
+      if (del.dataset.sure !== "1") { del.dataset.sure = "1"; del.textContent = "Tap again to delete"; setTimeout(() => { del.dataset.sure = ""; del.textContent = "Delete"; }, 4000); return; }
+      S.library = S.library.filter(x => x.id !== e.id); if (S.libId === e.id) S.libId = null; await saveLibrary(); toast(`Deleted "${e.name}".`);
+    };
+    acts.append(open, del); row.append(thumb(e.rec), info, acts); box.appendChild(row);
+  });
+}
+async function saveToLibrary(asNew) {
+  if (!S.design) return;
+  const name = $("libName").value.trim() || S.designName && S.designName.replace(/\.[a-z0-9]+$/i, "") || "Untitled design";
+  persistOriginal();
+  const rec = plainDesign(); rec.initials = S.initials || null;
+  let e = !asNew && S.library.find(x => x.id === S.libId);
+  if (e) { e.name = name; e.rec = rec; e.time = Date.now(); }
+  else { e = { id: newId(), name, rec, time: Date.now() }; S.library.push(e); S.libId = e.id; }
+  store.set("ccp-libid", S.libId);
+  await saveLibrary(); $("libName").value = name;
+  toast(`Saved "${name}".`);
+}
+async function openLibrary(id) {
+  const e = S.library.find(x => x.id === id); if (!e) return;
+  if (S.design && !S.exampleDesign && S.libId !== id) await archiveDesign("before opening " + e.name);
+  pushUndo();
+  await applySaved(e.rec, await loadOriginal(e.rec.origId));
+  S.designName = e.name; S.libId = id; store.set("ccp-libid", id); $("libName").value = e.name;
+  if (e.rec.initials) applyInitials(e.rec.initials);
+  renderLibrary(); toast(`Opened "${e.name}". Save changes keeps your edits in it.`);
+}
+function dataURLToBlob(u) {
+  try { const [head, b64] = u.split(","), type = (head.match(/data:([^;]+)/) || [])[1] || "image/jpeg"; const bin = atob(b64), a = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i); return new Blob([a], { type }); }
+  catch (e) { return null; }
+}
+const newDesignSource = () => { S.libId = null; store.set("ccp-libid", null); $("libName").value = ""; renderLibrary(); };
+const blobToDataURL = b => new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(b); });
+async function backupLibrary() {
+  if (!S.library.length) { toast("Nothing saved yet."); return; }
+  const out = { app: "Sookie's Canvas Press", version: 1, saved: new Date().toISOString(), designs: [] };
+  for (const e of S.library) {
+    const o = e.rec.origId ? await idb.get("orig-" + e.rec.origId) : null;
+    out.designs.push({ ...e, original: o && o.blob ? { m: o.m, data: await blobToDataURL(o.blob) } : null });
+  }
+  await saveFile(`canvas-press-designs-${new Date().toISOString().slice(0, 10)}.json`, new Blob([JSON.stringify(out)], { type: "application/json" }));
+}
+async function restoreLibrary(file) {
+  try {
+    const data = JSON.parse(await file.text());
+    if (!data || !Array.isArray(data.designs)) throw new Error("This isn't a Canvas Press backup file.");
+    let n = 0;
+    for (const e of data.designs) {
+      if (!e || !e.rec || !Array.isArray(e.rec.px)) continue;
+      if (e.original && e.original.data && e.rec.origId) { const blob = dataURLToBlob(e.original.data); if (blob) await idb.set("orig-" + e.rec.origId, { blob, m: e.original.m }); }
+      const { original, ...entry } = e;
+      const same = S.library.find(x => x.id === entry.id);
+      if (same && same.time === entry.time) continue;
+      if (same) entry.id = newId();
+      S.library.push(entry); n++;
+    }
+    await saveLibrary(); toast(`Added ${n} design${n === 1 ? "" : "s"} from the backup.`);
+  } catch (err) { toast(err.message || "That backup couldn't be read.", 5000); }
+}
+
 /* ---------------- practice print on paper ---------------- */
 async function practicePdf() {
   const d = S.design; if (!d) { toast("Make a design first."); return; }
@@ -2971,7 +3070,7 @@ function setStatus(id, msg, kind) { const el = $(id); el.hidden = false; el.text
 function setView(v) {
   if (v !== "design" && v !== "orig" && !S.scan && v !== "snap") v = "snap";
   S.view = v;
-  $("qbar").hidden = v !== "design";
+  $("qbar").hidden = v !== "design"; $("bigMove").hidden = v !== "design";
   $("vNext").hidden = !(v === "map" && S.grid);
   [["vDesign", "design"], ["vOrig", "orig"], ["vSnap", "snap"], ["vMap", "map"], ["vPrev", "prev"]].forEach(([id, k]) => $(id).setAttribute("aria-pressed", k === v));
   fitView();
@@ -3108,7 +3207,7 @@ $("addColor").onclick = () => { if (!S.design) return; pushUndo(); S.design.pal.
 $("addArt").onchange = async e => {
   const files = [...e.target.files]; e.target.value = "";
   if (!files.length) return;
-  await archiveDesign("before adding " + files[0].name); S.designName = files[0].name; S.bgSmart = false; setBgChip(); S.edited = false;
+  await archiveDesign("before adding " + files[0].name); newDesignSource(); S.designName = files[0].name; S.bgSmart = false; setBgChip(); S.edited = false;
   busy(true, "Opening artwork…", 0.3);
   S.importFile = null;
   const firstReal = !S.layers.some(l => !l.example);
@@ -3120,11 +3219,11 @@ $("addArt").onchange = async e => {
   if (firstReal) { if (S.wSt < 20) S.wSt = 60; const a = S.layers[0].img.height / S.layers[0].img.width; S.hSt = clamp(Math.round(S.wSt * a), 4, 400); }
   setTab(1); renderLayers(); convert();
 };
-$("readPainted").onchange = async e => { const f = e.target.files[0]; e.target.value = ""; if (!f) return; await archiveDesign("before reading " + f.name); S.designName = f.name; S.importFile = f; S.edited = false; $("redoBar").hidden = true; if (S.nColors < 12) { S.nColors = 12; $("nColors").value = 12; $("ncOut").textContent = 12; } importPainted(f); };
+$("readPainted").onchange = async e => { const f = e.target.files[0]; e.target.value = ""; if (!f) return; await archiveDesign("before reading " + f.name); newDesignSource(); S.designName = f.name; S.importFile = f; S.edited = false; $("redoBar").hidden = true; if (S.nColors < 12) { S.nColors = 12; $("nColors").value = 12; $("ncOut").textContent = 12; } importPainted(f); };
 $("bareEmpty").onchange = redoFromSource;
 $("openStitch").onchange = async e => {
   const f = e.target.files[0]; e.target.value = ""; if (!f) return;
-  await archiveDesign("before opening " + f.name);
+  await archiveDesign("before opening " + f.name); newDesignSource();
   try {
     let d;
     if (/\.stitchalot$/i.test(f.name)) throw new Error("StitchALot files use the app's own private format, which can't be read here yet. In StitchALot, export the design as a PNG image or an OXS chart and open that instead. Or send a sample file so support can be added.");
@@ -3212,6 +3311,11 @@ $("printDpi").onchange = e => S.printDpi = +e.target.value;
 $("makePdf").onclick = makePrintPdf; $("makePng").onclick = makePrintPng;
 $("savePrev").onclick = async () => { if (!S.scan) return; const c = buildPreview(); await saveFile("canvas-preview.png", await canvasBlob(c)); };
 $("testPage").onclick = testPagePdf;
+$("libSave").onclick = () => saveToLibrary(false); $("libSaveNew").onclick = () => saveToLibrary(true);
+$("libBackup").onclick = backupLibrary;
+$("libRestore").onchange = e => { const f = e.target.files[0]; e.target.value = ""; if (f) restoreLibrary(f); };
+let toolBeforeMove = "paint";
+$("bigMove").onclick = () => { if (S.tool === "pan") setTool(toolBeforeMove || "paint"); else { toolBeforeMove = S.tool === "text" ? "paint" : S.tool; setTool("pan"); } };
 $("dmcSearch").oninput = renderDmc; $("dmcCancel").onclick = () => $("dmcDlg").close();
 $("addDmc").onclick = () => S.design && openDmc(null, dm => { pushUndo(); S.edited = true; S.design.pal.push(unhex("#" + dm[2])); S.sel = S.design.pal.length - 1; setTool("paint"); designDirty(); });
 $("snapDmc").onclick = snapAllToDmc;
@@ -3269,6 +3373,7 @@ async function start(hot) {
   } else startExample();
   resize(); fitView(); renderAll();
   if (S.initials) applyInitials(S.initials); else iniSummary();
+  S.libId = store.get("ccp-libid"); loadLibrary();
   const [cur, hist] = await Promise.all([idb.get("current"), idb.get("history")]);
   if (Array.isArray(hist)) { S.history = hist.filter(valid); renderHistory(); }
   if (!(hot && valid(hot.design)) && valid(cur) && (!valid(ls) || (cur.time || 0) >= (ls.time || 0))) {
