@@ -269,6 +269,7 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
             <button data-tool="erase" aria-pressed="false">Erase</button>
             <button data-tool="move" aria-pressed="false">Move stitches</button>
             <button data-tool="crop" aria-pressed="false">Crop</button>
+            <button data-tool="text" aria-pressed="false">Text</button>
             <button data-tool="pan" aria-pressed="false">Move view</button>
           </div>
           <div class="row">
@@ -285,6 +286,7 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
             <button class="btn small" id="removeBg">Remove background</button>
           </div>
           <label class="f" id="origRow">Original picture on top <small id="origOut">0%</small><input type="range" id="origAlpha" min="0" max="100" value="0"></label>
+          <p class="hint"><b>Text</b>: pick the words, font, size and color, then click on the design where the text goes. It becomes regular stitches you can edit. Press Esc to stop placing.</p>
           <p class="hint"><b>Crop</b>: drag a box over the part you want to keep. <b>Remove background</b> clears the color around the outside edge of the design (and colors very close to it) so those stitches print as bare canvas. Undo brings either one back.</p>
           <p class="hint"><b>Move stitches</b>: drag the design to shift it. The original picture moves with it, so you can see what you moved. The frame grows if stitches go past the edge.</p>
           <div class="pal" id="pal"></div>
@@ -473,7 +475,7 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
   <div class="dlg-in">
     <h3 id="iniTitle">Initials on the canvas</h3>
     <div class="row">
-      <label class="f">Initials<input type="text" id="iniText" maxlength="8" placeholder="DK" autocomplete="off"></label>
+      <label class="f"><span id="iniTextLbl">Initials</span><input type="text" id="iniText" maxlength="8" placeholder="DK" autocomplete="off"></label>
       <label class="f">Font<select id="iniFont">
         <option value="block">Block letters (crisp when small)</option>
         <option value="Cinzel">Classic capitals</option>
@@ -489,7 +491,7 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
       <div class="pal" id="iniPal"></div>
       <div class="row"><button class="btn small" type="button" id="iniDmc">Pick a DMC color</button><input type="color" id="iniColor" value="#c72b3b" aria-label="Custom color"></div>
     </div>
-    <div class="row">
+    <div class="row" id="iniPlaceRow">
       <label class="f">Where<select id="iniPos"><option value="br">Bottom right</option><option value="bc">Bottom center</option><option value="bl">Bottom left</option></select></label>
       <label class="f">Below the design <small>inches</small><input type="number" id="iniBelow" step="0.25" min="0" max="6" value="2"></label>
     </div>
@@ -2013,7 +2015,7 @@ async function drawIniPreview() {
   cv.width = Math.round(r.width * dpr); cv.height = Math.round(r.height * dpr);
   const x = cv.getContext("2d"); x.fillStyle = "#4E4854"; x.fillRect(0, 0, cv.width, cv.height);
   const C = await initialsCells(ini);
-  if (!C) { $("iniNote").textContent = "Type your initials above."; return; }
+  if (!C) { $("iniNote").textContent = dlgMode === "text" ? "Type your text above." : "Type your initials above."; return; }
   const k = Math.max(3, Math.min((cv.width - 20) / (C.w + 4), (cv.height - 20) / (C.h + 4)));
   const ox = (cv.width - (C.w + 4) * k) / 2, oy = (cv.height - (C.h + 4) * k) / 2, col = hex(ini.color);
   for (let y = 0; y < C.h + 4; y++) for (let xx = 0; xx < C.w + 4; xx++) {
@@ -2022,7 +2024,7 @@ async function drawIniPreview() {
     x.fillStyle = on ? col : "#EEECE7"; x.fillRect(X, Y + o, k, t); x.fillRect(X + o, Y, t, k);
   }
   const mesh = S.canvasMesh || S.mesh;
-  $("iniNote").textContent = `${C.w} × ${C.h} stitches, placed ${ini.below} in below the design at the ${ini.pos === "br" ? "bottom right" : ini.pos === "bl" ? "bottom left" : "bottom center"}.` +
+  $("iniNote").textContent = (dlgMode === "text" ? `${C.w} × ${C.h} stitches.` : `${C.w} × ${C.h} stitches, placed ${ini.below} in below the design at the ${ini.pos === "br" ? "bottom right" : ini.pos === "bl" ? "bottom left" : "bottom center"}.`) +
     (ini.font !== "block" && ini.h < 12 ? " Script and serif letters read better at 12 stitches or taller. Block letters stay crisp when small." : "");
 }
 function renderIniSwatches() {
@@ -2036,7 +2038,41 @@ function renderIniSwatches() {
     box.appendChild(b);
   });
 }
+let dlgMode = "initials";
+function setDlgMode(m) {
+  dlgMode = m; const t = m === "text";
+  $("iniTitle").textContent = t ? "Add text to the design" : "Initials on the canvas";
+  $("iniTextLbl").textContent = t ? "Text" : "Initials";
+  $("iniText").maxLength = t ? 40 : 8; $("iniText").placeholder = t ? "Merry Christmas" : "DK";
+  $("iniPlaceRow").hidden = t; $("iniSave").textContent = t ? "Place on the design" : "Add to the print";
+}
+S.textOpts = store.get("ccp-text") || null; S.stamp = null;
+function openTextTool() {
+  setDlgMode("text");
+  const d = S.design, cur = S.textOpts || { text: "", font: "block", h: 7, color: d && d.pal[0] ? d.pal[0].slice() : [199, 43, 59] };
+  iniDraft = { color: cur.color.slice() };
+  $("iniText").value = cur.text; $("iniFont").value = cur.font; $("iniH").value = cur.h; $("iniColor").value = hex(cur.color);
+  $("iniRemove").hidden = true;
+  renderIniSwatches(); showDialog($("iniDlg")); setTimeout(() => { drawIniPreview(); $("iniText").focus(); }, 30);
+}
+function stampText(cell) {
+  const st = S.stamp, d = S.design; if (!st || !d) return;
+  const x0 = cell[0] - Math.floor(st.cells.w / 2), y0 = cell[1] - Math.floor(st.cells.h / 2);
+  pushUndo(); S.edited = true;
+  let v = d.pal.findIndex(c => hex(c) === hex(st.color));
+  if (v < 0) { d.pal.push(st.color.slice()); v = d.pal.length - 1; }
+  let n = 0;
+  for (let y = 0; y < st.cells.h; y++) for (let x = 0; x < st.cells.w; x++) {
+    if (!st.cells.cells[y * st.cells.w + x]) continue;
+    const X = x0 + x, Y = y0 + y; if (X < 0 || Y < 0 || X >= d.w || Y >= d.h) continue;
+    d.px[Y * d.w + X] = v; n++;
+  }
+  const cp = compactPalette(d); d.pal = cp.pal; d.px = cp.px; S.sel = Math.max(0, d.pal.findIndex(c => hex(c) === hex(st.color)));
+  designDirty(); renderView();
+  toast(n < st.cells.cells.reduce((a, b) => a + b, 0) ? "Text placed. Part of it was off the edge of the design." : "Text placed. Click again to place another, or press Esc.");
+}
 function openInitials() {
+  setDlgMode("initials");
   const cur = S.initials || { text: "", font: "block", h: 7, color: S.design && S.design.pal[0] ? nearestDmc(S.design.pal[0]) && unhex("#" + nearestDmc(S.design.pal[0])[2]) : [199, 43, 59], pos: "br", below: 2 };
   iniDraft = { color: cur.color.slice() };
   $("iniText").value = cur.text; $("iniFont").value = cur.font; $("iniH").value = cur.h; $("iniPos").value = cur.pos; $("iniBelow").value = cur.below; $("iniColor").value = hex(cur.color);
@@ -2354,6 +2390,12 @@ function draw() {
     }
     if (S.original && S.origAlpha > 0) drawOriginal(S.origAlpha / 100);
     vctx.restore();
+    if (S.tool === "text" && S.stamp && hover.cell) {
+      const st = S.stamp, gx0 = hover.cell[0] - Math.floor(st.cells.w / 2), gy0 = hover.cell[1] - Math.floor(st.cells.h / 2);
+      vctx.save(); vctx.globalAlpha = 0.85; vctx.fillStyle = hex(st.color);
+      for (let y = 0; y < st.cells.h; y++) for (let x = 0; x < st.cells.w; x++) if (st.cells.cells[y * st.cells.w + x]) vctx.fillRect(V.tx + (gx0 + x) * V.s, V.ty + (gy0 + y) * V.s, Math.ceil(V.s), Math.ceil(V.s));
+      vctx.globalAlpha = 1; vctx.strokeStyle = "#fff"; vctx.setLineDash([4, 3]); vctx.strokeRect(V.tx + gx0 * V.s, V.ty + gy0 * V.s, st.cells.w * V.s, st.cells.h * V.s); vctx.restore();
+    }
     if (drag && drag.type === "crop") {
       const x0 = Math.max(0, Math.min(drag.a[0], drag.b[0])), x1 = Math.min(d.w - 1, Math.max(drag.a[0], drag.b[0])) + 1, y0 = Math.max(0, Math.min(drag.a[1], drag.b[1])), y1 = Math.min(d.h - 1, Math.max(drag.a[1], drag.b[1])) + 1;
       vctx.save(); vctx.fillStyle = "rgba(10,8,14,.5)";
@@ -2462,10 +2504,11 @@ view.addEventListener("pointerdown", e => {
   const tool = rightErase ? (S.tool === "fill" ? "fill" : "erase") : S.tool;
   if (S.view === "design" && S.design && !panReq && tool !== "pan") {
     const cell = [Math.floor(wx), Math.floor(wy)];
-    if (tool !== "move" && tool !== "crop" && (cell[0] < 0 || cell[1] < 0 || cell[0] >= S.design.w || cell[1] >= S.design.h)) { drag = rightErase ? null : { type: "pan", last: [sx, sy] }; return; }
+    if (tool !== "move" && tool !== "crop" && tool !== "text" && (cell[0] < 0 || cell[1] < 0 || cell[0] >= S.design.w || cell[1] >= S.design.h)) { drag = rightErase ? null : { type: "pan", last: [sx, sy] }; return; }
     const i = cell[1] * S.design.w + cell[0];
     if (tool === "move") { drag = { type: "move", start: [wx, wy], delta: [0, 0] }; return; }
     if (tool === "crop") { drag = { type: "crop", a: cell, b: cell }; renderView(); return; }
+    if (tool === "text") { if (S.stamp) stampText(cell); else openTextTool(); return; }
     if (tool === "pick") { const v = S.design.px[i]; if (v >= 0) { S.sel = v; setTool("paint"); renderPalette(); } return; }
     startEditing();
     pushUndo();
@@ -2532,6 +2575,7 @@ function paintLine(a, b, v) {
 }
 window.addEventListener("keydown", e => {
   if (e.target.matches("input, select, textarea")) return;
+  if (e.key === "Escape" && S.tool === "text") { S.stamp = null; setTool("paint"); renderView(); return; }
   if (e.code === "Space") { spaceDown = true; if (S.view !== "design" || S.design) e.preventDefault(); }
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") { e.preventDefault(); e.shiftKey ? restore(S.redo, S.undo) : restore(S.undo, S.redo); return; }
   if (S.view === "map" && S.selNode >= 0 && e.key.startsWith("Arrow")) {
@@ -2597,7 +2641,7 @@ $("trim").onclick = () => S.design && trimDesign();
 $("removeBg").onclick = () => S.design && removeBackground();
 $("origAlpha").oninput = e => { S.origAlpha = +e.target.value; $("origOut").textContent = S.origAlpha + "%"; if (S.view !== "design") setView("design"); else renderView(); }; $("vSnap").onclick = () => setView("snap"); $("vMap").onclick = () => setView("map"); $("vPrev").onclick = () => setView("prev");
 $("zIn").onclick = () => zoomAt(1.4); $("zOut").onclick = () => zoomAt(1 / 1.4); $("zFit").onclick = fitView;
-document.querySelectorAll("[data-tool]").forEach(b => b.onclick = () => setTool(b.dataset.tool));
+document.querySelectorAll("[data-tool]").forEach(b => b.onclick = () => { if (b.dataset.tool === "text") { openTextTool(); return; } setTool(b.dataset.tool); });
 $("undo").onclick = () => restore(S.undo, S.redo); $("redo").onclick = () => restore(S.redo, S.undo);
 $("showGrid").onchange = e => { S.showGrid = e.target.checked; renderView(); };
 $("nColors").oninput = e => { S.nColors = +e.target.value; $("ncOut").textContent = S.nColors; };
@@ -2733,7 +2777,17 @@ $("iniDmc").onclick = () => { const back = iniDraft.color; $("iniDlg").close(); 
 $("iniCancel").onclick = () => $("iniDlg").close();
 $("iniRemove").onclick = async () => { $("iniDlg").close(); await applyInitials(null); toast("Initials removed."); };
 $("iniSave").onclick = async () => {
-  const ini = iniFromForm(); if (!ini.text.trim()) { $("iniNote").textContent = "Type your initials first."; return; }
+  const ini = iniFromForm();
+  if (dlgMode === "text") {
+    if (!ini.text.trim()) { $("iniNote").textContent = "Type your text first."; return; }
+    const cells = await initialsCells(ini); if (!cells) return;
+    S.textOpts = { text: ini.text, font: ini.font, h: ini.h, color: ini.color }; store.set("ccp-text", S.textOpts);
+    S.stamp = { cells, color: ini.color.slice() };
+    $("iniDlg").close(); setTab(1); setView("design"); S.tool = "text"; setTool("text");
+    toast(`Click on the design where the text goes (${cells.w} × ${cells.h} stitches).`);
+    return;
+  }
+  if (!ini.text.trim()) { $("iniNote").textContent = "Type your initials first."; return; }
   $("iniDlg").close(); await applyInitials(ini); if (S.scan) setView("prev");
   const r = S.grid ? forEachStitch(() => {}) : null;
   toast(r && r.off ? "Initials added, but some stitches land off the canvas. Lower the distance below the design." : "Initials added. Check them in Preview.");
