@@ -2029,7 +2029,34 @@ function grow(q, f) {
 
 /* ---------------- preview + print ---------------- */
 let previewCanvas = null, previewStale = true;
-function previewDirty() { previewStale = true; clearTimeout(previewDirty.t); previewDirty.t = setTimeout(() => { if (S.view === "prev" || S.view === "map") renderView(); updateFit(); }, 60); }
+function previewDirty() { previewStale = true; clearTimeout(previewDirty.t); previewDirty.t = setTimeout(() => { if (S.view === "prev" || S.view === "map") renderView(); updateFit(); }, 60); clearTimeout(previewDirty.s); previewDirty.s = setTimeout(saveScanState, 1500); }
+// The loaded scan and its mapped crossings are kept on the device so the Print step still has them after a reload.
+async function saveScanState() {
+  if (!S.scan || S.scan.example || !S.grid) return;
+  try {
+    if (!S.scan.blobSaved) {
+      const blob = await canvasBlob(S.scan.canvas, "image/jpeg", 0.92);
+      await idb.set("scan-img", { blob, dpi: S.scan.dpi, name: S.scan.name }); S.scan.blobSaved = true;
+    }
+    const G = S.grid;
+    await idb.set("scan-state", { name: S.scan.name, marks: S.marks, marksFound: S.marksFound, center: S.center, place: S.place, canvasMesh: S.canvasMesh, darkThreads: S.darkThreads,
+      grid: { gx: G.gx, gy: G.gy, X: G.X, Y: G.Y, ST: G.ST, pitch: G.pitch, theta: G.theta, meshSeen: G.meshSeen } });
+  } catch (e) {}
+}
+async function restoreScanState() {
+  const img = await idb.get("scan-img"), st = await idb.get("scan-state");
+  if (!img || !img.blob || !st || !st.grid || st.name !== img.name) return false;
+  try {
+    const bmp = await createImageBitmap(img.blob), c = document.createElement("canvas"); c.width = bmp.width; c.height = bmp.height; c.getContext("2d").drawImage(bmp, 0, 0);
+    S.scan = { canvas: c, dpi: img.dpi, name: img.name, example: false, gray: null, blobSaved: true }; computeGray();
+    S.marks = st.marks; S.marksFound = st.marksFound; updateH(); S.darkThreads = !!st.darkThreads;
+    const g = st.grid; S.grid = { gx: g.gx, gy: g.gy, X: Float32Array.from(g.X), Y: Float32Array.from(g.Y), ST: Uint8Array.from(g.ST), pitch: g.pitch, theta: g.theta, meshSeen: g.meshSeen };
+    computeCorners(); S.center = st.center; S.place = st.place || { ox: 0, oy: 0 }; S.canvasMesh = st.canvasMesh;
+    $("ox").value = S.place.ox; $("oy").value = S.place.oy; $("findGrid").disabled = false; $("dpi").value = Math.round(img.dpi);
+    setStatus("scanStatus", `Your last scan (${img.name}) is loaded with its ${S.grid.gx} × ${S.grid.gy} mapped intersections. Load a new scan when you put on a new piece of canvas.`, "ok");
+    previewStale = true; updateUI(); updateMeshWarn(); return true;
+  } catch (e) { return false; }
+}
 function buildPreview() {
   if (!S.scan) return null;
   const c = S.scan.canvas;
@@ -3329,7 +3356,7 @@ function setTab(n) {
   [1, 2, 3].forEach(k => { $("tab" + k).setAttribute("aria-selected", k === n); $("pane" + k).hidden = k !== n; });
   if (n === 1) setView("design");
   if (n === 2) { if (!S.scan) runExample(); else setView(S.grid ? "map" : "snap"); }
-  if (n === 3) { if (S.scan) setView("prev"); updateFit(); }
+  if (n === 3) { if (S.scan) setView("prev"); else { setView("design"); toast("Your design is shown. Load your scan on step 2 to see it on your canvas."); } updateFit(); }
 }
 function updateCounts() {
   const G = S.grid; if (!G) return; const c = [0, 0, 0, 0, 0];
@@ -3641,6 +3668,7 @@ async function start(hot) {
   resize(); fitView(); renderAll();
   if (S.initials) applyInitials(S.initials); else iniSummary();
   S.libId = store.get("ccp-libid"); loadLibrary(); checkStorage();
+  restoreScanState();
   const [cur, hist] = await Promise.all([idb.get("current"), idb.get("history")]);
   if (Array.isArray(hist)) { S.history = hist.filter(valid); renderHistory(); }
   if (!(hot && valid(hot.design)) && valid(cur) && (!valid(ls) || (cur.time || 0) >= (ls.time || 0))) {
