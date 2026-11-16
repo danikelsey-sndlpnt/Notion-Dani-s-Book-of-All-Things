@@ -171,6 +171,7 @@ input:focus-visible, select:focus-visible, button:focus-visible { outline: 2px s
           <button id="vPrev" aria-pressed="false">Preview</button>
         </div>
         <span class="spacer"></span>
+        <button class="btn small thread" id="vNext" hidden>Next to check</button>
         <div class="seg" role="group" aria-label="Zoom">
           <button id="zOut" aria-label="Zoom out">−</button>
           <button id="zFit">Fit</button>
@@ -2058,6 +2059,7 @@ function setStatus(id, msg, kind) { const el = $(id); el.hidden = false; el.text
 function setView(v) {
   if (v !== "design" && v !== "orig" && !S.scan && v !== "snap") v = "snap";
   S.view = v;
+  $("vNext").hidden = !(v === "map" && S.grid);
   [["vDesign", "design"], ["vOrig", "orig"], ["vSnap", "snap"], ["vMap", "map"], ["vPrev", "prev"]].forEach(([id, k]) => $(id).setAttribute("aria-pressed", k === v));
   fitView();
 }
@@ -2073,15 +2075,18 @@ function updateCounts() {
   for (let k = 0; k < G.gx * G.gy; k++) { const st = G.ST[k]; if ((st === 2 || st === 3) && S.checked.has(k)) continue; c[st]++; }
   $("nFound").textContent = c[1]; $("nCheck").textContent = c[2]; $("nMiss").textContent = c[3]; $("nMoved").textContent = c[4];
   const left = checkList().filter(k => !S.checked.has(k)).length;
-  $("nextCheck").textContent = left ? `Next to check (${left} in the design area)` : "Nothing left to check in the design area";
-  $("nextCheck").disabled = !left;
+  const outside = left ? 0 : checkList(true).filter(k => !S.checked.has(k)).length;
+  $("nextCheck").textContent = left ? `Next to check (${left} in the design area)` : outside ? `Design area done. Next outside it (${outside})` : "Nothing left to check";
+  $("nextCheck").disabled = !left && !outside;
+  $("vNext").textContent = left ? `Next to check · ${left}` : outside ? `Next outside · ${outside}` : "All checked";
+  $("vNext").disabled = !left && !outside;
 }
-function checkList() {
+function checkList(all) {
   const G = S.grid, out = []; if (!G) return out;
   const pl = placement(), d = S.design;
   for (let k = 0; k < G.gx * G.gy; k++) {
     if (G.ST[k] !== 2 && G.ST[k] !== 3) continue;
-    if (pl) { const i = k % G.gx, j = (k / G.gx) | 0; if (i < pl.i0 - 1 || j < pl.j0 - 1 || i > pl.i0 + d.w || j > pl.j0 + d.h) continue; }
+    if (pl && !all) { const i = k % G.gx, j = (k / G.gx) | 0; if (i < pl.i0 - 1 || j < pl.j0 - 1 || i > pl.i0 + d.w || j > pl.j0 + d.h) continue; }
     out.push(k);
   }
   return out;
@@ -2091,6 +2096,7 @@ function updateUI() {
   ["vSnap", "vMap", "vPrev"].forEach(id => $(id).disabled = !has);
   $("mapGroup").hidden = !S.grid;
   $("printNeed").hidden = !!S.grid;
+  $("vNext").hidden = !(S.view === "map" && S.grid);
   updateCounts(); updateFit();
 }
 function renderAll() { renderLayers(); renderPalette(); syncSizeInputs(); updateUI(); renderView(); }
@@ -2197,8 +2203,11 @@ $("dpi").onchange = e => { if (!S.scan) return; const v = +e.target.value; if (v
 $("showPts").onchange = e => { S.showPts = e.target.checked; renderView(); };
 $("pickCenter").onclick = () => { S.pickCenter = !S.pickCenter; $("pickCenter").setAttribute("aria-pressed", S.pickCenter); if (S.pickCenter) { setView("map"); toast("Click the intersection where the design's center stitch should go."); } };
 $("refit").onclick = () => { if (!S.grid) return; refitGuessed(); computeCorners(); previewDirty(); renderView(); toast("Red points re-guessed from their neighbors."); };
+$("vNext").onclick = () => $("nextCheck").click();
 $("nextCheck").onclick = () => {
-  const list = checkList().filter(k => !S.checked.has(k)); if (!list.length) { updateCounts(); return; }
+  let list = checkList().filter(k => !S.checked.has(k));
+  if (!list.length) list = checkList(true).filter(k => !S.checked.has(k));
+  if (!list.length) { updateCounts(); return; }
   // Nearest unchecked point to the current one keeps the walk local.
   const G = S.grid, cur = S.selNode >= 0 ? [G.X[S.selNode], G.Y[S.selNode]] : null;
   let k = list[0];
