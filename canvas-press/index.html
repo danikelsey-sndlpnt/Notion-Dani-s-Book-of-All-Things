@@ -366,10 +366,10 @@ input:focus-visible, select:focus-visible, button:focus-visible { outline: 2px s
           <div class="status" id="fitStatus"></div>
           <div class="status" id="printStatus" hidden></div>
           <div class="row">
-            <button class="btn small" id="testPattern">Print a test pattern instead</button>
+            <button class="btn small" id="testPattern">Save a test pattern print file instead</button>
             <button class="btn small" id="backToMine" hidden>Back to my design</button>
           </div>
-          <p class="hint">First time? The test pattern is a grid of lines that shows right away whether the ink lands on the threads. Then switch back to your design and print it on a fresh canvas.</p>
+          <p class="hint">First time? The test pattern is a grid of lines that shows right away whether the ink lands on the threads. That button swaps in the pattern and saves its print file in one step. Afterward, <b>Back to my design</b> brings your design back.</p>
         </div>
 
         <p class="hint" style="margin:0">Everything below is optional.</p>
@@ -1746,7 +1746,7 @@ function useTestPattern() {
   S.testing = true; S.original = null; S.layers = []; S.importFile = null;
   setDesign([[200, 30, 45], [25, 70, 200], [20, 140, 70]], px, w, h);
   $("backToMine").hidden = false; renderAll(); previewDirty();
-  toast(`Test pattern on: ${w} × ${h} stitches. Check it in Preview, then print.`);
+  toast(`Switched to the test pattern (${w} × ${h} stitches). Your design is saved.`);
 }
 function backToMine() {
   const b = store.get("ccp-before-test"); if (!b) return;
@@ -2272,7 +2272,7 @@ $("makePdf").onclick = makePrintPdf; $("makePng").onclick = makePrintPng;
 $("savePrev").onclick = async () => { if (!S.scan) return; const c = buildPreview(); await saveFile("canvas-preview.png", await canvasBlob(c)); };
 $("testPage").onclick = testPagePdf;
 $("practicePdf").onclick = practicePdf;
-$("testPattern").onclick = useTestPattern; $("backToMine").onclick = backToMine;
+$("testPattern").onclick = async () => { useTestPattern(); if (S.grid) { setView("prev"); await makePrintPdf(); } else setStatus("printStatus", "The test pattern is ready. Scan your canvas on step 2, then come back and click Save print file.", "err"); }; $("backToMine").onclick = backToMine;
 
 /* ---------------- start ---------------- */
 function startExample() {
