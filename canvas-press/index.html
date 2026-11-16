@@ -334,7 +334,12 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
             <button class="btn primary small" id="libSave">Save</button>
             <button class="btn small" id="libSaveNew" hidden>Save as new</button>
           </div>
-          <p class="hint" id="libNote">Saved designs stay on this device, with their original picture, so you can open them later and keep editing.</p>
+          <div class="row">
+            <button class="btn small" id="libFile">Download design file</button>
+            <label class="btn small file-btn">Open a design file<input type="file" id="libOpenFile" accept=".json,application/json,.sookie"></label>
+          </div>
+          <p class="hint" id="libNote">Saved designs stay on this device, with their original picture, so you can open them later and keep editing. A <b>design file</b> opens straight back into the stitch screen on any device, with its colors, original picture and initials.</p>
+          <p class="hint" id="cloudNote" hidden></p>
           <div class="status err" id="storageWarn" hidden>This view can't keep saved designs after you close it (the browser is blocking storage here). To keep a design: click <b>Back up all (file)</b> after saving, and accept the save prompt. Next time, use <b>Open a backup</b> to bring it back. Opening the app in Safari or Chrome usually lets saving work.</div>
           <div class="hist" id="lib"></div>
           <div class="row">
@@ -343,7 +348,7 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
           <div class="hist" id="lostList" hidden></div>
           <div class="row">
             <button class="btn small" id="libBackup">Back up all (file)</button>
-            <label class="btn small file-btn">Open a backup<input type="file" id="libRestore" accept=".json,application/json"></label>
+            <label class="btn small file-btn">Open a backup<input type="file" id="libRestore" accept=".json,application/json,.sookie"></label>
           </div>
         </div>
         <div class="group" id="histGroup" hidden>
@@ -506,11 +511,12 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
         <div class="group">
           <h3>Save the design</h3>
           <div class="row">
+            <button class="btn small primary" id="saveDesignFile">Design file (opens to edit)</button>
             <button class="btn small" id="saveStitchPng">Stitch image (PNG)</button>
             <button class="btn small" id="saveChart">Chart (PNG)</button>
             <button class="btn small" id="saveKey">Color key (PDF)</button>
           </div>
-          <p class="hint">The stitch image has one pixel per stitch. Open it later with <b>Open stitch file</b> to keep editing.</p>
+          <p class="hint">The <b>design file</b> is the best way to keep a design: open it with <b>Open a design file</b> (or Open stitch file) and you're right back in the stitch screen with everything as you left it. The stitch image has one pixel per stitch.</p>
         </div>
       </div>
 
@@ -1099,7 +1105,7 @@ function redoFromSource() {
 const snap = () => ({ w: S.design.w, h: S.design.h, pal: S.design.pal.map(c => c.slice()), px: S.design.px.slice(), sx: S.design.sx || 0, sy: S.design.sy || 0 });
 function pushUndo() {
   if (!S.design) return;
-  S.undo.push(snap());
+  S.undo.push(snap()); S.touched = true;
   if (S.undo.length > 60) S.undo.shift();
   S.redo.length = 0;
 }
@@ -2279,6 +2285,7 @@ function saveCurrent() {
   const rec = plainDesign();
   store.set("ccp-design", rec);
   idb.set("current", rec);
+  cloudCurrentSoon();
 }
 S.history = [];
 async function archiveDesign(why) {
@@ -2737,7 +2744,7 @@ function renderLibrary() {
     const del = document.createElement("button"); del.className = "btn small"; del.textContent = "Delete";
     del.onclick = async () => {
       if (del.dataset.sure !== "1") { del.dataset.sure = "1"; del.textContent = "Tap again to delete"; setTimeout(() => { del.dataset.sure = ""; del.textContent = "Delete"; }, 4000); return; }
-      S.library = S.library.filter(x => x.id !== e.id); if (S.libId === e.id) S.libId = null; await saveLibrary(); toast(`Deleted "${e.name}".`);
+      S.library = S.library.filter(x => x.id !== e.id); if (S.libId === e.id) S.libId = null; await saveLibrary(); cloudDelete(e); toast(`Deleted "${e.name}".`);
     };
     acts.append(open, del); row.append(thumb(e.rec), info, acts); box.appendChild(row);
   });
@@ -2752,13 +2759,18 @@ async function saveToLibrary(asNew) {
   else { e = { id: newId(), name, rec, time: Date.now() }; S.library.push(e); S.libId = e.id; }
   store.set("ccp-libid", S.libId);
   await saveLibrary(); $("libName").value = name;
+  if (cloud) {
+    const ok = await cloudSaveEntry(e);
+    toast(ok ? `Saved "${name}" to this device and your Claude account.` : `Saved "${name}" on this device. It couldn't reach your Claude account just now, so it will try again next time. Download design file keeps a copy you can always open.`, ok ? 3200 : 7000);
+    return;
+  }
   toast(S.storageOK === false ? `Saved "${name}" for now, but this view can't keep it after you close it. Click Back up all (file) to keep it.` : `Saved "${name}".`, S.storageOK === false ? 7000 : 2800);
 }
 async function openLibrary(id) {
   const e = S.library.find(x => x.id === id); if (!e) return;
   if (S.design && !S.exampleDesign && S.libId !== id) await archiveDesign("before opening " + e.name);
   pushUndo();
-  await applySaved(e.rec, await loadOriginal(e.rec.origId));
+  await applySaved(e.rec, (await loadOriginal(e.rec.origId)) || (await cloudOriginal(e)));
   S.designName = e.name; S.libId = id; store.set("ccp-libid", id); $("libName").value = e.name;
   if (e.rec.initials) applyInitials(e.rec.initials);
   renderLibrary(); toast(`Opened "${e.name}". Save changes keeps your edits in it.`);
@@ -2781,7 +2793,8 @@ async function backupLibrary() {
 async function restoreLibrary(file) {
   try {
     const data = JSON.parse(await file.text());
-    if (!data || !Array.isArray(data.designs)) throw new Error("This isn't a Canvas Press backup file.");
+    if (data && data.kind === "design") { await openDesignData(data); return; }
+    if (!data || !Array.isArray(data.designs)) throw new Error("This isn't a Canvas Press backup or design file.");
     let n = 0;
     for (const e of data.designs) {
       if (!e || !e.rec || !Array.isArray(e.rec.px)) continue;
@@ -2791,9 +2804,181 @@ async function restoreLibrary(file) {
       if (same && same.time === entry.time) continue;
       if (same) entry.id = newId();
       S.library.push(entry); n++;
+      if (cloud) cloudSaveEntry(entry);
     }
     await saveLibrary(); toast(`Added ${n} design${n === 1 ? "" : "s"} from the backup.`);
   } catch (err) { toast(err.message || "That backup couldn't be read.", 5000); }
+}
+
+/* ---------------- design files ---------------- */
+// One design in one file: stitches, colors, mesh, initials and the original picture. Opens straight into the stitch screen.
+async function origBlobFor(origId) {
+  if (!origId) return null;
+  if (S.original && S.original.id === origId && S.original.canvas && !S.original.example) return await canvasBlob(S.original.canvas, "image/jpeg", 0.9);
+  const r = await idb.get("orig-" + origId); return r && r.blob || null;
+}
+const safeName = n => (n || "design").replace(/[\\/:*?"<>|]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 60) || "design";
+async function saveDesignFile() {
+  if (!S.design) return;
+  persistOriginal();
+  const name = $("libName").value.trim() || (S.designName || "").replace(/\.[a-z0-9]+$/i, "") || "Untitled design";
+  const rec = plainDesign(); rec.initials = S.initials || null; rec.name = name;
+  const ob = S.original && !S.original.example ? await origBlobFor(S.original.id) : null;
+  const out = { app: "Sookie's Canvas Press", kind: "design", version: 1, name, saved: new Date().toISOString(), rec, original: ob ? { m: S.original.m, data: await blobToDataURL(ob) } : null };
+  await saveFile(safeName(name) + ".sookie.json", new Blob([JSON.stringify(out)], { type: "application/json" }));
+}
+async function openDesignData(data) {
+  const rec = data.rec;
+  if (!rec || !Array.isArray(rec.px) || rec.px.length !== rec.w * rec.h || !Array.isArray(rec.pal)) throw new Error("This design file looks damaged and couldn't be opened.");
+  if (S.design && !S.exampleDesign) await archiveDesign("before opening " + (data.name || "a design file"));
+  let original = null;
+  if (data.original && data.original.data) {
+    const blob = dataURLToBlob(data.original.data);
+    if (blob) {
+      rec.origId = rec.origId || newId();
+      await idb.set("orig-" + rec.origId, { blob, m: data.original.m });
+      original = await loadOriginal(rec.origId);
+    }
+  } else rec.origId = null;
+  rec.example = false; rec.testing = false;
+  pushUndo();
+  await applySaved(rec, original);
+  const name = data.name || rec.name || "Design";
+  S.designName = name;
+  if (rec.initials) applyInitials(rec.initials);
+  // Keep it in My designs too (replacing an older copy of the same design).
+  let e = S.library.find(x => x.name === name && x.rec.w === rec.w && x.rec.h === rec.h);
+  if (e) { e.rec = rec; e.time = Date.now(); } else { e = { id: newId(), name, rec, time: Date.now() }; S.library.push(e); }
+  S.libId = e.id; store.set("ccp-libid", e.id); $("libName").value = name;
+  await saveLibrary(); saveCurrent();
+  if (cloud) cloudSaveEntry(e);
+  toast(`Opened "${name}". It's in My designs now too.`, 3500);
+}
+
+/* ---------------- saving to the Claude account ---------------- */
+// When the page runs on claude.ai, designs are also kept in the viewer's private storage there, so they survive
+// the browser clearing its storage and show up on other devices. Only this person can read them.
+let cloud = null;
+async function packPx(px) {
+  const a = Int16Array.from(px), bytes = new Uint8Array(a.buffer);
+  let out = bytes;
+  try { out = new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(new CompressionStream("deflate"))).arrayBuffer()); } catch (e) { return { raw: btoaBytes(bytes) }; }
+  return { z: btoaBytes(out) };
+}
+async function unpackPx(p) {
+  const bytes = atobBytes(p.z || p.raw);
+  const raw = p.z ? new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream("deflate"))).arrayBuffer()) : bytes;
+  return Array.from(new Int16Array(raw.buffer, raw.byteOffset, raw.byteLength >> 1));
+}
+function btoaBytes(b) { let s2 = ""; for (let i = 0; i < b.length; i += 0x8000) s2 += String.fromCharCode.apply(null, b.subarray(i, i + 0x8000)); return btoa(s2); }
+function atobBytes(t) { const s2 = atob(t), b = new Uint8Array(s2.length); for (let i = 0; i < s2.length; i++) b[i] = s2.charCodeAt(i); return b; }
+const withTimeout = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej({ code: "timeout" }), ms))]);
+function cloudStatus(msg) { const el = $("cloudNote"); if (!el) return; el.hidden = !msg; el.textContent = msg || ""; }
+async function cloudOrigFor(origId) {
+  if (!origId || !cloud || !cloud.assets) return null;
+  const known = S.library.find(x => x.cloudOrig && x.cloudOrig.origId === origId) || (cloud.curOrig && cloud.curOrig.origId === origId ? { cloudOrig: cloud.curOrig } : null);
+  if (known) return known.cloudOrig;
+  const blob = await origBlobFor(origId); if (!blob) return null;
+  const m = S.original && S.original.id === origId ? S.original.m : ((await idb.get("orig-" + origId)) || {}).m;
+  const up = await cloud.assets.upload(blob);
+  return { origId, assetId: up.id, m };
+}
+async function cloudBody(rec, name, time, cloudOrig) {
+  const { px, ...rest } = rec;
+  const body = { kind: "design", v: 1, name, time, rec: { ...rest, px: null, pxp: await packPx(px) }, orig: cloudOrig || null };
+  return JSON.stringify(body).length < 250000 ? body : null;
+}
+async function cloudSaveEntry(e) {
+  if (!cloud) return false;
+  try {
+    let co = null; try { co = await cloudOrigFor(e.rec.origId); } catch (err) { co = null; }
+    if (co) e.cloudOrig = co;
+    const body = await cloudBody(e.rec, e.name, e.time, co);
+    if (!body) { toast(`"${e.name}" is too big to keep in your Claude account. Use Download design file to keep a copy.`, 6000); return false; }
+    await withTimeout(cloud.col.doc("d-" + e.id).set(body), 20000);
+    await idb.set("library", S.library);
+    cloudStatus("Saved designs are also kept in your Claude account, so they're safe if this browser clears its storage and show up when you open the app on another device.");
+    return true;
+  } catch (err) { return false; }
+}
+async function cloudDelete(e) {
+  if (!cloud) return;
+  try { await cloud.col.doc("d-" + e.id).delete(); } catch (err) {}
+  const a = e.cloudOrig && e.cloudOrig.assetId;
+  if (a && cloud.assets && !S.library.some(x => x.cloudOrig && x.cloudOrig.assetId === a) && !(cloud.curOrig && cloud.curOrig.assetId === a)) { try { await cloud.assets.delete(a); } catch (err) {} }
+}
+async function cloudOriginal(e) {
+  const co = e && e.cloudOrig; if (!co || !co.assetId) return null;
+  try {
+    const r = await fetch("/_blob/" + co.assetId); if (!r.ok) return null;
+    const blob = await r.blob(), id = e.rec.origId || co.origId || newId(); e.rec.origId = id;
+    await idb.set("orig-" + id, { blob, m: co.m });
+    return await loadOriginal(id);
+  } catch (err) { return null; }
+}
+function cloudCurrentSoon() {
+  if (!cloud) return;
+  clearTimeout(cloudCurrentSoon.t);
+  cloudCurrentSoon.t = setTimeout(async () => {
+    if (!S.design || S.exampleDesign || S.testing || cloudCurrentSoon.busy) return;
+    cloudCurrentSoon.busy = true;
+    try {
+      const rec = plainDesign(); rec.initials = S.initials || null;
+      let co = null; try { co = await cloudOrigFor(rec.origId); } catch (err) {}
+      if (co) cloud.curOrig = co;
+      const body = await cloudBody(rec, S.designName || "", rec.time, co);
+      if (body) await withTimeout(cloud.col.doc("current").set(body), 20000);
+    } catch (err) {} finally { cloudCurrentSoon.busy = false; }
+  }, 4000);
+}
+async function cloudEntryFrom(doc) {
+  const b = doc.data(); if (!b || b.kind !== "design" || !b.rec || !b.rec.pxp) return null;
+  const rec = { ...b.rec, px: await unpackPx(b.rec.pxp) }; delete rec.pxp;
+  if (rec.px.length !== rec.w * rec.h) return null;
+  return { id: doc.id.replace(/^d-/, ""), name: b.name || "Design", rec, time: b.time || 0, cloudOrig: b.orig || null };
+}
+async function initCloud(localCur) {
+  try {
+    if (!window.claude || !window.claude.use) return;
+    const [db, user] = await Promise.all([window.claude.use("db"), window.claude.use("user")]);
+    if (!db || !user) return;
+    const uid = await user.id(); if (!uid) return;
+    const assets = await window.claude.use("assets").catch(() => null);
+    cloud = { db, assets, col: db.collection("data/users/" + uid) };
+    cloudStatus("Connecting to your Claude account…");
+    const snap = await withTimeout(cloud.col.get(), 15000);
+    let added = 0, cur = null;
+    for (const doc of snap.docs) {
+      if (doc.id === "current") { cur = doc; continue; }
+      if (!doc.id.startsWith("d-")) continue;
+      const e = await cloudEntryFrom(doc); if (!e) continue;
+      const local = S.library.find(x => x.id === e.id);
+      if (!local) { S.library.push(e); added++; }
+      else if (e.time > local.time) { Object.assign(local, e); added++; }
+      else if (!local.cloudOrig && e.cloudOrig) local.cloudOrig = e.cloudOrig;
+    }
+    if (added) await saveLibrary();
+    // Designs saved only on this device go up to the account too.
+    const have = new Set(snap.docs.map(d => d.id));
+    for (const e of S.library) if (!have.has("d-" + e.id)) await cloudSaveEntry(e);
+    // The design you were working on: use the account's copy if it's newer and nothing was changed here yet.
+    if (cur) {
+      const e = await cloudEntryFrom(cur);
+      if (e) {
+        cloud.curOrig = e.cloudOrig;
+        const localTime = localCur && localCur.time || 0;
+        if (e.time > localTime + 2000 && !S.touched && (S.exampleDesign || !S.design || localTime)) {
+          await applySaved(e.rec, (await loadOriginal(e.rec.origId)) || (await cloudOriginal(e)));
+          S.designName = e.name; if (e.rec.initials) applyInitials(e.rec.initials);
+          toast("Brought back your latest design from your Claude account.", 4000);
+        }
+      }
+    }
+    cloudStatus("Saved designs are also kept in your Claude account, so they're safe if this browser clears its storage and show up when you open the app on another device.");
+    if (added) toast(`Found ${added} saved design${added === 1 ? "" : "s"} in your Claude account.`, 3500);
+  } catch (err) {
+    cloudStatus(cloud ? "Couldn't reach your Claude account just now. Designs are saved on this device; use Download design file to keep a copy." : "");
+  }
 }
 
 /* ---------------- can this view save? ---------------- */
@@ -3737,6 +3922,7 @@ $("openStitch").onchange = async e => {
     let d;
     if (/\.stitchalot$/i.test(f.name)) throw new Error("StitchALot files use the app's own private format, which can't be read here yet. In StitchALot, export the design as a PNG image or an OXS chart and open that instead. Or send a sample file so support can be added.");
     let extra = null;
+    if (/\.(json|sookie)$/i.test(f.name) || f.type === "application/json") { await restoreLibrary(f); return; }
     if (/\.stitchly$/i.test(f.name)) { d = await parseStitchly(f); extra = d; }
     else if (/\.(oxs|xml)$/i.test(f.name)) d = parseOXS(await f.text());
     else if (/\.pdf$/i.test(f.name) || f.type === "application/pdf") { busy(true, "Reading the chart…", 0.3); try { d = stitchImageToDesign((await pdfToCanvas(await f.arrayBuffer(), 200)).canvas); } finally { busy(false); } }
@@ -3868,6 +4054,8 @@ $("startOver").onclick = () => {
 };
 $("libSave").onclick = () => saveToLibrary(false); $("libSaveNew").onclick = () => saveToLibrary(true);
 $("libBackup").onclick = backupLibrary;
+$("libFile").onclick = saveDesignFile; $("saveDesignFile").onclick = saveDesignFile;
+$("libOpenFile").onchange = e => { const f = e.target.files[0]; e.target.value = ""; if (f) restoreLibrary(f); };
 $("libRestore").onchange = e => { const f = e.target.files[0]; e.target.value = ""; if (f) restoreLibrary(f); };
 let toolBeforeMove = "paint";
 $("bigMove").onclick = () => { if (S.tool === "pan") setTool(toolBeforeMove || "paint"); else { toolBeforeMove = S.tool; setTool("pan"); } };
@@ -3939,6 +4127,7 @@ async function start(hot) {
   } else if (S.design && !S.original && ls && ls.origId) {
     S.original = await loadOriginal(ls.origId); renderView();
   }
+  initCloud(valid(cur) ? cur : valid(ls) ? ls : null);
   if (window.claude && window.claude.hot && window.claude.hot.snapshot) {
     window.claude.hot.snapshot(() => {
       if (!S.design) return {};

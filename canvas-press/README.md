@@ -24,7 +24,8 @@ Reading a PDF uses pdf.js from cdnjs. If that can't load, the app pulls the scan
 
 ## More tools
 
-- **My designs**: save designs by name (with their original picture and initials) and open them later to keep editing. Save changes updates the open design; Save as new keeps both. Designs are stored on the device; Back up all downloads them as a file and Open a backup loads them anywhere.
+- **My designs**: save designs by name (with their original picture and initials) and open them later to keep editing. Save changes updates the open design; Save as new keeps both. Designs are stored on the device and, on claude.ai, also in your own private storage in your Claude account, so they survive the browser clearing its storage and appear on your other devices. The design you are working on is kept there too. Back up all downloads every design as one file and Open a backup loads them anywhere.
+- **Design file**: Download design file (or "Design file (opens to edit)" under Save the design) saves one design as a `.sookie.json` file with its stitches, colors, mesh, initials and original picture. Open a design file, or Open stitch file, puts you straight back in the stitch screen.
 - **Big Move button** on the picture switches to moving the view and back.
 
 - **DMC colors**: every color shows its closest DMC floss number. **Pick DMC** chooses an exact DMC color, **Add a DMC color** adds one, and **Change all colors to their closest DMC** converts the whole design. **Replace all with** shows color swatches with their DMC numbers.
