@@ -2069,7 +2069,8 @@ function setTab(n) {
 }
 function updateCounts() {
   const G = S.grid; if (!G) return; const c = [0, 0, 0, 0, 0];
-  for (let k = 0; k < G.gx * G.gy; k++) c[G.ST[k]]++;
+  // Amber and red points you've already looked at with Next to check drop out of their counts.
+  for (let k = 0; k < G.gx * G.gy; k++) { const st = G.ST[k]; if ((st === 2 || st === 3) && S.checked.has(k)) continue; c[st]++; }
   $("nFound").textContent = c[1]; $("nCheck").textContent = c[2]; $("nMiss").textContent = c[3]; $("nMoved").textContent = c[4];
   const left = checkList().filter(k => !S.checked.has(k)).length;
   $("nextCheck").textContent = left ? `Next to check (${left} in the design area)` : "Nothing left to check in the design area";
