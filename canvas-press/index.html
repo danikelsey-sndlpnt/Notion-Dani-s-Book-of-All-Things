@@ -298,9 +298,20 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
             <label class="f">Mesh
               <select id="mesh"><option>10</option><option>12</option><option selected>13</option><option>14</option><option>18</option></select>
             </label>
-            <label class="f">Width <small id="wIn"></small><input type="number" id="wSt" min="4" max="400" value="60"></label>
-            <label class="f">Height <small id="hIn"></small><input type="number" id="hSt" min="4" max="400" value="60"></label>
+            <label class="f">Width <small>stitches</small><input type="number" id="wSt" min="4" max="400" value="60"></label>
+            <label class="f">Height <small>stitches</small><input type="number" id="hSt" min="4" max="400" value="60"></label>
           </div>
+          <div class="row">
+            <label class="f">Width <small>inches</small><input type="number" id="wInch" min="0.5" max="30" step="0.25" value="4.62"></label>
+            <label class="f">Height <small>inches</small><input type="number" id="hInch" min="0.5" max="30" step="0.25" value="4.62"></label>
+            <label class="f">Common sizes<select id="sizePreset">
+              <option value="">Pick a size…</option>
+              <option value="3x3">3 × 3 in</option><option value="4x4">4 × 4 in</option><option value="4.5x4.5">4.5 × 4.5 in (round ornament)</option>
+              <option value="5x5">5 × 5 in</option><option value="4x6">4 × 6 in</option><option value="5x7">5 × 7 in</option>
+              <option value="6x6">6 × 6 in</option><option value="8x8">8 × 8 in</option><option value="8x10">8 × 10 in</option><option value="12x12">12 × 12 in (pillow)</option>
+            </select></label>
+          </div>
+          <p class="hint" id="sizeNote"></p>
           <label class="tog"><input type="checkbox" id="lock" checked> Keep the artwork's proportions</label>
         </div>
 
@@ -341,6 +352,7 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
             <button class="btn small" id="trim">Trim empty edges</button>
             <button class="btn small" id="removeBg">Remove background</button>
           </div>
+          <div class="status ok" id="bgChip" hidden>Background removed. It stays removed when you change colors or size. <button class="btn small" id="bgBack" style="margin-top:6px">Bring the background back</button></div>
           <div class="row" style="align-items:center">
             <label class="f">Background strength <small id="bgTolOut">18</small><input type="range" id="bgTol" min="4" max="45" value="18"></label>
             <label class="tog" style="flex:1 1 180px"><input type="checkbox" id="bgGaps"> Also clear gaps inside the design</label>
@@ -828,8 +840,8 @@ function carrierPdf(black) {
 
 /* ---------------- design: flatten + quantize ---------------- */
 function layerDefaults(name, canvas) { return { name, img: canvas, visible: true, opacity: 100, scale: 100, ox: 0, oy: 0, fit: "contain" }; }
-function flatten() {
-  const W = S.wSt, H = S.hSt, k = 4, c = document.createElement("canvas");
+function flatten(k = 4) {
+  const W = S.wSt, H = S.hSt, c = document.createElement("canvas");
   c.width = W * k; c.height = H * k;
   const x = c.getContext("2d");
   if (S.bgMode !== "none") { x.fillStyle = S.bgMode === "white" ? "#ffffff" : S.bg; x.fillRect(0, 0, c.width, c.height); }
@@ -928,7 +940,7 @@ function convert() {
   pushUndo();
   const rgba = flatten();
   S.original = { canvas: flatten.last, m: [0.25, 0, 0, 0.25, 0, 0] };
-  const q = quantize(rgba, S.wSt, S.hSt, S.nColors, S.dither);
+  const q = (S.bgSmart && smartStitches()) || quantize(rgba, S.wSt, S.hSt, S.nColors, S.dither);
   setDesign(q.pal, q.px, S.wSt, S.hSt);
   S.exampleDesign = S.layers.every(l => l.example);
   fitView(); renderAll();
@@ -1070,7 +1082,8 @@ function renderDmc() {
 
 function syncSizeInputs() {
   $("wSt").value = S.wSt; $("hSt").value = S.hSt;
-  $("wIn").textContent = (S.wSt / S.mesh).toFixed(2) + " in"; $("hIn").textContent = (S.hSt / S.mesh).toFixed(2) + " in";
+  $("wInch").value = +(S.wSt / S.mesh).toFixed(2); $("hInch").value = +(S.hSt / S.mesh).toFixed(2);
+  $("sizeNote").textContent = `${S.wSt} × ${S.hSt} stitches = ${(S.wSt / S.mesh).toFixed(2)} × ${(S.hSt / S.mesh).toFixed(2)} in on ${S.mesh} mesh.`;
 }
 function setTool(t) { S.tool = t; document.querySelectorAll("[data-tool]").forEach(b => b.setAttribute("aria-pressed", b.dataset.tool === t)); if (S.design) renderPalette(); }
 
@@ -2523,12 +2536,13 @@ function keepMainSubject(d) {
     if (!near && c.n < m.n * 0.25) c.cells.forEach(i => d.px[i] = -1);
   }
 }
-function removeBackground() {
-  const d = S.design, W = d.w, H = d.h, tol = +$("bgTol").value, gaps = $("bgGaps").checked;
+// Works on any grid of color labels: the stitches, or the full picture before it becomes stitches.
+function segmentBackground(d, tol, gaps, speckMax) {
+  const W = d.w, H = d.h;
   const edge = []; for (let x = 0; x < W; x++) edge.push(x, (H - 1) * W + x); for (let y = 1; y < H - 1; y++) edge.push(y * W, y * W + W - 1);
   const cnt = new Map(); let filled = 0;
   for (const i of edge) { const v = d.px[i]; if (v >= 0) { cnt.set(v, (cnt.get(v) || 0) + 1); filled++; } }
-  if (!filled) { toast("The edges are already bare canvas. Use Magic erase on anything left."); return; }
+  if (!filled) return false;
   const labs = labOfPal(d), bgIdx = [...cnt.entries()].filter(([, n]) => n >= Math.max(2, filled * 0.08)).map(([v]) => v);
   // Colors spread across nearly the whole picture (stripes, patterns, a backdrop behind a border) are background too.
   const box = d.pal.map(() => [W, H, -1, -1, 0]);
@@ -2538,8 +2552,6 @@ function removeBackground() {
   const bgLabs = bgIdx.map(v => labs[v]);
   const dist = v => Math.min(...bgLabs.map(l => dE(labs[v], l)));
   const like = d.pal.map((c, v) => dist(v) < tol);
-  pushUndo(); S.edited = true;
-  const before = d.px.filter(v => v >= 0).length;
   const seen = new Uint8Array(W * H), st = edge.filter(i => d.px[i] >= 0 && like[d.px[i]]);
   while (st.length) {
     const i = st.pop(); if (seen[i]) continue; seen[i] = 1;
@@ -2574,8 +2586,50 @@ function removeBackground() {
     }
     kill.forEach(i => d.px[i] = -1); if (!kill.length) break;
   }
-  removeSpecks(d, 3);
+  removeSpecks(d, speckMax);
   keepMainSubject(d);
+  return true;
+}
+// From artwork: find the background in the full picture, then build the stitches again from what's left. Each stitch
+// takes its color only from design pixels, so edges keep their true colors and thin parts survive.
+function smartStitches() {
+  const W = S.wSt, H = S.hSt, k = clamp(Math.floor(Math.sqrt(1.2e6 / (W * H))), 4, 10);
+  flatten(k); const c = flatten.last, Wp = c.width, Hp = c.height;
+  const img = c.getContext("2d").getImageData(0, 0, Wp, Hp).data, rgba = new Float32Array(Wp * Hp * 4);
+  for (let i = 0; i < img.length; i++) rgba[i] = img[i];
+  const lab = quantize(rgba, Wp, Hp, 16, false), seg = { w: Wp, h: Hp, pal: lab.pal, px: lab.px };
+  if (!segmentBackground(seg, +$("bgTol").value, $("bgGaps").checked, 3 * k * k)) return null;
+  const out = new Float32Array(W * H * 4);
+  for (let sy = 0; sy < H; sy++) for (let sx = 0; sx < W; sx++) {
+    let r = 0, g = 0, b = 0, n = 0;
+    for (let y = sy * k; y < sy * k + k; y++) for (let x = sx * k; x < sx * k + k; x++) {
+      const i = y * Wp + x; if (seg.px[i] < 0 || img[i * 4 + 3] < 128) continue; r += img[i * 4]; g += img[i * 4 + 1]; b += img[i * 4 + 2]; n++;
+    }
+    const o = (sy * W + sx) * 4;
+    if (n >= k * k * 0.3) { out[o] = r / n; out[o + 1] = g / n; out[o + 2] = b / n; out[o + 3] = 255; }
+  }
+  return quantize(out, W, H, S.nColors, S.dither);
+}
+function setBgChip() { $("bgChip").hidden = !S.bgSmart; }
+function removeBackground() {
+  const d = S.design, tol = +$("bgTol").value, gaps = $("bgGaps").checked;
+  if (S.layers.length && !S.edited) {
+    busy(true, "Finding the background in the full picture…", 0.4);
+    setTimeout(() => {
+      try {
+        const q = smartStitches(); busy(false);
+        if (!q) { toast("The edges are already bare. Use Magic erase on anything left."); return; }
+        pushUndo(); const before = d.px.filter(v => v >= 0).length;
+        S.bgSmart = true; setBgChip();
+        setDesign(q.pal, q.px, S.wSt, S.hSt, false, d.sx || 0, d.sy || 0); renderView();
+        toast(`Background removed from the full picture and the stitches rebuilt (${before - q.px.filter(v => v >= 0).length} fewer stitches). Tap any leftovers with Magic erase.`, 5000);
+      } catch (e) { busy(false); toast("Background removal failed: " + e.message, 5000); }
+    }, 30);
+    return;
+  }
+  pushUndo(); S.edited = true;
+  const before = d.px.filter(v => v >= 0).length;
+  if (!segmentBackground(d, tol, gaps, 3)) { toast("The edges are already bare canvas. Use Magic erase on anything left."); return; }
   const n = before - d.px.filter(v => v >= 0).length;
   const cp = compactPalette(d); d.pal = cp.pal; d.px = cp.px; S.sel = 0;
   designDirty(); renderView();
@@ -2927,6 +2981,7 @@ const setLook = l => { S.look = l; $("lookMesh").setAttribute("aria-pressed", l 
 $("lookMesh").onclick = () => setLook("mesh"); $("lookBox").onclick = () => setLook("box");
 $("trim").onclick = () => S.design && trimDesign();
 $("removeBg").onclick = () => S.design && removeBackground();
+$("bgBack").onclick = () => { S.bgSmart = false; setBgChip(); if (S.layers.length) convert(); };
 $("bgTol").oninput = e => $("bgTolOut").textContent = e.target.value;
 $("origAlpha").oninput = e => { S.origAlpha = +e.target.value; $("origOut").textContent = S.origAlpha + "%"; if (S.view !== "design") setView("design"); else renderView(); }; $("vSnap").onclick = () => setView("snap"); $("vMap").onclick = () => setView("map"); $("vPrev").onclick = () => setView("prev");
 $("zIn").onclick = () => zoomAt(1.4); $("zOut").onclick = () => zoomAt(1 / 1.4); $("zFit").onclick = fitView;
@@ -2951,6 +3006,20 @@ function resizeDesign(w, h) {
   setDesign(d.pal, px, w, h, true); fitView();
 }
 $("wSt").onchange = e => { const w = clamp(+e.target.value | 0, 4, 400); const h = S.lock ? clamp(Math.round(w * aspect()), 4, 400) : S.hSt; resizeDesign(w, h); };
+// Inches become stitches at the design's mesh; the other side follows when proportions are kept.
+const fromInches = (wi, hi) => {
+  let w = clamp(Math.round(wi * S.mesh), 4, 400), h = clamp(Math.round(hi * S.mesh), 4, 400);
+  if (Math.round(wi * S.mesh) > 400 || Math.round(hi * S.mesh) > 400) toast(`That's more than 400 stitches on ${S.mesh} mesh, so it was capped.`);
+  resizeDesign(w, h);
+};
+$("wInch").onchange = e => { const wi = Math.max(0.3, +e.target.value || 0); fromInches(wi, S.lock ? wi * aspect() : S.hSt / S.mesh); };
+$("hInch").onchange = e => { const hi = Math.max(0.3, +e.target.value || 0); fromInches(S.lock ? hi / aspect() : S.wSt / S.mesh, hi); };
+$("sizePreset").onchange = e => {
+  if (!e.target.value) return; const [wi, hi] = e.target.value.split("x").map(Number); e.target.value = "";
+  // Fit the artwork inside the chosen size when proportions are kept.
+  if (S.lock) { const a = aspect(), f = Math.min(wi, hi / a); fromInches(f, f * a); toast(`Fit inside ${wi} × ${hi} in, keeping the artwork's proportions.`); }
+  else fromInches(wi, hi);
+};
 $("hSt").onchange = e => { const h = clamp(+e.target.value | 0, 4, 400); const w = S.lock ? clamp(Math.round(h / aspect()), 4, 400) : S.wSt; resizeDesign(w, h); };
 $("lock").onchange = e => S.lock = e.target.checked;
 $("addColor").onclick = () => { if (!S.design) return; pushUndo(); S.design.pal.push(unhex($("newColor").value)); S.sel = S.design.pal.length - 1; setTool("paint"); designDirty(); };
@@ -2958,7 +3027,7 @@ $("addColor").onclick = () => { if (!S.design) return; pushUndo(); S.design.pal.
 $("addArt").onchange = async e => {
   const files = [...e.target.files]; e.target.value = "";
   if (!files.length) return;
-  await archiveDesign("before adding " + files[0].name); S.designName = files[0].name;
+  await archiveDesign("before adding " + files[0].name); S.designName = files[0].name; S.bgSmart = false; setBgChip(); S.edited = false;
   busy(true, "Opening artwork…", 0.3);
   S.importFile = null;
   const firstReal = !S.layers.some(l => !l.example);
