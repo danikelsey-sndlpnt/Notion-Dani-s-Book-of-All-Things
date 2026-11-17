@@ -671,6 +671,17 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
             </div>
             <p class="hint" style="flex:1 1 160px">Each tap moves the print 1/400 inch (about 1/30 of a stitch on 13 mesh). Check my print below works out the exact nudge for you. Your nudge is remembered on this device.</p>
           </div>
+          <h4 style="margin:10px 0 4px">Calibration sheet (no scanner needed)</h4>
+          <p class="hint">Like a printer or Cricut alignment page. <b>1.</b> Print Step 1 on plain paper at 100% / Actual Size. <b>2.</b> Put that same sheet back in the printer exactly the way you load the Carrier, and print Step 2 on it. <b>3.</b> Look at the two rulers (a phone camera zoomed in helps): find the number where the top and bottom lines (and the left and right lines) meet in one straight line, and type those numbers here.</p>
+          <div class="row">
+            <button class="btn small" id="calib1">Step 1 (PDF)</button>
+            <button class="btn small" id="calib2">Step 2 (PDF)</button>
+          </div>
+          <div class="row">
+            <label class="f">Across number<input type="number" id="calibX" step="1" min="-12" max="12" value="0" inputmode="numeric"></label>
+            <label class="f">Up/down number<input type="number" id="calibY" step="1" min="-12" max="12" value="0" inputmode="numeric"></label>
+            <button class="btn small thread" id="calibSet">Set my nudge</button>
+          </div>
           <button class="btn small" id="paperCopy">Paper copy of my scanned canvas (PDF)</button>
           <p class="hint"><b>Dress rehearsal without canvas:</b> this prints your scanned canvas onto plain paper, placed exactly where the real canvas sits on the Carrier. Print it at 100% / Actual Size. Then load that paper the same way you load the Carrier and print your design PDF on it (same printer, same nudge). Ink should land on the printed threads the way it will on the real canvas. Threads print gray and the holes stay white, so it uses little ink.</p>
           <button class="btn small" id="testPage">Test page for plain paper (PDF)</button>
@@ -821,7 +832,7 @@ function adjustColor(c) {
 }
 
 /* ---------------- files ---------------- */
-const APP_VERSION = "2026.11.17-g";
+const APP_VERSION = "2026.11.17-h";
 { const v = document.getElementById("appVer2"); if (v) v.textContent = "v" + APP_VERSION; }
 let downloadsCap = null;
 (window.claude && window.claude.use ? window.claude.use("downloads") : Promise.resolve(null)).then(d => { downloadsCap = d; }).catch(() => {});
@@ -2358,6 +2369,42 @@ async function makePrintPng() {
 function printSummary(r) {
   $("printAllRow").hidden = true;
   setStatus("printStatus", `${r.total - r.off} stitches in the file` + (r.extended ? ` (${r.extended} placed past the mapped canvas)` : "") + (r.off ? `, ${r.off} left out because they fall off the canvas.` : ".") + ` Print it on letter paper at 100% with the Carrier fed the same way you scanned it, top edge first.`, r.off ? "err" : "ok");
+}
+// Vernier calibration: Step 1 prints a ruler with lines every 1/10 inch; Step 2, on the same sheet, prints one whose
+// lines are 1/10 + 1/400 inch apart. Where the two rulers' lines meet in a straight line, the number is the nudge
+// (in 1/400 inch steps) that undoes how far the printer placed Step 2 from Step 1.
+function calibrationPdf(step) {
+  const sp = 0.1, dl = 1 / NUDGE, N = 12, cx = PAGE.w / 2, yA = 4.2, yC = 6.9, xD = PAGE.w / 2, L = 0.35;
+  let c = "0 0 0 RG\n";
+  const line = (x1, y1, x2, y2, w) => `${w} w ${pt(x1)} ${ptY(y1)} m ${pt(x2)} ${ptY(y2)} l S
+`;
+  for (let k = -N; k <= N; k++) {
+    const big = k === 0 ? 0.18 : k % 5 === 0 ? 0.09 : 0, w = 0.5;
+    if (step === 1) {
+      c += line(cx + k * sp, yA - L - big, cx + k * sp, yA, w);
+      c += line(xD - L - big, yC + k * sp, xD, yC + k * sp, w);
+    } else {
+      const x = cx + k * (sp + dl), y = yC + k * (sp + dl);
+      c += line(x, yA, x, yA + L + big, w);
+      c += line(xD, y, xD + L + big, y, w);
+      if (k % 2 === 0) {
+        const t = String(k), tw = t.length * 0.045;
+        c += "0 g\n" + pdfText(x - tw / 2, yA + L + 0.36, 7, t);
+        c += pdfText(xD + L + 0.32, y + 0.035, 7, t);
+      }
+    }
+  }
+  c += "0.25 g\n";
+  const ty = step === 1 ? 0.55 : 1.15;
+  c += pdfText(0.75, ty, 8, "Sookie's Canvas Press calibration sheet - Step " + step + " of 2 - print at 100% / Actual Size. This edge goes in first.");
+  if (step === 1) {
+    c += pdfText(0.75, ty + 0.2, 8, "After printing, put this same sheet back in the printer exactly the way you load the Carrier, then print Step 2.");
+  } else {
+    c += pdfText(cx - 1.6, yA + L + 0.62, 9, "ACROSS: find where the top and bottom lines meet straight.");
+    c += pdfText(xD - 1.8, yC + N * sp + 0.45, 9, "UP/DOWN: find where the left and right lines meet straight.");
+    c += pdfText(0.75, ty + 0.2, 8, "Type the two numbers into the app (Print step, Printer nudge and test page) and tap Set my nudge.");
+  }
+  return buildPdf(c);
 }
 async function testPagePdf() {
   if (!S.scan) { toast("Load a scan first."); return; }
@@ -4229,6 +4276,13 @@ $("savePrev").onclick = async () => { if (!S.scan) return; const c = buildPrevie
 $("testPage").onclick = testPagePdf;
 $("paperCopy").onclick = makePaperCopy;
 $("edgeTest").onclick = makeEdgeTest;
+$("calib1").onclick = () => saveFile(fileBase() + "-calibration-step1-v" + APP_VERSION + ".pdf", calibrationPdf(1));
+$("calib2").onclick = () => saveFile(fileBase() + "-calibration-step2-v" + APP_VERSION + ".pdf", calibrationPdf(2));
+$("calibSet").onclick = () => {
+  const x = Math.round(+$("calibX").value || 0), y = Math.round(+$("calibY").value || 0);
+  if (Math.abs(x) > 12 || Math.abs(y) > 12) { toast("The numbers on the sheet go from -12 to 12."); return; }
+  S.nudge = { x, y }; nudgeOut(); previewDirty(); toast(`Nudge set to ${x}, ${y}. Make your print file again to use it.`, 5000);
+};
 document.querySelectorAll("[data-edgepick]").forEach(b => b.onclick = () => { S.adj.edge = +b.dataset.edgepick; $("edge").value = S.adj.edge; adjOut(); previewDirty(); store.set("ccp-adj", S.adj); toast(`Edges set to ${S.adj.edge}%. Your prints use this from now on.`); });
 $("brushPaint").oninput = e => { S.brush.paint = +e.target.value; syncBrushUI(); };
 $("brushErase").oninput = e => { S.brush.erase = +e.target.value; syncBrushUI(); };
