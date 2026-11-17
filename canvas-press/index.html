@@ -564,7 +564,7 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
           <button class="btn wide" id="nextCheck">Next to check</button>
           <p class="hint">Amber and red points are spots where the scan was faint (tape, a shadow, a fold). <b>Fix them automatically</b> looks closely at the scan around each one and snaps it onto the real crossing. Only points inside your design matter for printing; ones outside are ignored.</p>
           <p class="hint"><b>Show design</b> (above the picture, on the Map) puts your design's colors on the canvas so you can see where each stitch lands while you move points.</p>
-          <p class="hint">Drag any point onto its intersection. Arrow keys move the selected point by one pixel. Drag the purple corner dots if the app missed one.</p>
+          <p class="hint">Dragging moves around the scan. To fix a point, <b>tap it</b> to select it (it gets a ring), then drag it onto its intersection or use the arrow buttons. Only the selected point moves, so you won't grab points by accident. Arrow keys move it one pixel. Drag the purple corner dots if the app missed one.</p>
           <div class="row">
             <button class="btn small" id="pickCenter" aria-pressed="false">Pick center intersection</button>
             <button class="btn small" id="refit">Re-guess red points</button>
@@ -3659,7 +3659,12 @@ view.addEventListener("pointerdown", e => {
     for (let k = 0; k < 4; k++) { const m = S.marks[k]; if (Math.hypot(m[0] - wx, m[1] - wy) < Math.max(tol * 1.5, MARK_R * S.scan.dpi)) { drag = { type: "mark", k }; return; } }
     if (S.showPts) {
       const n = nearestNode(wx, wy);
-      if (n && n.d < Math.max(tol, S.grid.pitch * 0.45) && S.grid.pitch * V.s >= 7) { S.selNode = n.j * S.grid.gx + n.i; drag = { type: "node", k: S.selNode, off: [S.grid.X[S.selNode] - wx, S.grid.Y[S.selNode] - wy], s0: [sx, sy] }; renderView(); return; }
+      if (n && n.d < Math.max(tol, S.grid.pitch * 0.45) && S.grid.pitch * V.s >= 7) {
+        const k = n.j * S.grid.gx + n.i;
+        // Only the selected point can be dragged. Anywhere else, dragging moves the view; a plain tap selects that point.
+        if (k === S.selNode) { drag = { type: "node", k, off: [S.grid.X[k] - wx, S.grid.Y[k] - wy], s0: [sx, sy] }; renderView(); return; }
+        drag = { type: "pan", last: [sx, sy], s0: [sx, sy], tapNode: k }; return;
+      }
     }
   }
   drag = { type: "pan", last: [sx, sy] };
@@ -3679,7 +3684,7 @@ view.addEventListener("pointermove", e => {
     V.tx += c[0] - drag.c[0]; V.ty += c[1] - drag.c[1]; zoomAt(d / drag.d, c[0], c[1]); drag.d = d; drag.c = c; return;
   }
   const [wx, wy] = toWorld(sx, sy);
-  if (drag.type === "pan") { V.user = true; V.tx += sx - drag.last[0]; V.ty += sy - drag.last[1]; drag.last = [sx, sy]; renderView(); }
+  if (drag.type === "pan") { if (drag.s0 && Math.hypot(sx - drag.s0[0], sy - drag.s0[1]) > 6) drag.moved = true; V.user = true; V.tx += sx - drag.last[0]; V.ty += sy - drag.last[1]; drag.last = [sx, sy]; renderView(); }
   else if (drag.type === "textmove") { if (!drag.moved && Math.hypot(sx - drag.s0[0], sy - drag.s0[1]) < 6) return; drag.moved = true; const c = [Math.round(wx + drag.off[0]), Math.round(wy + drag.off[1])]; if (c[0] !== S.stampPos[0] || c[1] !== S.stampPos[1]) { S.stampPos = c; renderView(); } }
   else if (drag.type === "select") { const c = [Math.floor(wx), Math.floor(wy)]; if (c[0] !== drag.b[0] || c[1] !== drag.b[1]) { drag.b = c; renderView(); } }
   else if (drag.type === "crop") { const c = [Math.floor(wx), Math.floor(wy)]; if (c[0] !== drag.b[0] || c[1] !== drag.b[1]) { drag.b = c; renderView(); } }
@@ -3691,6 +3696,7 @@ view.addEventListener("pointermove", e => {
 const endPtr = e => {
   ptrs.delete(e.pointerId);
   if (drag && drag.type === "node" && drag.moved) { computeCorners(); previewDirty(); updateCounts(); }
+  if (drag && drag.type === "pan" && drag.tapNode != null && !drag.moved) { S.selNode = drag.tapNode; drag = null; renderView(); return; }
   if (drag && drag.type === "mark") { setStatus("scanStatus", "Corner dot moved by hand.", "ok"); previewDirty(); }
   if (drag && drag.type === "paint") designDirty();
   if (drag && drag.type === "move") { const dl = drag.delta; drag = null; shiftDesign(dl[0], dl[1]); return; }
