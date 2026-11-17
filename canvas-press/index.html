@@ -630,16 +630,21 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
         <p class="hint" style="margin:0">Everything below is optional.</p>
         <div class="group" id="calibGroup">
           <h3>Line up my printer (calibration sheet)</h3>
-          <p class="hint">Like a printer or Cricut alignment page. <b>1.</b> Print Step 1 on plain paper at 100% / Actual Size. <b>2.</b> Put that same sheet back in the printer exactly the way you load the Carrier, and print Step 2 on it. <b>3.</b> Look at the two rulers (a phone camera zoomed in helps): find the number where the top and bottom lines (and the left and right lines) meet in one straight line, and type those numbers here.</p>
+          <p class="hint">Like a printer or Cricut alignment page. <b>1.</b> Print Step 1 on plain paper at 100% / Actual Size. <b>2.</b> Put that same sheet back in the printer exactly the way you load the Carrier, and print Step 2 on it. <b>3.</b> On each ruler, find the number where the lines from Step 1 and Step 2 meet in one straight line (a phone camera zoomed in helps). Pick those numbers below: the BIG rulers (top of the sheet and far left) give the rough amount, the small rulers in the middle give the exact step. If two or three neighbors look equally straight, pick the middle one. If nothing meets on a ruler, pick "Doesn't have one".</p>
           <div class="row">
             <button class="btn small" id="calib1">Step 1 (PDF)</button>
             <button class="btn small" id="calib2">Step 2 (PDF)</button>
           </div>
           <div class="row">
-            <label class="f">Across number<input type="number" id="calibX" step="1" min="-12" max="12" value="0" inputmode="numeric"></label>
-            <label class="f">Up/down number<input type="number" id="calibY" step="1" min="-12" max="12" value="0" inputmode="numeric"></label>
-            <button class="btn small thread" id="calibSet">Set my nudge</button>
+            <label class="f">Across number<select id="calibX"></select></label>
+            <label class="f">Up/down number<select id="calibY"></select></label>
           </div>
+          <div class="row" id="calibBigRow">
+            <label class="f">BIG ruler across<select id="calibBX"></select></label>
+            <label class="f">BIG ruler up/down<select id="calibBY"></select></label>
+          </div>
+          <p class="hint" id="calibNote" hidden></p>
+          <div class="row"><button class="btn small thread" id="calibSet">Set my nudge</button></div>
         </div>
         <details class="more">
           <summary>Move the design on the canvas</summary>
@@ -834,7 +839,7 @@ function adjustColor(c) {
 }
 
 /* ---------------- files ---------------- */
-const APP_VERSION = "2026.11.17-i";
+const APP_VERSION = "2026.11.17-j";
 { const v = document.getElementById("appVer2"); if (v) v.textContent = "v" + APP_VERSION; }
 let downloadsCap = null;
 (window.claude && window.claude.use ? window.claude.use("downloads") : Promise.resolve(null)).then(d => { downloadsCap = d; }).catch(() => {});
@@ -2378,6 +2383,22 @@ function printSummary(r) {
 function calibrationPdf(step) {
   const sp = 0.1, dl = 1 / NUDGE, N = 12, cx = PAGE.w / 2, yA = 4.2, yC = 6.9, xD = PAGE.w / 2, L = 0.35;
   let c = "0 0 0 RG\n";
+  // BIG rulers: same idea with 4-step differences, for printers that are further off than the fine rulers reach.
+  // Its lines are 0.26 in apart so a 4-step difference can't line up with the wrong neighbor across the whole ruler.
+  const yB = 2.3, xB = 1.3, dB = 4 / NUDGE, spB = 0.26;
+  for (let k = -N; k <= N; k++) {
+    const big = k === 0 ? 0.18 : k % 5 === 0 ? 0.09 : 0;
+    if (step === 1) {
+      c += `0.5 w ${pt(cx + k * spB)} ${ptY(yB - L - big)} m ${pt(cx + k * spB)} ${ptY(yB)} l S\n`;
+      c += `0.5 w ${pt(xB - L - big)} ${ptY(yC + k * spB)} m ${pt(xB)} ${ptY(yC + k * spB)} l S\n`;
+    } else {
+      const x = cx + k * (spB + dB), y = yC + k * (spB + dB);
+      c += `0.5 w ${pt(x)} ${ptY(yB)} m ${pt(x)} ${ptY(yB + L + big)} l S\n`;
+      c += `0.5 w ${pt(xB)} ${ptY(y)} m ${pt(xB + L + big)} ${ptY(y)} l S\n`;
+      if (k % 2 === 0) { const t = String(k * 4), tw = t.length * 0.045; c += "0 g\n" + pdfText(x - tw / 2, yB + L + 0.36, 7, t) + pdfText(xB + L + 0.32, y + 0.035, 7, t); }
+    }
+  }
+  if (step === 2) c += "0.25 g\n" + pdfText(cx - 1.4, yB + L + 0.62, 9, "BIG ruler, across: read this one first") + pdfText(xB - 0.6, yC + N * (spB + dB) + 0.3, 9, "BIG ruler: up/down");
   const line = (x1, y1, x2, y2, w) => `${w} w ${pt(x1)} ${ptY(y1)} m ${pt(x2)} ${ptY(y2)} l S
 `;
   for (let k = -N; k <= N; k++) {
@@ -4280,10 +4301,32 @@ $("paperCopy").onclick = makePaperCopy;
 $("edgeTest").onclick = makeEdgeTest;
 $("calib1").onclick = () => saveFile(fileBase() + "-calibration-step1-v" + APP_VERSION + ".pdf", calibrationPdf(1));
 $("calib2").onclick = () => saveFile(fileBase() + "-calibration-step2-v" + APP_VERSION + ".pdf", calibrationPdf(2));
+{
+  const fill = (id, vals, none) => { const el = $(id); el.innerHTML = ""; for (const v of vals) { const o = document.createElement("option"); o.value = v; o.textContent = v > 0 ? "+" + v : String(v); el.appendChild(o); } const o = document.createElement("option"); o.value = "none"; o.textContent = none; el.appendChild(o); el.value = "0"; };
+  const fine = [], big = []; for (let k = -12; k <= 12; k++) fine.push(k); for (let k = -48; k <= 48; k += 4) big.push(k);
+  fill("calibX", fine, "Doesn't have one"); fill("calibY", fine, "Doesn't have one");
+  fill("calibBX", big, "Doesn't have one"); fill("calibBY", big, "Doesn't have one");
+  const sync = () => {
+    const needBig = $("calibX").value === "none" || $("calibY").value === "none";
+    $("calibNote").hidden = !needBig;
+    if (needBig) $("calibNote").textContent = "Nothing meeting on the small ruler means your printer is off by more than 12 steps; the BIG ruler covers that. If your sheet has no BIG ruler (top of the page and far left), print Step 1 and Step 2 again. If nothing meets on the BIG ruler either, check that the sheet went back in the same way round, that you printed at 100% / Actual Size, and that the paper guides are snug.";
+  };
+  ["calibX", "calibY", "calibBX", "calibBY"].forEach(id => $(id).onchange = sync);
+}
 $("calibSet").onclick = () => {
-  const x = Math.round(+$("calibX").value || 0), y = Math.round(+$("calibY").value || 0);
-  if (Math.abs(x) > 12 || Math.abs(y) > 12) { toast("The numbers on the sheet go from -12 to 12."); return; }
-  S.nudge = { x, y }; nudgeOut(); previewDirty(); toast(`Nudge set to ${x}, ${y}. Make your print file again to use it.`, 5000);
+  // The small ruler repeats every 40 steps (one line spacing), so the BIG reading picks the right repeat.
+  const pick = (fineId, bigId) => {
+    const f = $(fineId).value, b = $(bigId).value;
+    if (f === "none" && b === "none") return null;
+    if (f === "none") return +b;
+    if (b === "none") return +f;
+    return +f + 40 * Math.round((+b - +f) / 40);
+  };
+  const x = pick("calibX", "calibBX"), y = pick("calibY", "calibBY");
+  if (x == null || y == null) { toast("Nothing lined up on either ruler, so the nudge wasn't changed. Check the sheet went back in the same way round and printed at 100% / Actual Size, then try the sheet again.", 8000); return; }
+  S.nudge = { x, y }; nudgeOut(); previewDirty();
+  const used = ($("calibX").value === "none" && $("calibBX").value !== "none") || ($("calibY").value === "none" && $("calibBY").value !== "none");
+  toast(`Nudge set to ${x}, ${y}.` + (used ? " That came from the BIG ruler, so print the calibration sheet once more to fine-tune it." : " Make your print file again to use it."), 6000);
 };
 document.querySelectorAll("[data-edgepick]").forEach(b => b.onclick = () => { S.adj.edge = +b.dataset.edgepick; $("edge").value = S.adj.edge; adjOut(); previewDirty(); store.set("ccp-adj", S.adj); toast(`Edges set to ${S.adj.edge}%. Your prints use this from now on.`); });
 $("brushPaint").oninput = e => { S.brush.paint = +e.target.value; syncBrushUI(); };
