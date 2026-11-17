@@ -628,6 +628,19 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
         </div>
 
         <p class="hint" style="margin:0">Everything below is optional.</p>
+        <div class="group" id="calibGroup">
+          <h3>Line up my printer (calibration sheet)</h3>
+          <p class="hint">Like a printer or Cricut alignment page. <b>1.</b> Print Step 1 on plain paper at 100% / Actual Size. <b>2.</b> Put that same sheet back in the printer exactly the way you load the Carrier, and print Step 2 on it. <b>3.</b> Look at the two rulers (a phone camera zoomed in helps): find the number where the top and bottom lines (and the left and right lines) meet in one straight line, and type those numbers here.</p>
+          <div class="row">
+            <button class="btn small" id="calib1">Step 1 (PDF)</button>
+            <button class="btn small" id="calib2">Step 2 (PDF)</button>
+          </div>
+          <div class="row">
+            <label class="f">Across number<input type="number" id="calibX" step="1" min="-12" max="12" value="0" inputmode="numeric"></label>
+            <label class="f">Up/down number<input type="number" id="calibY" step="1" min="-12" max="12" value="0" inputmode="numeric"></label>
+            <button class="btn small thread" id="calibSet">Set my nudge</button>
+          </div>
+        </div>
         <details class="more">
           <summary>Move the design on the canvas</summary>
           <div class="row">
@@ -670,17 +683,6 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
               <span></span><button id="nD" aria-label="Nudge down">↓</button><span></span>
             </div>
             <p class="hint" style="flex:1 1 160px">Each tap moves the print 1/400 inch (about 1/30 of a stitch on 13 mesh). Check my print below works out the exact nudge for you. Your nudge is remembered on this device.</p>
-          </div>
-          <h4 style="margin:10px 0 4px">Calibration sheet (no scanner needed)</h4>
-          <p class="hint">Like a printer or Cricut alignment page. <b>1.</b> Print Step 1 on plain paper at 100% / Actual Size. <b>2.</b> Put that same sheet back in the printer exactly the way you load the Carrier, and print Step 2 on it. <b>3.</b> Look at the two rulers (a phone camera zoomed in helps): find the number where the top and bottom lines (and the left and right lines) meet in one straight line, and type those numbers here.</p>
-          <div class="row">
-            <button class="btn small" id="calib1">Step 1 (PDF)</button>
-            <button class="btn small" id="calib2">Step 2 (PDF)</button>
-          </div>
-          <div class="row">
-            <label class="f">Across number<input type="number" id="calibX" step="1" min="-12" max="12" value="0" inputmode="numeric"></label>
-            <label class="f">Up/down number<input type="number" id="calibY" step="1" min="-12" max="12" value="0" inputmode="numeric"></label>
-            <button class="btn small thread" id="calibSet">Set my nudge</button>
           </div>
           <button class="btn small" id="paperCopy">Paper copy of my scanned canvas (PDF)</button>
           <p class="hint"><b>Dress rehearsal without canvas:</b> this prints your scanned canvas onto plain paper, placed exactly where the real canvas sits on the Carrier. Print it at 100% / Actual Size. Then load that paper the same way you load the Carrier and print your design PDF on it (same printer, same nudge). Ink should land on the printed threads the way it will on the real canvas. Threads print gray and the holes stay white, so it uses little ink.</p>
@@ -832,7 +834,7 @@ function adjustColor(c) {
 }
 
 /* ---------------- files ---------------- */
-const APP_VERSION = "2026.11.17-h";
+const APP_VERSION = "2026.11.17-i";
 { const v = document.getElementById("appVer2"); if (v) v.textContent = "v" + APP_VERSION; }
 let downloadsCap = null;
 (window.claude && window.claude.use ? window.claude.use("downloads") : Promise.resolve(null)).then(d => { downloadsCap = d; }).catch(() => {});
@@ -2402,7 +2404,7 @@ function calibrationPdf(step) {
   } else {
     c += pdfText(cx - 1.6, yA + L + 0.62, 9, "ACROSS: find where the top and bottom lines meet straight.");
     c += pdfText(xD - 1.8, yC + N * sp + 0.45, 9, "UP/DOWN: find where the left and right lines meet straight.");
-    c += pdfText(0.75, ty + 0.2, 8, "Type the two numbers into the app (Print step, Printer nudge and test page) and tap Set my nudge.");
+    c += pdfText(0.75, ty + 0.2, 8, "Type the two numbers into the app (Print step, Line up my printer) and tap Set my nudge.");
   }
   return buildPdf(c);
 }
