@@ -462,6 +462,10 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
           <div class="row">
             <label class="f">Number of colors <small id="ncOut">12</small><input type="range" id="nColors" min="2" max="48" value="12"></label>
           </div>
+          <div class="row" role="radiogroup" aria-label="Conversion style">
+            <label class="tog"><input type="radio" name="cstyle" value="art" checked> <b>Art</b>: crisp lines, stripes and outlines</label>
+            <label class="tog"><input type="radio" name="cstyle" value="photo"> <b>Photo</b>: smooth blending</label>
+          </div>
           <label class="tog"><input type="checkbox" id="dither"> Blend shades with speckles (for photos)</label>
           <button class="btn thread wide" id="convert">Convert to stitches</button>
           <div class="status err" id="redoBar" hidden>You've edited stitches by hand, so this setting wasn't applied yet. Applying it reads the picture again and replaces your edits (Undo brings them back). <button class="btn small" id="redoGo" style="margin-top:6px">Apply and replace my edits</button></div>
@@ -875,7 +879,7 @@ function adjustColor(c) {
 }
 
 /* ---------------- files ---------------- */
-const APP_VERSION = "2026.11.17-q";
+const APP_VERSION = "2026.11.17-r";
 { const v = document.getElementById("appVer2"); if (v) v.textContent = "v" + APP_VERSION; }
 let downloadsCap = null;
 (window.claude && window.claude.use ? window.claude.use("downloads") : Promise.resolve(null)).then(d => { downloadsCap = d; }).catch(() => {});
@@ -1157,12 +1161,78 @@ function setDesign(pal, px, w, h, keepSel, sx = 0, sy = 0) {
   S.wSt = w; S.hSt = h; syncSizeInputs();
   designDirty();
 }
+// Art conversion: reads the picture at full detail, picks the art's own flat colors (not blends of them), gives each
+// stitch the color that covers most of it, keeps thin dark outlines, then tidies lone stray stitches.
+function quantizeArt(n) {
+  const W = S.wSt, H = S.hSt, k = W * H > 40000 ? 6 : 8;
+  flatten(k); const c = flatten.last, CW = c.width, CH = c.height, d = c.getContext("2d").getImageData(0, 0, CW, CH).data;
+  // Colors from flat areas count fully; anti-aliased edge pixels barely count, so blends don't become palette colors.
+  const uniq = new Map(), step = Math.max(1, Math.floor(Math.sqrt(CW * CH / 250000)));
+  for (let y = 0; y < CH - 1; y += step) for (let x = 0; x < CW - 1; x += step) {
+    const i = (y * CW + x) * 4; if (d[i + 3] < 128) continue;
+    const j = i + 4, l = i + CW * 4, diff = Math.max(Math.abs(d[i] - d[j]), Math.abs(d[i + 1] - d[j + 1]), Math.abs(d[i + 2] - d[j + 2]), Math.abs(d[i] - d[l]), Math.abs(d[i + 1] - d[l + 1]), Math.abs(d[i + 2] - d[l + 2]));
+    const w = diff < 20 ? 1 : 0.08, key = ((d[i] >> 2) << 12) | ((d[i + 1] >> 2) << 6) | (d[i + 2] >> 2), u = uniq.get(key);
+    if (u) { u.w += w; u.r += d[i] * w; u.g += d[i + 1] * w; u.b += d[i + 2] * w; } else uniq.set(key, { w, r: d[i] * w, g: d[i + 1] * w, b: d[i + 2] * w });
+  }
+  const U = [...uniq.values()].filter(u => u.w > 0).map(u => ({ w: u.w, l: rgb2lab(u.r / u.w, u.g / u.w, u.b / u.w) }));
+  if (!U.length) return { pal: [], px: new Int16Array(W * H).fill(-1) };
+  let cents;
+  if (U.length <= n) cents = U.map(u => u.l.slice());
+  else {
+    U.sort((a, b) => b.w - a.w); cents = [U[0].l.slice()]; const dmin = new Float32Array(U.length).fill(1e9);
+    while (cents.length < n) {
+      const cc = cents[cents.length - 1]; let best = -1, bi = 0;
+      for (let i = 0; i < U.length; i++) { const l = U[i].l, dd = (l[0] - cc[0]) ** 2 + (l[1] - cc[1]) ** 2 + (l[2] - cc[2]) ** 2; if (dd < dmin[i]) dmin[i] = dd; const sc = dmin[i] * Math.sqrt(U[i].w); if (sc > best) { best = sc; bi = i; } }
+      cents.push(U[bi].l.slice());
+    }
+    for (let it = 0; it < 12; it++) {
+      const acc = cents.map(() => [0, 0, 0, 0]);
+      for (const u of U) { let bi = 0, bd = 1e18; for (let q = 0; q < cents.length; q++) { const cc = cents[q], dd = (u.l[0] - cc[0]) ** 2 + (u.l[1] - cc[1]) ** 2 + (u.l[2] - cc[2]) ** 2; if (dd < bd) { bd = dd; bi = q; } } const a = acc[bi]; a[0] += u.l[0] * u.w; a[1] += u.l[1] * u.w; a[2] += u.l[2] * u.w; a[3] += u.w; }
+      acc.forEach((a, q) => { if (a[3]) cents[q] = [a[0] / a[3], a[1] / a[3], a[2] / a[3]]; });
+    }
+  }
+  const P = cents.length, near = new Map();
+  const nearest = (r, g, b) => { const key = ((r >> 2) << 12) | ((g >> 2) << 6) | (b >> 2); let v = near.get(key); if (v !== undefined) return v; const L = rgb2lab(r, g, b); let bd = 1e18; v = 0; for (let q = 0; q < P; q++) { const cc = cents[q], dd = (L[0] - cc[0]) ** 2 + (L[1] - cc[1]) ** 2 + (L[2] - cc[2]) ** 2; if (dd < bd) { bd = dd; v = q; } } near.set(key, v); return v; };
+  // The darkest palette color, if it's dark enough to be an outline, wins a stitch it covers a fair share of.
+  let dark = -1; cents.forEach((cc, q) => { if (cc[0] < 32 && (dark < 0 || cc[0] < cents[dark][0])) dark = q; });
+  const px = new Int16Array(W * H).fill(-1), votes = new Float32Array(P);
+  for (let sy = 0; sy < H; sy++) for (let sx = 0; sx < W; sx++) {
+    votes.fill(0); let op = 0;
+    for (let yy = 0; yy < k; yy++) for (let xx = 0; xx < k; xx++) {
+      const i = ((sy * k + yy) * CW + sx * k + xx) * 4; if (d[i + 3] < 128) continue; op++;
+      // pixels near the middle of the stitch count a little more
+      const cw = 1 + 0.5 * (1 - (Math.abs(xx - (k - 1) / 2) + Math.abs(yy - (k - 1) / 2)) / (k - 1));
+      votes[nearest(d[i], d[i + 1], d[i + 2])] += cw;
+    }
+    if (op < k * k * 0.5) continue;
+    let tot = 0, bi = 0; for (let q = 0; q < P; q++) { tot += votes[q]; if (votes[q] > votes[bi]) bi = q; }
+    if (dark >= 0 && votes[dark] >= tot * 0.22) bi = dark;
+    px[sy * W + sx] = bi;
+  }
+  // Lone stray stitches (no matching neighbor on any side) take their neighbors' most common color.
+  const out = px.slice();
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const i = y * W + x, v = px[i]; if (v < 0) continue;
+    const nb = []; for (const [a, b] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]]) { const X = x + a, Y = y + b; if (X >= 0 && Y >= 0 && X < W && Y < H) nb.push(px[Y * W + X]); }
+    if (nb.slice(0, 4).includes(v) || nb.filter(q => q === v).length >= 1) continue;
+    if (v === dark) continue;
+    const cnt = new Map(); for (const q of nb) cnt.set(q, (cnt.get(q) || 0) + 1);
+    let best = v, bc = 0; for (const [q, cn] of cnt) if (cn > bc) { bc = cn; best = q; }
+    out[i] = best;
+  }
+  const pal = cents.map(cc => lab2rgb(cc[0], cc[1], cc[2]).map(Math.round));
+  const used = compactPalette({ pal, px: out });
+  S.convK = k;
+  return used;
+}
 function convert() {
   if (!S.layers.length) { toast("Add artwork first."); return; }
   pushUndo();
-  const rgba = flatten();
-  S.original = { canvas: flatten.last, m: [0.25, 0, 0, 0.25, 0, 0] };
-  const q = (S.bgSmart && smartStitches()) || quantize(rgba, S.wSt, S.hSt, S.nColors, S.dither);
+  const art = S.convStyle !== "photo" && !S.dither;
+  const rgba = art ? null : flatten();
+  const q = (S.bgSmart && smartStitches()) || (art ? quantizeArt(S.nColors) : quantize(rgba, S.wSt, S.hSt, S.nColors, S.dither));
+  const k = flatten.last.width / S.wSt;
+  S.original = { canvas: flatten.last, m: [1 / k, 0, 0, 1 / k, 0, 0] };
   setDesign(q.pal, q.px, S.wSt, S.hSt);
   S.exampleDesign = S.layers.every(l => l.example);
   fitView(); renderAll();
@@ -4528,6 +4598,8 @@ $("showGrid").onchange = e => { S.showGrid = e.target.checked; renderView(); };
 $("nColors").oninput = e => { S.nColors = +e.target.value; $("ncOut").textContent = S.nColors; };
 $("nColors").onchange = redoFromSource;
 $("dither").onchange = e => { S.dither = e.target.checked; redoFromSource(); };
+S.convStyle = store.get("ccp-cstyle") === "photo" ? "photo" : "art";
+document.querySelectorAll('input[name="cstyle"]').forEach(r => { r.checked = r.value === S.convStyle; r.onchange = () => { S.convStyle = r.value; store.set("ccp-cstyle", S.convStyle); redoFromSource(); }; });
 $("bgMode").onchange = e => { S.bgMode = e.target.value; $("bgColor").hidden = S.bgMode !== "color"; redoFromSource(); };
 $("bgColor").onchange = e => { S.bg = e.target.value; redoFromSource(); };
 $("convert").onclick = () => { S.edited = false; $("redoBar").hidden = true; convert(); };
