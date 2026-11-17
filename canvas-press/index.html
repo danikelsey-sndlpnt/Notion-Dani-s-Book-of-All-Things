@@ -842,7 +842,7 @@ function adjustColor(c) {
 }
 
 /* ---------------- files ---------------- */
-const APP_VERSION = "2026.11.17-l";
+const APP_VERSION = "2026.11.17-m";
 { const v = document.getElementById("appVer2"); if (v) v.textContent = "v" + APP_VERSION; }
 let downloadsCap = null;
 (window.claude && window.claude.use ? window.claude.use("downloads") : Promise.resolve(null)).then(d => { downloadsCap = d; }).catch(() => {});
@@ -2201,12 +2201,19 @@ function paintedAt() {
   const ini = S.initials && S.initials.on && S.iniCells ? { C: S.iniCells, o: initialsOrigin(S.iniCells) } : null;
   // White (or nearly white) stitches put no real ink down, so a background of white stitches counts as bare canvas.
   const inked = d.pal.map(c => { const a = adjustColor(c); return !(a[0] >= 240 && a[1] >= 240 && a[2] >= 240); });
-  return (i, j) => {
+  // Palette index of the ink at a crossing (the initials use one past the palette), or -1 for bare canvas.
+  const colorOf = (i, j) => {
     const c = i - pl.i0, r = j - pl.j0;
-    if (c >= 0 && r >= 0 && c < d.w && r < d.h) { const v = d.px[r * d.w + c]; if (v >= 0 && inked[v]) return true; }
-    if (ini) { const x = c - ini.o.x, y = r - ini.o.y; if (x >= 0 && y >= 0 && x < ini.C.w && y < ini.C.h && ini.C.cells[y * ini.C.w + x]) return true; }
-    return false;
+    if (c >= 0 && r >= 0 && c < d.w && r < d.h) { const v = d.px[r * d.w + c]; if (v >= 0 && inked[v]) return v; }
+    if (ini) { const x = c - ini.o.x, y = r - ini.o.y; if (x >= 0 && y >= 0 && x < ini.C.w && y < ini.C.h && ini.C.cells[y * ini.C.w + x]) return d.pal.length; }
+    return -1;
   };
+  // Colors close enough that a stitcher wouldn't tell them apart count as the same (no gap pulled between them).
+  const cols = d.pal.concat(ini ? [S.initials.color] : []).map(c => rgb2lab(c[0], c[1], c[2]));
+  const same = (a, b) => a === b || (a >= 0 && b >= 0 && Math.hypot(cols[a][0] - cols[b][0], cols[a][1] - cols[b][1], cols[a][2] - cols[b][2]) < 14);
+  const f = (i, j) => colorOf(i, j) >= 0;
+  f.color = colorOf; f.same = same;
+  return f;
 }
 // The ink patch for one stitch. Toward a painted neighbor it reaches the hole centers (plus the ink reach), so colors
 // meet halfway along the thread. Toward bare canvas it stops just past this stitch's own crossing.
@@ -2221,7 +2228,18 @@ function stitchShape(q, i, j, f, painted, landed) {
   const ov = S.edgeFor ? S.edgeFor(i, j) : null, half = 0.5 * f;
   // 100% stops just past the thread crossing (threads are a bit over half a stitch wide), 0% reaches halfway like a color edge.
   const t0 = ov != null ? 0.5 - ov / 100 * (0.5 - 0.31) : null, reach = side => t0 != null ? t0 : edgeReach(side, landed);
-  const L = painted(i - 1, j) ? -half : -reach("left"), R = painted(i + 1, j) ? half : reach("right"), T = painted(i, j - 1) ? -half : -reach("up"), B = painted(i, j + 1) ? half : reach("down");
+  // Same color next door: reach halfway (plus ink reach) so the area is solid. Bare canvas, or a different color: stop
+  // short so the ink's spread ends on the thread between, not on the neighbor's crossing (where a stitcher would see
+  // two colors). On the Map and Preview, different colors meet halfway, which is how it should end up.
+  const me = painted.color ? painted.color(i, j) : 0;
+  const side = (di, dj, name) => {
+    if (!painted.color) return painted(i + di, j + dj) ? half : reach(name);
+    const nb = painted.color(i + di, j + dj);
+    if (nb < 0) return reach(name);
+    if (painted.same(me, nb)) return half;
+    return landed ? 0.5 : Math.min(half, reach(name) + 0.06);
+  };
+  const L = -side(-1, 0, "left"), R = side(1, 0, "right"), T = -side(0, -1, "up"), B = side(0, 1, "down");
   // Bilinear over the quad (corners at u,v = -0.5 / +0.5), extended past it where needed.
   const at = (u, v) => { const s2 = u + 0.5, t = v + 0.5; return [0, 1].map(k => (1 - s2) * (1 - t) * q[0][k] + s2 * (1 - t) * q[1][k] + s2 * t * q[2][k] + (1 - s2) * t * q[3][k]); };
   return [at(L, T), at(R, T), at(R, B), at(L, B)];
