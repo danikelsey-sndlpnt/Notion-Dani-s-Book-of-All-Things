@@ -3691,7 +3691,7 @@ view.addEventListener("pointermove", e => {
 const endPtr = e => {
   ptrs.delete(e.pointerId);
   if (drag && drag.type === "node" && drag.moved) { computeCorners(); previewDirty(); updateCounts(); }
-  if (drag && drag.type === "mark") setStatus("scanStatus", "Corner dot moved by hand.", "ok");
+  if (drag && drag.type === "mark") { setStatus("scanStatus", "Corner dot moved by hand.", "ok"); previewDirty(); }
   if (drag && drag.type === "paint") designDirty();
   if (drag && drag.type === "move") { const dl = drag.delta; drag = null; shiftDesign(dl[0], dl[1]); return; }
   if (drag && drag.type === "crop") { const a = drag.a, b = drag.b; drag = null; cropDesign(a, b); return; }
