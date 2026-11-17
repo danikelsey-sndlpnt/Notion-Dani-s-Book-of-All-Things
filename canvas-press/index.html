@@ -673,6 +673,7 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
           <button class="btn primary wide" id="makePdf">Save print file (PDF)</button>
           <button class="btn small" id="saveKey2">Save the color key to print (PDF)</button>
           <div class="status" id="fitStatus"></div>
+          <div class="row"><button class="btn small" id="fitExact">Fit to exact size on this canvas</button><span class="hint" style="flex:1 1 200px">Changes the stitch count to this canvas's measured threads so the design prints at exactly its planned size (or your finish's size). Undo puts it back.</span></div>
           <div class="status" id="printStatus" hidden></div>
           <div class="row" id="printAllRow" hidden>
             <button class="btn primary small" id="printAnyway">Print everything anyway</button>
@@ -901,7 +902,7 @@ function adjustColor(c) {
 }
 
 /* ---------------- files ---------------- */
-const APP_VERSION = "2026.11.17-y";
+const APP_VERSION = "2026.11.17-z";
 { const v = document.getElementById("appVer2"); if (v) v.textContent = "v" + APP_VERSION; }
 let downloadsCap = null;
 (window.claude && window.claude.use ? window.claude.use("downloads") : Promise.resolve(null)).then(d => { downloadsCap = d; }).catch(() => {});
@@ -2593,10 +2594,37 @@ function realMesh() {
   G.real = { across: 1 / mean(ax), down: 1 / mean(ay), rev: G.X[0] + G.Y[G.Y.length >> 1] };
   return G.real;
 }
+function targetInches() {
+  const d = S.design, t = S.targetIn;
+  if (t && t.dw === d.w && t.dh === d.h) return [t.w, t.h];
+  if (S.finish && S.finish.w && S.finish.h) return [S.finish.w, S.finish.h];
+  return [d.w / S.mesh, d.h / S.mesh];
+}
+function fitExact() {
+  const rm = realMesh(), d = S.design; if (!rm || !d) { toast("Scan the canvas first (Scan step), then fit the design to it."); return; }
+  const [tw, th] = targetInches(), W = clamp(Math.round(tw * rm.across), 2, 400), H = clamp(Math.round(th * rm.down), 2, 400);
+  if (W === d.w && H === d.h) { toast(`Already exact: ${d.w} × ${d.h} stitches prints ${(d.w / rm.across).toFixed(2)} × ${(d.h / rm.down).toFixed(2)} in on this canvas.`); return; }
+  const was = [d.w, d.h], hasPic = S.layers.length || (S.original && S.original.canvas && !S.original.example);
+  if (hasPic && !S.edited) {
+    // Read the picture again at the new stitch count: sharpest result.
+    if (!S.layers.length) artworkFromOriginal();
+    S.wSt = W; S.hSt = H; convert();
+  } else {
+    // Hand-edited or no picture: stretch the stitches themselves (nearest stitch), keeping every color.
+    pushUndo(); const fx = W / d.w, fy = H / d.h, px = new Int16Array(W * H);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) px[y * W + x] = d.px[Math.min(d.h - 1, Math.floor((y + 0.5) / fy)) * d.w + Math.min(d.w - 1, Math.floor((x + 0.5) / fx))];
+    if (S.original && S.original.m) { const m = S.original.m; S.original.m = [m[0] * fx, m[1] * fy, m[2] * fx, m[3] * fy, m[4] * fx, m[5] * fy]; }
+    setDesign(d.pal, px, W, H, true, (d.sx || 0) * fx, (d.sy || 0) * fy); S.wSt = W; S.hSt = H; S.edited = true;
+  }
+  S.targetIn = { w: tw, h: th, dw: W, dh: H };
+  if (typeof syncSizeInputs === "function") syncSizeInputs();
+  previewDirty(); updateFit(); renderView();
+  toast(`Fitted: ${was[0]} × ${was[1]} → ${W} × ${H} stitches. Prints ${(W / rm.across).toFixed(2)} × ${(H / rm.down).toFixed(2)} in on this canvas (target ${tw.toFixed(2)} × ${th.toFixed(2)} in).`, 7000);
+}
 function realSizeText() {
   const rm = realMesh(), d = S.design; if (!rm || !d) return "";
-  const pw = d.w / rm.across, ph = d.h / rm.down, nw = d.w / S.mesh, nh = d.h / S.mesh;
-  return ` This canvas really has ${rm.across.toFixed(2)} holes per inch across and ${rm.down.toFixed(2)} down, so your ${d.w} × ${d.h} stitch design prints ${pw.toFixed(2)} × ${ph.toFixed(2)} in (planned ${nw.toFixed(2)} × ${nh.toFixed(2)} in at ${S.mesh} mesh). Every stitch still lands on its own intersection.`;
+  const pw = d.w / rm.across, ph = d.h / rm.down, [nw, nh] = targetInches();
+  return ` This canvas really has ${rm.across.toFixed(2)} holes per inch across and ${rm.down.toFixed(2)} down, so your ${d.w} × ${d.h} stitch design prints ${pw.toFixed(2)} × ${ph.toFixed(2)} in (planned ${nw.toFixed(2)} × ${nh.toFixed(2)} in).` + (Math.abs(pw - nw) < 0.04 && Math.abs(ph - nh) < 0.04 ? " That's the planned size." : " Fit to exact size makes it match.") + " Every stitch still lands on its own intersection.";
 }
 function updateFit() {
   const el = $("fitStatus");
@@ -5074,6 +5102,7 @@ $("makePdf").onclick = makePrintPdf; $("makePng").onclick = makePrintPng;
 $("savePrev").onclick = async () => { if (!S.scan) return; const c = buildPreview(); await saveFile("canvas-preview.png", await canvasBlob(c)); };
 $("testPage").onclick = testPagePdf;
 $("paperCopy").onclick = makePaperCopy;
+$("fitExact").onclick = fitExact;
 document.querySelectorAll("[data-shapes]").forEach(b => b.onclick = () => {
   renderShapeGrid(); const box = $("shapeBox"); box.hidden = !box.hidden;
   if (!box.hidden) { if ($("tab1").getAttribute("aria-selected") !== "true") setTab(1); box.scrollIntoView({ block: "nearest", behavior: "smooth" }); }
