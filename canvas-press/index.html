@@ -198,6 +198,12 @@ input:focus-visible, select:focus-visible, button:focus-visible { outline: 2px s
 .pal { display: grid; grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); gap: 6px; }
 .sw { border: 1px solid var(--line); border-radius: 10px; padding: 5px; background: var(--surface); cursor: pointer; display: grid; gap: 3px; text-align: left; font: 500 11px var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
 .sw i { display: block; height: 22px; border-radius: 6px; border: 1px solid rgba(0,0,0,.12); }
+.ctog { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 6px 0 2px; font: 600 12px var(--body); color: var(--ink-2); }
+.ctog label { display: inline-flex; align-items: center; gap: 5px; padding: 4px 8px 4px 5px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); cursor: pointer; }
+.ctog label i { width: 16px; height: 16px; border-radius: 50%; border: 1px solid rgba(0,0,0,.2); display: inline-block; }
+.ctog label.off { opacity: .45; text-decoration: line-through; }
+.ctog input { margin: 0; accent-color: var(--accent); }
+.ctog button { border: 0; background: none; color: var(--accent); font: 700 12px var(--body); cursor: pointer; padding: 4px 6px; }
 .sw[aria-pressed=true] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
 .selbox { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 10px; border-radius: 12px; background: var(--surface-2); font-size: 13px; }
 .selbox select { width: auto; flex: 1 1 120px; font-size: 13px; padding: 6px 8px; }
@@ -362,6 +368,13 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
           <div class="row">
             <label class="btn primary file-btn">Add artwork or layers<input type="file" id="addArt" multiple accept="image/png,image/jpeg,image/webp,image/gif,.psd,application/pdf,.pdf"></label>
             <label class="btn file-btn">Open stitch file<input type="file" id="openStitch"></label>
+            <button class="btn" id="blankOpen">Blank canvas</button>
+          </div>
+          <div class="row" id="blankRow" hidden>
+            <label class="f">Width (in)<input type="number" id="blankW" min="0.5" max="30" step="0.25" value="5" inputmode="decimal"></label>
+            <label class="f">Height (in)<input type="number" id="blankH" min="0.5" max="30" step="0.25" value="7" inputmode="decimal"></label>
+            <button class="btn primary small" id="blankGo">Start drawing</button>
+            <span class="hint" id="blankInfo"></span>
           </div>
           <div class="row">
             <label class="btn thread file-btn">Read a painted canvas<input type="file" id="readPainted" accept="image/png,image/jpeg,image/webp,.psd,application/pdf,.pdf"></label>
@@ -509,6 +522,7 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
           <p class="hint"><b>Crop</b>: drag a box over the part you want to keep. <b>Remove background</b> clears every color that runs along the outside edge, plus the blurry fringe and loose specks, so those stitches print as bare canvas. Raise <b>Background strength</b> to clear more shades, lower it to protect colors close to the background. <b>Magic erase</b>: tap any leftover patch to clear it and everything touching it in a similar color. Undo brings any of these back.</p>
           <p class="hint"><b>Move stitches</b>: drag the design to shift it. The original picture moves with it, so you can see what you moved. The frame grows if stitches go past the edge.</p>
           <div class="pal" id="pal"></div>
+          <div class="ctog" id="ctog"></div>
           <div class="selbox" id="selbox"></div>
           <div class="row">
             <input type="color" id="newColor" value="#3a7bd5" aria-label="New color">
@@ -854,7 +868,7 @@ function adjustColor(c) {
 }
 
 /* ---------------- files ---------------- */
-const APP_VERSION = "2026.11.17-n";
+const APP_VERSION = "2026.11.17-o";
 { const v = document.getElementById("appVer2"); if (v) v.textContent = "v" + APP_VERSION; }
 let downloadsCap = null;
 (window.claude && window.claude.use ? window.claude.use("downloads") : Promise.resolve(null)).then(d => { downloadsCap = d; }).catch(() => {});
@@ -1185,9 +1199,13 @@ let designCanvas = document.createElement("canvas"), meshCanvas = document.creat
 const HOLE = "#4E4854", BARE = [238, 236, 231];
 const shade = (c, f) => "rgb(" + c.map(v => Math.round(v * f)).join(",") + ")";
 // One stitch = one crossing: a horizontal and a vertical thread meeting in the cell's middle, holes at the corners.
+// Colors turned off (by their hex) show as a faint ghost on bare canvas, so you can see around them. They still print.
+S.hiddenCols = new Set();
+const colHidden = v => v >= 0 && S.hiddenCols.size > 0 && S.design && S.design.pal[v] && S.hiddenCols.has(hex(S.design.pal[v]));
+const ghost = c => [0, 1, 2].map(k => Math.round(BARE[k] * 0.82 + c[k] * 0.18));
 function drawMeshCell(x, y) {
   const d = S.design, k = meshCanvas.k, cx = meshCanvas.getContext("2d"), v = d.px[y * d.w + x];
-  const c = v >= 0 ? d.pal[v] : BARE, X = x * k, Y = y * k, t = k * 0.62, o = (k - t) / 2;
+  const c = v >= 0 ? (colHidden(v) ? ghost(d.pal[v]) : d.pal[v]) : BARE, X = x * k, Y = y * k, t = k * 0.62, o = (k - t) / 2;
   cx.fillStyle = HOLE; cx.fillRect(X, Y, k, k);
   const over = (x + y) % 2 === 0;
   const hBar = () => { cx.fillStyle = shade(c, over ? 1 : 0.9); cx.fillRect(X, Y + o, k, t); cx.fillStyle = shade(c, 0.8); cx.fillRect(X, Y + o + t - k * 0.07, k, k * 0.07); };
@@ -1205,11 +1223,40 @@ function designDirty() {
   meshDirty();
   designCanvas.width = d.w; designCanvas.height = d.h;
   const x = designCanvas.getContext("2d"), id = x.createImageData(d.w, d.h);
-  for (let i = 0; i < d.px.length; i++) { const v = d.px[i]; if (v < 0) continue; const c = d.pal[v]; id.data[i * 4] = c[0]; id.data[i * 4 + 1] = c[1]; id.data[i * 4 + 2] = c[2]; id.data[i * 4 + 3] = 255; }
+  for (let i = 0; i < d.px.length; i++) { const v = d.px[i]; if (v < 0) continue; const c = colHidden(v) ? ghost(d.pal[v]) : d.pal[v]; id.data[i * 4] = c[0]; id.data[i * 4 + 1] = c[1]; id.data[i * 4 + 2] = c[2]; id.data[i * 4 + 3] = 255; }
   x.putImageData(id, 0, 0);
   renderPalette(); previewDirty(); if (typeof updateMeshWarn === "function") updateMeshWarn();
   clearTimeout(designDirty.t);
   designDirty.t = setTimeout(saveCurrent, 400);
+}
+function renderColorToggles(counts) {
+  const d = S.design, box = $("ctog"); if (!box) return; box.textContent = "";
+  if (!d || !d.pal.length) return;
+  // Forget hidden colors that are no longer in the design.
+  const have = new Set(d.pal.map(hex)); for (const h of [...S.hiddenCols]) if (!have.has(h)) S.hiddenCols.delete(h);
+  const t = document.createElement("span"); t.textContent = "Show:"; box.appendChild(t);
+  d.pal.forEach((c, i) => {
+    const h = hex(c), dm = nearestDmc(c), on = !S.hiddenCols.has(h);
+    const l = document.createElement("label"); l.className = on ? "" : "off"; l.title = `${dmcLabel(dm)} ${dm[1]} · ${counts ? counts[i] : ""} stitches`;
+    const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = on; cb.setAttribute("aria-label", `Show ${dmcLabel(dm)}`);
+    cb.onchange = () => { if (cb.checked) S.hiddenCols.delete(h); else S.hiddenCols.add(h); refreshColors(); };
+    const sw = document.createElement("i"); sw.style.background = h;
+    const tx = document.createElement("span"); tx.textContent = dm[0];
+    l.append(cb, sw, tx); box.appendChild(l);
+  });
+  const all = document.createElement("button"); all.textContent = "Show all"; all.onclick = () => { S.hiddenCols.clear(); refreshColors(); };
+  const only = document.createElement("button"); only.textContent = "Only selected"; only.title = "Hide every color except the one selected for painting";
+  only.onclick = () => { S.hiddenCols = new Set(d.pal.map(hex).filter((h, i) => i !== S.sel)); refreshColors(); };
+  box.append(all, only);
+  if (S.hiddenCols.size) { const n = document.createElement("span"); n.className = "hint"; n.style.flexBasis = "100%"; n.textContent = `${S.hiddenCols.size} color${S.hiddenCols.size === 1 ? " is" : "s are"} hidden on screen only. Everything still prints.`; box.appendChild(n); }
+}
+function refreshColors() {
+  const d = S.design; if (!d) return;
+  meshDirty();
+  const x = designCanvas.getContext("2d"), id = x.createImageData(d.w, d.h);
+  for (let i = 0; i < d.px.length; i++) { const v = d.px[i]; if (v < 0) continue; const c = colHidden(v) ? ghost(d.pal[v]) : d.pal[v]; id.data[i * 4] = c[0]; id.data[i * 4 + 1] = c[1]; id.data[i * 4 + 2] = c[2]; id.data[i * 4 + 3] = 255; }
+  x.putImageData(id, 0, 0);
+  renderPalette(); renderView();
 }
 function renderPalette() {
   const d = S.design, box = $("pal"); box.textContent = "";
@@ -1235,6 +1282,7 @@ function renderPalette() {
     b.onclick = () => { S.sel = i; if (S.tool !== "fill") setTool("paint"); else renderPalette(); };
     qp.appendChild(b);
   });
+  renderColorToggles(counts);
   const sb = $("selbox"); sb.textContent = "";
   if (!d.pal.length) { sb.innerHTML = `<span class="hint">No colors yet. Add one below.</span>`; return; }
   const c = d.pal[S.sel] || d.pal[0], dm = nearestDmc(c);
@@ -2957,6 +3005,25 @@ function stampText(cell) {
   toast(n < st.cells.cells.reduce((a, b) => a + b, 0) ? "Text stitched in. Part of it went past 400 stitches and was cut off." : "Text stitched in." + (padL || padT || W !== S.undo[S.undo.length - 1].w || H !== S.undo[S.undo.length - 1].h ? " The design frame grew to fit it." : ""));
   softFit(padL, padT);
 }
+/* ---- Blank canvas: draw your own design from scratch ---- */
+const STARTER_DMC = ["310", "BLANC", "321", "797", "699", "444", "3341", "801", "3865", "415"];
+function blankInfo() {
+  const w = Math.round((+$("blankW").value || 0) * S.mesh), h = Math.round((+$("blankH").value || 0) * S.mesh);
+  $("blankInfo").textContent = `${w} × ${h} stitches on ${S.mesh} mesh`;
+}
+async function startBlank() {
+  const w = clamp(Math.round((+$("blankW").value || 5) * S.mesh), 4, 400), h = clamp(Math.round((+$("blankH").value || 7) * S.mesh), 4, 400);
+  if (S.design && !S.exampleDesign) await archiveDesign("before starting a blank canvas");
+  newDesignSource();
+  S.layers = []; S.original = null; S.importFile = null; S.designName = ""; S.exampleDesign = false; S.testing = false;
+  S.bgSmart = false; if (typeof setBgChip === "function") setBgChip(); S.edited = true; S.undo = []; S.redo = []; S.hiddenCols.clear();
+  const pal = STARTER_DMC.map(c => dmcByCode(c)).filter(Boolean).map(e => unhex("#" + e[2]));
+  setDesign(pal, new Int16Array(w * h).fill(-1), w, h);
+  S.sel = 0; $("blankRow").hidden = true;
+  setTool("paint"); setTab(1); setView("design"); updateUI(); renderAll(); fitView(); saveCurrent();
+  toast(`Blank ${w} × ${h} canvas ready. Pick a color and paint. Ten starter DMC colors are in your palette; add more under Edit stitches.`, 6000);
+}
+
 /* ---- Ask Claude: change the design in plain words ---- */
 const AI_KEYS = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
 let aiSample = null, aiCtl = null;
@@ -4552,6 +4619,9 @@ $("makePdf").onclick = makePrintPdf; $("makePng").onclick = makePrintPng;
 $("savePrev").onclick = async () => { if (!S.scan) return; const c = buildPreview(); await saveFile("canvas-preview.png", await canvasBlob(c)); };
 $("testPage").onclick = testPagePdf;
 $("paperCopy").onclick = makePaperCopy;
+$("blankOpen").onclick = () => { $("blankRow").hidden = !$("blankRow").hidden; blankInfo(); };
+$("blankW").oninput = blankInfo; $("blankH").oninput = blankInfo;
+$("blankGo").onclick = startBlank;
 $("aiGo").onclick = aiRun; $("aiStop").onclick = () => aiCtl && aiCtl.abort();
 $("aiAsk").onkeydown = e => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) aiRun(); };
 $("aiAsk").onfocus = aiScopeText; aiAvail();
