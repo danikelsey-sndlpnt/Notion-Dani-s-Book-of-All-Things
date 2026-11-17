@@ -821,7 +821,7 @@ function adjustColor(c) {
 }
 
 /* ---------------- files ---------------- */
-const APP_VERSION = "2026.11.17-f";
+const APP_VERSION = "2026.11.17-g";
 { const v = document.getElementById("appVer2"); if (v) v.textContent = "v" + APP_VERSION; }
 let downloadsCap = null;
 (window.claude && window.claude.use ? window.claude.use("downloads") : Promise.resolve(null)).then(d => { downloadsCap = d; }).catch(() => {});
@@ -3727,8 +3727,10 @@ function drawMap(cw, ch) {
   const inView = (x, y) => x > -20 && y > -20 && x < cw + 20 && y < ch + 20;
   const colors = [null, COL.found, COL.check, COL.miss, COL.moved];
   vctx.lineWidth = big ? 1.6 : 1;
+  // With the design shown, the plain "found" marks would sit on top of the paint and look like unpainted crossings.
+  const designOn = S.mapDesign && S.design;
   for (let st = 1; st <= 4; st++) {
-    if (!big && st === 1) continue;
+    if ((!big || designOn) && st === 1) continue;
     vctx.strokeStyle = colors[st]; vctx.fillStyle = colors[st]; vctx.beginPath();
     for (let k = 0; k < G.gx * G.gy; k++) {
       if (G.ST[k] !== st) continue;
