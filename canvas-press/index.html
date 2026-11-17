@@ -879,7 +879,7 @@ function adjustColor(c) {
 }
 
 /* ---------------- files ---------------- */
-const APP_VERSION = "2026.11.17-r";
+const APP_VERSION = "2026.11.17-s";
 { const v = document.getElementById("appVer2"); if (v) v.textContent = "v" + APP_VERSION; }
 let downloadsCap = null;
 (window.claude && window.claude.use ? window.claude.use("downloads") : Promise.resolve(null)).then(d => { downloadsCap = d; }).catch(() => {});
@@ -1228,6 +1228,7 @@ function quantizeArt(n) {
 function convert() {
   if (!S.layers.length) { toast("Add artwork first."); return; }
   pushUndo();
+  const sameSize = S.design && S.design.w === S.wSt && S.design.h === S.hSt;
   const art = S.convStyle !== "photo" && !S.dither;
   const rgba = art ? null : flatten();
   const q = (S.bgSmart && smartStitches()) || (art ? quantizeArt(S.nColors) : quantize(rgba, S.wSt, S.hSt, S.nColors, S.dither));
@@ -1235,7 +1236,7 @@ function convert() {
   S.original = { canvas: flatten.last, m: [1 / k, 0, 0, 1 / k, 0, 0] };
   setDesign(q.pal, q.px, S.wSt, S.hSt);
   S.exampleDesign = S.layers.every(l => l.example);
-  fitView(); renderAll();
+  if (sameSize && V.user) softFit(); else fitView(); renderAll();
 }
 
 /* ---------------- design editing ---------------- */
@@ -4477,6 +4478,12 @@ const endPtr = e => {
 view.addEventListener("pointerup", endPtr); view.addEventListener("pointercancel", endPtr);
 view.addEventListener("pointerleave", () => { if (hover.cell) { hover.cell = null; renderView(); } });
 view.addEventListener("contextmenu", e => e.preventDefault());
+// Safari on a Mac sends trackpad pinches as gesture events (not wheel), and would otherwise zoom the whole page,
+// which snaps back on the next click. Zoom the picture instead.
+{ let gs = 1;
+  view.addEventListener("gesturestart", e => { e.preventDefault(); gs = 1; });
+  view.addEventListener("gesturechange", e => { e.preventDefault(); const r = view.getBoundingClientRect(); zoomAt(e.scale / gs, e.clientX - r.left, e.clientY - r.top); gs = e.scale; });
+  view.addEventListener("gestureend", e => e.preventDefault()); }
 view.addEventListener("wheel", e => { e.preventDefault(); const r = view.getBoundingClientRect(); zoomAt(Math.exp(-e.deltaY * 0.0015), e.clientX - r.left, e.clientY - r.top); }, { passive: false });
 // Brush: a round patch of stitches (square when 1–3 across) centered on the stitch under the pointer.
 S.brush = { paint: 1, erase: 1 };
@@ -4539,11 +4546,13 @@ window.addEventListener("keyup", e => { if (e.code === "Space") spaceDown = fals
 function setStatus(id, msg, kind) { const el = $(id); el.hidden = false; el.textContent = msg; el.className = "status" + (kind ? " " + kind : ""); }
 function setView(v) {
   if (v !== "design" && v !== "orig" && !S.scan && v !== "snap") v = "snap";
+  // Design/Original share one picture space, Snapshot/Map/Preview another: moving within a pair keeps your zoom.
+  const fam = x => (x === "design" || x === "orig") ? "d" : "s", keep = V.user && S.view && fam(S.view) === fam(v);
   S.view = v;
   $("qbar").hidden = v !== "design"; $("bigMove").hidden = v !== "design";
   $("vNext").hidden = !(v === "map" && S.grid); $("vDesignOn").hidden = !(v === "map" && S.grid);
   [["vDesign", "design"], ["vOrig", "orig"], ["vSnap", "snap"], ["vMap", "map"], ["vPrev", "prev"]].forEach(([id, k]) => $(id).setAttribute("aria-pressed", k === v));
-  fitView();
+  if (keep) softFit(); else fitView();
 }
 function setTab(n) {
   [1, 2, 3].forEach(k => { $("tab" + k).setAttribute("aria-selected", k === n); $("pane" + k).hidden = k !== n; });
