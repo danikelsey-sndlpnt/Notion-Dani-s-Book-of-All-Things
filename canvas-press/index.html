@@ -901,7 +901,7 @@ function adjustColor(c) {
 }
 
 /* ---------------- files ---------------- */
-const APP_VERSION = "2026.11.17-x";
+const APP_VERSION = "2026.11.17-y";
 { const v = document.getElementById("appVer2"); if (v) v.textContent = "v" + APP_VERSION; }
 let downloadsCap = null;
 (window.claude && window.claude.use ? window.claude.use("downloads") : Promise.resolve(null)).then(d => { downloadsCap = d; }).catch(() => {});
@@ -1994,7 +1994,7 @@ async function findGrid() {
   const picked = meshPick === "auto" ? null : +meshPick;
   const note = picked && Math.abs(meshOut - picked) > picked * 0.08
     ? ` Warning: you picked ${picked} mesh, but this canvas measures ${meshOut.toFixed(1)} mesh. Switch Canvas mesh to Auto or ${S.canvasMesh} and find again.`
-    : ` This canvas measures ${meshOut.toFixed(2)} mesh (${S.canvasMesh} mesh), tilted ${(theta * 180 / Math.PI).toFixed(2)}°.` + autoNote;
+    : ` Sold as ${S.canvasMesh} mesh, tilted ${(theta * 180 / Math.PI).toFixed(2)}° on the glass.` + (realMesh() ? ` Measured: ${realMesh().across.toFixed(2)} holes per inch across, ${realMesh().down.toFixed(2)} down.` : "") + autoNote;
   $("meshNote").textContent = `${gx} × ${gy} intersections mapped.` + note;
   setStatus("scanStatus", (S.marksFound ? "Carrier dots found. " : "No Carrier dots: using page edges. ") + `Mapped ${gx} × ${gy} intersections on ${S.canvasMesh} mesh canvas.`, picked && Math.abs(meshOut - picked) > picked * 0.08 ? "err" : "ok");
   updateMeshWarn();
@@ -2577,6 +2577,27 @@ function buildPreview() {
   previewStale = false;
   return previewCanvas;
 }
+// The canvas's real thread count in each direction, measured on the page (through the Carrier dots, so the
+// scanner's own scale doesn't count). Canvas is rarely exactly its sold count, and across often differs from down.
+function realMesh() {
+  const G = S.grid; if (!G || !S.scan) return null;
+  if (G.real && G.real.rev === G.X[0] + G.Y[G.Y.length >> 1]) return G.real;
+  const ax = [], ay = [];
+  for (let j = 0; j < G.gy; j++) for (let i = 0; i < G.gx; i++) {
+    const k = j * G.gx + i; if (G.ST[k] !== 1) continue; const a = scanToPage(G.X[k], G.Y[k]);
+    if (i + 1 < G.gx && G.ST[k + 1] === 1) { const b = scanToPage(G.X[k + 1], G.Y[k + 1]); ax.push(Math.hypot(b[0] - a[0], b[1] - a[1])); }
+    if (j + 1 < G.gy && G.ST[k + G.gx] === 1) { const b = scanToPage(G.X[k + G.gx], G.Y[k + G.gx]); ay.push(Math.hypot(b[0] - a[0], b[1] - a[1])); }
+  }
+  if (ax.length < 20 || ay.length < 20) return null;
+  const mean = a => a.reduce((m, n) => m + n, 0) / a.length;
+  G.real = { across: 1 / mean(ax), down: 1 / mean(ay), rev: G.X[0] + G.Y[G.Y.length >> 1] };
+  return G.real;
+}
+function realSizeText() {
+  const rm = realMesh(), d = S.design; if (!rm || !d) return "";
+  const pw = d.w / rm.across, ph = d.h / rm.down, nw = d.w / S.mesh, nh = d.h / S.mesh;
+  return ` This canvas really has ${rm.across.toFixed(2)} holes per inch across and ${rm.down.toFixed(2)} down, so your ${d.w} × ${d.h} stitch design prints ${pw.toFixed(2)} × ${ph.toFixed(2)} in (planned ${nw.toFixed(2)} × ${nh.toFixed(2)} in at ${S.mesh} mesh). Every stitch still lands on its own intersection.`;
+}
 function updateFit() {
   const el = $("fitStatus");
   if (!S.grid || !S.design) { el.textContent = "Waiting for a design and a mapped scan."; el.className = "status"; return; }
@@ -2584,7 +2605,7 @@ function updateFit() {
   const pl = placement();
   if (r.off && S.printAll) { el.className = "status"; el.textContent = `${r.off} of ${r.total} stitches are past the mapped canvas. They'll still print, placed by continuing the canvas grid.`; return; }
   el.className = "status " + (r.off ? "err" : "ok");
-  el.textContent = r.off ? `${r.off} of ${r.total} stitches fall off the mapped canvas. Move the design or make it smaller.` : `All ${r.total} stitches land on mapped intersections. Design corner at intersection ${pl.i0 + 1}, ${pl.j0 + 1}.`;
+  el.textContent = (r.off ? `${r.off} of ${r.total} stitches fall off the mapped canvas. Move the design or make it smaller.` : `All ${r.total} stitches land on mapped intersections. Design corner at intersection ${pl.i0 + 1}, ${pl.j0 + 1}.`) + realSizeText();
 }
 async function renderPrint(dpi, y0 = 0, hStrip = null) {
   const W = Math.round(PAGE.w * dpi), H = hStrip || Math.round(PAGE.h * dpi);
