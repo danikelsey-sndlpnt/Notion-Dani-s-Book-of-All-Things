@@ -839,7 +839,7 @@ function adjustColor(c) {
 }
 
 /* ---------------- files ---------------- */
-const APP_VERSION = "2026.11.17-j";
+const APP_VERSION = "2026.11.17-k";
 { const v = document.getElementById("appVer2"); if (v) v.textContent = "v" + APP_VERSION; }
 let downloadsCap = null;
 (window.claude && window.claude.use ? window.claude.use("downloads") : Promise.resolve(null)).then(d => { downloadsCap = d; }).catch(() => {});
@@ -1809,7 +1809,7 @@ async function findGrid() {
   const { gx, gy, theta } = G;
   const meshOut = G.meshSeen;
   S.grid = G; checkNums();
-  refitGuessed(); computeCorners();
+  refitGuessed(); computeCorners(); refineToHoles(); computeCorners();
   // Default center: the intersection closest to the middle of the found area.
   S.center = canvasMiddle(G);
   S.checked.clear(); S.selNode = -1;
@@ -2074,6 +2074,51 @@ function nodeP(i, j) {
   }
   return n ? [sx / n, sy / n] : null;
 }
+// Each crossing sits in the middle of the four holes around it. The holes are big, dark and easy to measure, so this
+// centers every found crossing between its holes (scanner light and shadows can pull the thread-based guess off).
+function refineToHoles() {
+  const G = S.grid, sc = S.scan && S.scan.canvas; if (!G || !sc || !G.CX) return;
+  const W = sc.width, H = sc.height, d = sc.getContext("2d").getImageData(0, 0, W, H).data;
+  const L = (x, y) => { const k = (y * W + x) * 4; return d[k] + d[k + 1] + d[k + 2]; };
+  const cw = G.gx + 1, ch = G.gy + 1, p = G.pitch, R = Math.max(3, Math.round(p * 0.42));
+  // Thread and hole brightness from the current map, for a threshold halfway between.
+  const tv = [], hv = [];
+  for (let k = 0; k < G.gx * G.gy; k += 7) if (G.ST[k] === 1) { const x = Math.round(G.X[k]), y = Math.round(G.Y[k]); if (x > 0 && y > 0 && x < W && y < H) tv.push(L(x, y)); }
+  for (let k = 0; k < cw * ch; k += 7) if (!isNaN(G.CX[k])) { const x = Math.round(G.CX[k]), y = Math.round(G.CY[k]); if (x > 0 && y > 0 && x < W && y < H) hv.push(L(x, y)); }
+  if (tv.length < 20 || hv.length < 20) return;
+  const med = a => a.sort((m, n) => m - n)[a.length >> 1], T = med(tv), Hm = med(hv), thr = (T + Hm) / 2, holeDark = Hm < T;
+  if (Math.abs(T - Hm) < 60) return;
+  const HX = new Float32Array(cw * ch).fill(NaN), HY = new Float32Array(cw * ch).fill(NaN);
+  for (let k = 0; k < cw * ch; k++) {
+    if (isNaN(G.CX[k])) continue;
+    const cx = Math.round(G.CX[k]), cy = Math.round(G.CY[k]); if (cx - R < 0 || cy - R < 0 || cx + R >= W || cy + R >= H) continue;
+    let sx = 0, sy = 0, n = 0;
+    for (let y = cy - R; y <= cy + R; y++) for (let x = cx - R; x <= cx + R; x++) { const v = L(x, y); if (holeDark ? v < thr : v > thr) { sx += x; sy += y; n++; } }
+    if (n > R * R * 0.25 && n < R * R * 3.2) { HX[k] = sx / n; HY[k] = sy / n; }
+  }
+  // Offset of each crossing from the middle of its four holes.
+  const OX = new Float32Array(G.gx * G.gy).fill(NaN), OY = new Float32Array(G.gx * G.gy).fill(NaN);
+  for (let j = 0; j < G.gy; j++) for (let i = 0; i < G.gx; i++) {
+    const k = j * G.gx + i; if (!G.ST[k]) continue;
+    const q = [j * cw + i, j * cw + i + 1, (j + 1) * cw + i, (j + 1) * cw + i + 1];
+    if (q.some(c => isNaN(HX[c]))) continue;
+    const mx = (HX[q[0]] + HX[q[1]] + HX[q[2]] + HX[q[3]]) / 4, my = (HY[q[0]] + HY[q[1]] + HY[q[2]] + HY[q[3]]) / 4;
+    const ox = mx - G.X[k], oy = my - G.Y[k]; if (Math.hypot(ox, oy) > p * 0.35) continue;
+    OX[k] = ox; OY[k] = oy;
+  }
+  // Smooth with the neighbors (median of a 5 x 5 patch) so one odd hole can't drag a crossing.
+  const NX = new Float32Array(G.gx * G.gy), NY = new Float32Array(G.gx * G.gy); let moved = 0;
+  for (let j = 0; j < G.gy; j++) for (let i = 0; i < G.gx; i++) {
+    const k = j * G.gx + i; NX[k] = NaN; if (!G.ST[k] || G.ST[k] === 4) continue;
+    const ax = [], ay = [];
+    for (let b = -2; b <= 2; b++) for (let a = -2; a <= 2; a++) { const ii = i + a, jj = j + b; if (ii < 0 || jj < 0 || ii >= G.gx || jj >= G.gy) continue; const q = jj * G.gx + ii; if (!isNaN(OX[q])) { ax.push(OX[q]); ay.push(OY[q]); } }
+    if (ax.length < 5) continue;
+    NX[k] = med(ax); NY[k] = med(ay);
+  }
+  for (let k = 0; k < G.gx * G.gy; k++) if (!isNaN(NX[k])) { G.X[k] += NX[k]; G.Y[k] += NY[k]; moved++; }
+  G.refined = true;
+  return moved;
+}
 function computeCorners() {
   const G = S.grid, cw = G.gx + 1, ch = G.gy + 1;
   G.CX = new Float32Array(cw * ch).fill(NaN); G.CY = new Float32Array(cw * ch).fill(NaN);
@@ -2189,7 +2234,7 @@ async function saveScanState() {
     }
     const G = S.grid;
     await idb.set("scan-state", { name: S.scan.name, marks: S.marks, marksFound: S.marksFound, center: S.center, place: S.place, canvasMesh: S.canvasMesh, darkThreads: S.darkThreads,
-      grid: { gx: G.gx, gy: G.gy, X: G.X, Y: G.Y, ST: G.ST, pitch: G.pitch, theta: G.theta, meshSeen: G.meshSeen, nums: Array.from(checkNums()) } });
+      grid: { gx: G.gx, gy: G.gy, X: G.X, Y: G.Y, ST: G.ST, pitch: G.pitch, theta: G.theta, meshSeen: G.meshSeen, nums: Array.from(checkNums()), refined: !!G.refined } });
   } catch (e) {}
 }
 async function restoreScanState() {
@@ -2200,7 +2245,7 @@ async function restoreScanState() {
     S.scan = { canvas: c, dpi: img.dpi, name: img.name, example: false, gray: null, blobSaved: true }; computeGray();
     S.marks = st.marks; S.marksFound = st.marksFound; updateH(); S.darkThreads = !!st.darkThreads;
     const g = st.grid; S.grid = { gx: g.gx, gy: g.gy, X: Float32Array.from(g.X), Y: Float32Array.from(g.Y), ST: Uint8Array.from(g.ST), pitch: g.pitch, theta: g.theta, meshSeen: g.meshSeen, nums: Array.isArray(g.nums) ? new Map(g.nums) : null };
-    computeCorners(); S.center = st.center; S.place = st.place || { ox: 0, oy: 0 }; S.canvasMesh = st.canvasMesh;
+    computeCorners(); if (!g.refined) { refineToHoles(); computeCorners(); } S.center = st.center; S.place = st.place || { ox: 0, oy: 0 }; S.canvasMesh = st.canvasMesh;
     $("ox").value = S.place.ox; $("oy").value = S.place.oy; $("findGrid").disabled = false; $("dpi").value = Math.round(img.dpi);
     setStatus("scanStatus", `Your last scan (${img.name}) is loaded with its ${S.grid.gx} × ${S.grid.gy} mapped intersections. Load a new scan when you put on a new piece of canvas.`, "ok");
     previewStale = true; updateUI(); updateMeshWarn(); return true;
