@@ -257,6 +257,7 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
         <div class="seg" role="group" aria-label="View">
           <button id="vDesign" aria-pressed="true">Design</button>
           <button id="vOrig" aria-pressed="false">Original</button>
+          <button id="vSplit" aria-pressed="false" title="Original picture and stitches side by side; tap the picture to pick its color">Side by side</button>
           <button id="vSnap" aria-pressed="false">Snapshot</button>
           <button id="vMap" aria-pressed="false">Map</button>
           <button id="vPrev" aria-pressed="false">Preview</button>
@@ -885,7 +886,7 @@ function adjustColor(c) {
 }
 
 /* ---------------- files ---------------- */
-const APP_VERSION = "2026.11.17-v";
+const APP_VERSION = "2026.11.17-w";
 { const v = document.getElementById("appVer2"); if (v) v.textContent = "v" + APP_VERSION; }
 let downloadsCap = null;
 (window.claude && window.claude.use ? window.claude.use("downloads") : Promise.resolve(null)).then(d => { downloadsCap = d; }).catch(() => {});
@@ -4205,12 +4206,14 @@ function fitView() {
   // Leave room for the quick toolbar on top and the info chips at the bottom.
   const over = id => { const e = $(id); return e && !e.hidden ? e.getBoundingClientRect().height + 10 : 0; };
   const topPad = S.view === "design" ? Math.max(over("qbar"), over("textBar")) : 0, botPad = Math.max(34, over("vstat") + 4), H = Math.max(80, r.height - topPad - botPad);
-  V.s = Math.min(r.width / target[2], H / target[3]) * 0.96;
-  V.tx = (r.width - target[2] * V.s) / 2 - target[0] * V.s; V.ty = topPad + (H - target[3] * V.s) / 2 - target[1] * V.s;
+  const split = splitOn(), Wv = split ? r.width / 2 : r.width;
+  V.s = Math.min(Wv / target[2], H / target[3]) * (split ? 0.92 : 0.96);
+  V.tx = (Wv - target[2] * V.s) / 2 - target[0] * V.s + (split ? Wv : 0); V.ty = topPad + (H - target[3] * V.s) / 2 - target[1] * V.s;
   renderView();
 }
 function zoomAt(f, cx, cy) {
   const r = view.getBoundingClientRect(); if (cx == null) { cx = r.width / 2; cy = r.height / 2; }
+  if (splitOn() && cx < r.width / 2) cx += r.width / 2;
   const ns = clamp(V.s * f, 0.02, 200); f = ns / V.s;
   V.tx = cx - (cx - V.tx) * f; V.ty = cy - (cy - V.ty) * f; V.s = ns; V.user = true; renderView();
 }
@@ -4235,7 +4238,42 @@ function nudge(dx, dy) {
   renderView();
 }
 function renderView() { syncNudge(); if (!raf) raf = requestAnimationFrame(() => { raf = 0; draw(); }); }
+// Side by side: the stitches on the right (same zoom and position as usual), the original picture on the left at the
+// same zoom, so every stitch sits level with its spot in the picture. Tapping the picture picks its color.
+S.split = false;
+const splitOn = () => S.split && S.view === "design" && !!S.design && !!(S.original && S.original.canvas);
 function draw() {
+  if (!splitOn()) { drawMain(); return; }
+  const dpr = window.devicePixelRatio || 1, cw = view.width / dpr, ch = view.height / dpr, half = cw / 2, d = S.design;
+  vctx.save(); vctx.setTransform(dpr, 0, 0, dpr, 0, 0); vctx.beginPath(); vctx.rect(half, 0, half, ch); vctx.clip();
+  drawMain();
+  vctx.restore();
+  vctx.save(); vctx.setTransform(dpr, 0, 0, dpr, 0, 0); vctx.beginPath(); vctx.rect(0, 0, half, ch); vctx.clip();
+  vctx.fillStyle = "#EEECE7"; vctx.fillRect(0, 0, half, ch);
+  vctx.save(); vctx.translate(V.tx - half, V.ty); vctx.scale(V.s, V.s); drawOriginal(1); vctx.restore();
+  vctx.strokeStyle = COL.outline; vctx.lineWidth = 2; vctx.setLineDash([6, 4]); vctx.strokeRect(V.tx - half, V.ty, d.w * V.s, d.h * V.s); vctx.setLineDash([]);
+  if (hover.cell) { vctx.strokeStyle = "#F06292"; vctx.lineWidth = 2; vctx.strokeRect(V.tx - half + hover.cell[0] * V.s, V.ty + hover.cell[1] * V.s, V.s, V.s); }
+  vctx.font = "700 12px Figtree, sans-serif"; vctx.textBaseline = "top";
+  const lab = "Original \u00b7 tap to pick a color", w = vctx.measureText(lab).width + 14, ly = Math.max(8, ch - 70);
+  vctx.fillStyle = "rgba(23,18,28,.85)"; vctx.fillRect(8, ly, w, 22); vctx.fillStyle = "#fff"; vctx.fillText(lab, 15, ly + 5);
+  vctx.restore();
+  vctx.save(); vctx.setTransform(dpr, 0, 0, dpr, 0, 0); vctx.fillStyle = "#F06292"; vctx.fillRect(half - 1.5, 0, 3, ch); vctx.restore();
+}
+function splitPick(sx, sy) {
+  const r = view.getBoundingClientRect(), [u0, v0] = toWorld(sx + r.width / 2, sy), d = S.design, o = S.original, m = o.m;
+  let u = u0 - (d.sx || 0) - m[4], v = v0 - (d.sy || 0) - m[5]; const det = m[0] * m[3] - m[1] * m[2];
+  const ix = Math.round((m[3] * u - m[2] * v) / det), iy = Math.round((-m[1] * u + m[0] * v) / det);
+  if (ix < 1 || iy < 1 || ix >= o.canvas.width - 1 || iy >= o.canvas.height - 1) { toast("That spot is outside the picture."); return; }
+  const px = o.canvas.getContext("2d").getImageData(ix - 1, iy - 1, 3, 3).data; let rr = 0, gg = 0, bb = 0, n = 0;
+  for (let i = 0; i < px.length; i += 4) { if (px[i + 3] < 128) continue; rr += px[i]; gg += px[i + 1]; bb += px[i + 2]; n++; }
+  if (!n) { toast("That spot is transparent."); return; }
+  const col = [Math.round(rr / n), Math.round(gg / n), Math.round(bb / n)], L = rgb2lab(...col), dm = nearestDmc(col);
+  let best = -1, bd = 1e9; d.pal.forEach((c, i) => { const M = rgb2lab(...c), e = Math.hypot(L[0] - M[0], L[1] - M[1], L[2] - M[2]); if (e < bd) { bd = e; best = i; } });
+  if (best >= 0 && bd < 4) { S.sel = best; setTool("paint"); renderPalette(); toast(`That's already in your palette (${dmcLabel(nearestDmc(d.pal[best]))}). Selected it for painting.`); return; }
+  pushUndo(); d.pal.push(col); S.sel = d.pal.length - 1; setTool("paint"); designDirty(); renderView();
+  toast(`Added ${hex(col)} (closest ${dmcLabel(dm)} ${dm[1]}) and selected it. Paint with it on the right.`, 4500);
+}
+function drawMain() {
   const dpr = window.devicePixelRatio || 1, cw = view.width / dpr, ch = view.height / dpr;
   vctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   vctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--stage").trim() || "#17121C";
@@ -4477,6 +4515,7 @@ view.addEventListener("pointerdown", e => {
   const r = view.getBoundingClientRect(), sx = e.clientX - r.left, sy = e.clientY - r.top;
   ptrs.set(e.pointerId, [sx, sy]);
   if (ptrs.size === 2) { const [a, b] = [...ptrs.values()]; drag = { type: "pinch", d: Math.hypot(a[0] - b[0], a[1] - b[1]), c: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2] }; return; }
+  if (splitOn() && sx < r.width / 2) { drag = { type: "pan", last: [sx, sy], s0: [sx, sy], splitTap: true }; return; }
   const [wx, wy] = toWorld(sx, sy);
   // Right-click erases in the design, whatever tool is picked (with Fill it erases the whole connected area).
   const rightErase = e.button === 2 && S.view === "design" && !!S.design && !spaceDown;
@@ -4531,7 +4570,7 @@ view.addEventListener("pointermove", e => {
   const r = view.getBoundingClientRect(), sx = e.clientX - r.left, sy = e.clientY - r.top;
   if (ptrs.has(e.pointerId)) ptrs.set(e.pointerId, [sx, sy]);
   if (S.view === "design" && S.design) {
-    const [wx, wy] = toWorld(sx, sy), c = [Math.floor(wx), Math.floor(wy)];
+    const [wx, wy] = toWorld(splitOn() && sx < r.width / 2 ? sx + r.width / 2 : sx, sy), c = [Math.floor(wx), Math.floor(wy)];
     const inside = c[0] >= 0 && c[1] >= 0 && c[0] < S.design.w && c[1] < S.design.h;
     const prev = hover.cell; hover.cell = inside ? c : null;
     if (!drag && (String(prev) !== String(hover.cell))) renderView();
@@ -4553,6 +4592,7 @@ view.addEventListener("pointermove", e => {
 });
 const endPtr = e => {
   ptrs.delete(e.pointerId);
+  if (drag && drag.splitTap && !drag.moved) { const r = view.getBoundingClientRect(); drag = null; splitPick(e.clientX - r.left, e.clientY - r.top); return; }
   if (drag && drag.type === "node" && drag.moved) { computeCorners(); previewDirty(); updateCounts(); }
   if (drag && drag.type === "pan" && drag.tapNode != null && !drag.moved) { S.selNode = drag.tapNode; drag = null; renderView(); return; }
   if (drag && drag.type === "mark") { setStatus("scanStatus", "Corner dot moved by hand.", "ok"); previewDirty(); }
@@ -4897,6 +4937,12 @@ $("makePdf").onclick = makePrintPdf; $("makePng").onclick = makePrintPng;
 $("savePrev").onclick = async () => { if (!S.scan) return; const c = buildPreview(); await saveFile("canvas-preview.png", await canvasBlob(c)); };
 $("testPage").onclick = testPagePdf;
 $("paperCopy").onclick = makePaperCopy;
+$("vSplit").onclick = () => {
+  if (!(S.original && S.original.canvas)) { toast("This design has no original picture to show beside it."); return; }
+  S.split = !S.split; $("vSplit").setAttribute("aria-pressed", S.split);
+  if (S.split && S.view !== "design") setView("design"); else fitView();
+  if (S.split) toast("Tap anywhere on the picture (left) to pick that color, then paint on the stitches (right). Zoom and drag work on both.", 5000);
+};
 $("dotRow").hidden = S.printMode !== "dots"; $("dotSize").value = S.dotSize;
 const dotOut = () => { $("dotOut").textContent = `${S.dotSize}% of a stitch`; };
 dotOut(); $("dotSheet").onclick = dotsCheatSheetPdf; $("dotSize").oninput = e => { S.dotSize = +e.target.value; store.set("ccp-dot", S.dotSize); dotOut(); previewDirty(); };
