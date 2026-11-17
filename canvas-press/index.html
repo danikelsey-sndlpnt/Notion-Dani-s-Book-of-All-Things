@@ -53,6 +53,7 @@ body { background: var(--bg); color: var(--ink); font-family: var(--body); font-
 header.top { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 20px; margin-bottom: 14px; }
 h1 { font-family: var(--display); font-weight: 800; font-size: clamp(21px, 3.2vw, 28px); letter-spacing: -.01em; margin: 0; text-wrap: balance; }
 h1 span { color: var(--accent); }
+h1 .ver { display: inline-block; vertical-align: middle; font: 700 12px var(--mono, monospace); letter-spacing: 0; padding: 3px 8px; border-radius: 999px; background: var(--accent); color: #fff; }
 .sub { color: var(--ink-2); margin: 0; max-width: 62ch; }
 .app { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 410px); gap: 20px; align-items: start; }
 @media (max-width: 1000px) { .app { grid-template-columns: minmax(0, 1fr) minmax(0, 330px); gap: 14px; } }
@@ -239,8 +240,8 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
 
 <div class="wrap">
   <header class="top">
-    <h1>Sookie's <span>Canvas Press</span></h1>
-    <p class="sub">Turn artwork into a stitch grid, scan your canvas once, and print straight onto its real threads. Everything stays in your browser. <small id="appVer" style="opacity:.6"></small></p>
+    <h1>Sookie's <span>Canvas Press</span> <small class="ver" id="appVer2"></small></h1>
+    <p class="sub">Turn artwork into a stitch grid, scan your canvas once, and print straight onto its real threads. Everything stays in your browser.</p>
     <button class="btn small" id="startOver" title="Clear the design and scan to begin a new canvas">Start over</button>
   </header>
 
@@ -813,8 +814,8 @@ function adjustColor(c) {
 }
 
 /* ---------------- files ---------------- */
-const APP_VERSION = "2026.11.17-d";
-{ const v = document.getElementById("appVer"); if (v) v.textContent = "Version " + APP_VERSION; }
+const APP_VERSION = "2026.11.17-e";
+{ const v = document.getElementById("appVer2"); if (v) v.textContent = "v" + APP_VERSION; }
 let downloadsCap = null;
 (window.claude && window.claude.use ? window.claude.use("downloads") : Promise.resolve(null)).then(d => { downloadsCap = d; }).catch(() => {});
 async function saveFile(name, blob) {
@@ -2245,7 +2246,7 @@ async function makePrintPdf() {
     const blob = buildPdf(content, imgs);
     busy(false);
     printSummary(r);
-    await saveFile(fileBase() + "-print.pdf", blob);
+    await saveFile(fileBase() + "-print-v" + APP_VERSION + ".pdf", blob);
   } catch (e) { busy(false); setStatus("printStatus", "The print file could not be made: " + e.message, "err"); }
 }
 // A paper stand-in for the canvas: the scan, mapped through the Carrier dots onto the page, so the threads print where
@@ -2303,7 +2304,7 @@ async function makePaperCopy() {
     const img = await canvasToPdfImage(c); c.width = 1;
     const blob = buildPdf("q 612 0 0 792 0 0 cm /Im0 Do Q\n", [img]);
     busy(false);
-    await saveFile(fileBase() + "-paper-copy-of-canvas.pdf", blob);
+    await saveFile(fileBase() + "-paper-copy-of-canvas-v" + APP_VERSION + ".pdf", blob);
     toast("Print it at 100% / Actual Size on plain paper, then print your design on that paper.", 6000);
   } catch (e) { busy(false); toast("The paper copy couldn't be made: " + e.message, 6000); }
 }
@@ -2313,7 +2314,7 @@ async function makePrintPng() {
   let r = await renderPrint(S.printDpi), blob = await canvasBlob(r.canvas);
   if (!blob && S.printDpi > 300) { r = await renderPrint(300); blob = await canvasBlob(r.canvas); toast("This device can't make a 600 dpi image, so the PNG is 300 dpi. The PDF is still 600 dpi."); }
   busy(false); printSummary(r);
-  await saveFile(fileBase() + `-print-${Math.round(r.canvas.width / PAGE.w)}dpi.png`, blob);
+  await saveFile(fileBase() + `-print-${Math.round(r.canvas.width / PAGE.w)}dpi-v${APP_VERSION}.png`, blob);
 }
 function printSummary(r) {
   $("printAllRow").hidden = true;
