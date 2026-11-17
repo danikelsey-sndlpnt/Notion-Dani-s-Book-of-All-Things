@@ -711,6 +711,9 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
           <label class="btn thread file-btn">Load a scan of my printed canvas<input type="file" id="checkFile" accept="application/pdf,.pdf,image/png,image/jpeg,image/webp"></label>
           <div class="status" id="checkStatus" hidden></div>
           <button class="btn small" id="applyNudge" hidden>Use the suggested nudge</button>
+          <div class="status" id="spreadStatus" hidden></div>
+          <button class="btn small thread" id="spreadUse" hidden>Use the measured ink spread</button>
+          <p class="hint"><b>Ink spread:</b> keep the scan of the blank canvas loaded (Scan step) when you check the printed one. The app compares the two and measures how far the paint runs past the design's outline on each side, then prints those edges shorter. <span id="spreadNow"></span> <button class="btn small" id="spreadForget" hidden>Forget it</button></p>
         </div>
       </div>
     </section>
@@ -839,7 +842,7 @@ function adjustColor(c) {
 }
 
 /* ---------------- files ---------------- */
-const APP_VERSION = "2026.11.17-k";
+const APP_VERSION = "2026.11.17-l";
 { const v = document.getElementById("appVer2"); if (v) v.textContent = "v" + APP_VERSION; }
 let downloadsCap = null;
 (window.claude && window.claude.use ? window.claude.use("downloads") : Promise.resolve(null)).then(d => { downloadsCap = d; }).catch(() => {});
@@ -2207,11 +2210,18 @@ function paintedAt() {
 }
 // The ink patch for one stitch. Toward a painted neighbor it reaches the hole centers (plus the ink reach), so colors
 // meet halfway along the thread. Toward bare canvas it stops just past this stitch's own crossing.
-function stitchShape(q, i, j, f, painted) {
-  const ov = S.edgeFor ? S.edgeFor(i, j) : null, e = (ov != null ? ov : S.adj.edge == null ? 100 : S.adj.edge) / 100, half = 0.5 * f;
+// "landed" = how the paint should end up on the canvas (Map, Preview); otherwise the shape sent to the printer, which
+// is shortened on each side by the ink spread Check my print measured for this printer and canvas.
+function edgeReach(side, landed) {
+  const e = (S.adj.edge == null ? 100 : S.adj.edge) / 100, tight = 0.5 - e * (0.5 - 0.31), sp = S.adj.spread;
+  if (landed || !sp || sp[side] == null) return tight;
+  return clamp(tight - sp[side], 0.06, 0.5);
+}
+function stitchShape(q, i, j, f, painted, landed) {
+  const ov = S.edgeFor ? S.edgeFor(i, j) : null, half = 0.5 * f;
   // 100% stops just past the thread crossing (threads are a bit over half a stitch wide), 0% reaches halfway like a color edge.
-  const tight = 0.5 - e * (0.5 - 0.31);
-  const L = painted(i - 1, j) ? -half : -tight, R = painted(i + 1, j) ? half : tight, T = painted(i, j - 1) ? -half : -tight, B = painted(i, j + 1) ? half : tight;
+  const t0 = ov != null ? 0.5 - ov / 100 * (0.5 - 0.31) : null, reach = side => t0 != null ? t0 : edgeReach(side, landed);
+  const L = painted(i - 1, j) ? -half : -reach("left"), R = painted(i + 1, j) ? half : reach("right"), T = painted(i, j - 1) ? -half : -reach("up"), B = painted(i, j + 1) ? half : reach("down");
   // Bilinear over the quad (corners at u,v = -0.5 / +0.5), extended past it where needed.
   const at = (u, v) => { const s2 = u + 0.5, t = v + 0.5; return [0, 1].map(k => (1 - s2) * (1 - t) * q[0][k] + s2 * (1 - t) * q[1][k] + s2 * t * q[2][k] + (1 - s2) * t * q[3][k]); };
   return [at(L, T), at(R, T), at(R, B), at(L, B)];
@@ -2262,7 +2272,7 @@ function buildPreview() {
     const pal = printPalette(), f = 1 + S.adj.bleed / 100;
     x.globalCompositeOperation = "multiply";
     const painted = paintedAt();
-    forEachStitch((q, v, i, j) => { const g = stitchShape(q, i, j, f, painted); x.fillStyle = pal[v]; x.beginPath(); x.moveTo(g[0][0], g[0][1]); for (let k = 1; k < 4; k++) x.lineTo(g[k][0], g[k][1]); x.closePath(); x.fill(); }, S.printAll);
+    forEachStitch((q, v, i, j) => { const g = stitchShape(q, i, j, f, painted, true); x.fillStyle = pal[v]; x.beginPath(); x.moveTo(g[0][0], g[0][1]); for (let k = 1; k < 4; k++) x.lineTo(g[k][0], g[k][1]); x.closePath(); x.fill(); }, S.printAll);
     x.globalCompositeOperation = "source-over";
   }
   previewStale = false;
@@ -2641,14 +2651,18 @@ async function checkPrint(f) {
     // Turn it the right way up using the Carrier dots, without touching the loaded scan.
     const keep = { scan: S.scan, marks: S.marks, H: S.H, mf: S.marksFound };
     S.scan = { canvas, dpi, gray: null }; computeGray(); findMarks();
-    const c = S.scan.canvas, gray = S.scan.gray;
+    const c = S.scan.canvas, gray = S.scan.gray, pMarks = S.marks && S.marks.map(m => m.slice()), pFound = S.marksFound;
     Object.assign(S, { scan: keep.scan, marks: keep.marks, H: keep.H, marksFound: keep.mf });
+    // With the blank scan of this same canvas still loaded, measure how far the ink spread at the design's edges.
+    let learned = null;
+    if (pFound && pMarks) { busy(true, "Measuring the paint edges…", 0.3); await tick(); learned = learnSpread(c, pMarks); }
     busy(true, "Measuring the ink…", 0.4); await tick();
     const G = await detectGrid(gray, c.width, c.height, dpi / 13, () => true, dpi);
     if (G.error) throw new Error("The canvas threads couldn't be found in this scan. Scan the printed canvas on its Carrier, lid closed.");
     const p = G.pitch;
     const m = measureInk(c, gray, p);
     busy(false);
+    if (learned) showLearned(learned);
     if (m.x.length < 15 || m.y.length < 15) { setStatus("checkStatus", "Not enough thin printed lines to measure. Print the test pattern (Save a test pattern print file instead), scan it, and check that.", "err"); $("applyNudge").hidden = true; return; }
     const med = a => { const v = a.slice().sort((x, y) => x - y); return v[v.length >> 1]; };
     const sd = a => { const mu = a.reduce((x, y) => x + y, 0) / a.length; return Math.sqrt(a.reduce((x, y) => x + (y - mu) ** 2, 0) / a.length); };
@@ -2667,6 +2681,74 @@ async function checkPrint(f) {
     if (spread > 0.28) msg += " The lines wander more than usual from spot to spot. The canvas may have shifted or the paper slipped while printing. Tape it down well and feed the Carrier alone.";
     setStatus("checkStatus", msg, !nx && !ny && spread <= 0.28 ? "ok" : "err");
   } catch (e) { busy(false); setStatus("checkStatus", e.message, "err"); }
+}
+
+// Compare the printed canvas with the blank scan of the same canvas (lined up through the Carrier dots): at every
+// design edge that borders bare canvas, walk from the painted crossing toward the bare one and see where the ink stops.
+function learnSpread(pc, pMarks) {
+  const G = S.grid, d = S.design, pl = placement(), bs = S.scan;
+  if (!G || !d || !pl || !bs || !bs.canvas || !S.H) return { error: "Load the scan of this canvas from before printing (Scan step) first, then check the printed one." };
+  const Hp = homography(MARKS.map(m => [m[0], m[1]]), pMarks.map(m => [m[0], m[1]]));
+  const bW = bs.canvas.width, bH = bs.canvas.height, bd = bs.canvas.getContext("2d").getImageData(0, 0, bW, bH).data;
+  const pW = pc.width, pH = pc.height, pd = pc.getContext("2d").getImageData(0, 0, pW, pH).data;
+  const rgb = (D, W, H2, x, y) => { x = Math.round(x); y = Math.round(y); if (x < 1 || y < 1 || x >= W - 1 || y >= H2 - 1) return null; let r = 0, g = 0, b = 0; for (let a = -1; a <= 1; a++) for (let c2 = -1; c2 <= 1; c2++) { const k = ((y + c2) * W + x + a) * 4; r += D[k]; g += D[k + 1]; b += D[k + 2]; } return [r / 9, g / 9, b / 9]; };
+  const toP = (x, y) => { const pg = scanToPage(x, y); return applyH(Hp, pg[0], pg[1]); };
+  const inkAt = (x, y) => { const a = rgb(bd, bW, bH, x, y), q = toP(x, y), b = q && rgb(pd, pW, pH, q[0], q[1]); if (!a || !b) return null; return Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]) + Math.abs(a[2] - b[2]) > 90; };
+  // Is it the same canvas? Away from the design, threads and holes should match between the two scans.
+  let agree = 0, tot = 0;
+  const lum = (D, W, H2, x, y) => { const v = rgb(D, W, H2, x, y); return v ? v[0] + v[1] + v[2] : null; };
+  for (let k = 0; k < G.gx * G.gy; k += 3) {
+    if (G.ST[k] !== 1) continue; const i = k % G.gx, j = (k / G.gx) | 0; if (i >= pl.i0 - 2 && i <= pl.i0 + d.w + 1 && j >= pl.j0 - 2 && j <= pl.j0 + d.h + 1) continue;
+    const cr = corner(i, j); if (!cr) continue;
+    for (const [x, y, bright] of [[G.X[k], G.Y[k], true], [cr[0], cr[1], false]]) { const a = lum(bd, bW, bH, x, y), q = toP(x, y), b = q && lum(pd, pW, pH, q[0], q[1]); if (a == null || b == null) continue; tot++; if ((a > 380) === (b > 380)) agree++; }
+  }
+  if (tot < 50 || agree / tot < 0.75) return { error: "This printed scan doesn't line up with the canvas scan that's loaded, so the paint edges couldn't be measured. Check the printed canvas with the same canvas's scan loaded (and the canvas not moved on the Carrier)." };
+  const painted = paintedAt(), f = 1 + S.adj.bleed / 100, sides = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] }, got = { up: [], down: [], left: [], right: [] };
+  const node = (i, j) => (i >= 0 && j >= 0 && i < G.gx && j < G.gy && G.ST[j * G.gx + i]) ? [G.X[j * G.gx + i], G.Y[j * G.gx + i]] : null;
+  forEachStitch((q, v, i, j) => {
+    const A = node(i, j); if (!A || !painted(i, j) || !inkAt(A[0], A[1])) return;
+    for (const side in sides) {
+      const [di, dj] = sides[side]; if (painted(i + di, j + dj) || painted(i + 2 * di, j + 2 * dj)) continue;
+      const Bn = node(i + di, j + dj); if (!Bn) continue;
+      // If the bare neighbor's crossing itself has ink, that spot can't be read (old ink, a different design): skip it.
+      const nb = inkAt(Bn[0], Bn[1]); if (nb !== false) continue;
+      let t = 0, ok = true;
+      for (let s2 = 1; s2 <= 50; s2++) { const fr = s2 / 50, r = inkAt(A[0] + (Bn[0] - A[0]) * fr, A[1] + (Bn[1] - A[1]) * fr); if (r == null) { ok = false; break; } if (r) t = fr; else if (fr > t + 0.08) break; }
+      if (ok) got[side].push(t);
+    }
+  });
+  const med = a => { const v = a.slice().sort((m, n) => m - n); return v[v.length >> 1]; };
+  const out = { measured: {}, spread: {}, counts: {} };
+  for (const side in got) {
+    out.counts[side] = got[side].length; if (got[side].length < 6) continue;
+    const m = med(got[side]), printed = edgeReach(side, false);
+    out.measured[side] = m; out.spread[side] = clamp(m - printed, -0.2, 0.45);
+  }
+  if (!Object.keys(out.spread).length) return { error: "Not enough design edges next to bare canvas to measure the paint spread." };
+  return out;
+}
+function showLearned(r) {
+  const el = $("spreadStatus"); el.hidden = false;
+  if (r.error) { el.className = "status err"; el.textContent = r.error; return; }
+  const name = { up: "top", down: "bottom", left: "left", right: "right" }, tight = edgeReach("up", true);
+  const parts = Object.keys(r.measured).map(k => `${name[k]} ${r.measured[k].toFixed(2)}`);
+  el.className = "status ok";
+  el.textContent = `Paint edges on this print reach past the edge crossings by: ${parts.join(", ")} of a stitch (the goal is ${tight.toFixed(2)}). ` +
+    `The app will print each side shorter by the extra so the paint lands on target. This was measured from ${Object.values(r.counts).reduce((a, b) => a + b, 0)} edge spots. Check this on a canvas printed only once.`;
+  $("spreadUse").hidden = false;
+  $("spreadUse").onclick = () => {
+    const sp = Object.assign({}, S.adj.spread || {});
+    for (const k in r.spread) sp[k] = r.spread[k];
+    S.adj.spread = sp; store.set("ccp-adj", S.adj); previewDirty(); syncSpread();
+    $("spreadUse").hidden = true; toast("Ink spread saved. Make the print file again to use it.", 5000);
+  };
+}
+function syncSpread() {
+  const sp = S.adj.spread, el = $("spreadNow"); if (!el) return;
+  if (!sp || !Object.keys(sp).length) { el.textContent = "No ink spread learned yet."; $("spreadForget").hidden = true; return; }
+  const name = { up: "top", down: "bottom", left: "left", right: "right" };
+  el.textContent = "Learned ink spread (printed edges are shortened by): " + Object.keys(sp).map(k => `${name[k]} ${sp[k].toFixed(2)}`).join(", ") + " of a stitch.";
+  $("spreadForget").hidden = false;
 }
 
 /* ---------------- initials ---------------- */
@@ -4343,6 +4425,8 @@ $("makePdf").onclick = makePrintPdf; $("makePng").onclick = makePrintPng;
 $("savePrev").onclick = async () => { if (!S.scan) return; const c = buildPreview(); await saveFile("canvas-preview.png", await canvasBlob(c)); };
 $("testPage").onclick = testPagePdf;
 $("paperCopy").onclick = makePaperCopy;
+$("spreadForget").onclick = () => { S.adj.spread = null; store.set("ccp-adj", S.adj); previewDirty(); syncSpread(); toast("Learned ink spread cleared."); };
+syncSpread();
 $("edgeTest").onclick = makeEdgeTest;
 $("calib1").onclick = () => saveFile(fileBase() + "-calibration-step1-v" + APP_VERSION + ".pdf", calibrationPdf(1));
 $("calib2").onclick = () => saveFile(fileBase() + "-calibration-step2-v" + APP_VERSION + ".pdf", calibrationPdf(2));
