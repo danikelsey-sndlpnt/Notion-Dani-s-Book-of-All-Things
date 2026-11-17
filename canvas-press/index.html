@@ -562,6 +562,15 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
           <p class="hint" id="meshNote"></p>
           <button class="btn thread wide" id="autoFix">Fix them automatically</button>
           <button class="btn wide" id="nextCheck">Next to check</button>
+          <div class="row">
+            <label class="f">Go to point number<input type="number" id="goPoint" min="1" step="1" inputmode="numeric" placeholder="7"></label>
+            <button class="btn small" id="goPointBtn">Go</button>
+          </div>
+          <div class="row">
+            <label class="f">Go to column, row<input type="text" id="goColRow" placeholder="23, 41" inputmode="numeric" autocomplete="off"></label>
+            <button class="btn small" id="goColRowBtn">Go</button>
+          </div>
+          <p class="hint">On the Map, each amber or red point has a <b>number</b>, and the design's <b>columns and rows</b> are numbered along the top and left (counting from the design's top-left stitch, like a chart). Tap a point and its number, column and row show at the bottom of the picture.</p>
           <p class="hint">Amber and red points are spots where the scan was faint (tape, a shadow, a fold). <b>Fix them automatically</b> looks closely at the scan around each one and snaps it onto the real crossing. Only points inside your design matter for printing; ones outside are ignored.</p>
           <p class="hint"><b>Show design</b> (above the picture, on the Map) puts your design's colors on the canvas so you can see where each stitch lands while you move points.</p>
           <p class="hint">Dragging moves around the scan. To fix a point, <b>tap it</b> to select it (it gets a ring), then drag it onto its intersection or use the arrow buttons. Only the selected point moves, so you won't grab points by accident. Arrow keys move it one pixel. Drag the purple corner dots if the app missed one.</p>
@@ -1767,7 +1776,7 @@ async function findGrid() {
   if (G.error) { busy(false); setStatus("scanStatus", G.error + " Check the mesh size and that the canvas sits on a dark background.", "err"); return; }
   const { gx, gy, theta } = G;
   const meshOut = G.meshSeen;
-  S.grid = G;
+  S.grid = G; checkNums();
   refitGuessed(); computeCorners();
   // Default center: the intersection closest to the middle of the found area.
   S.center = canvasMiddle(G);
@@ -2124,7 +2133,7 @@ async function saveScanState() {
     }
     const G = S.grid;
     await idb.set("scan-state", { name: S.scan.name, marks: S.marks, marksFound: S.marksFound, center: S.center, place: S.place, canvasMesh: S.canvasMesh, darkThreads: S.darkThreads,
-      grid: { gx: G.gx, gy: G.gy, X: G.X, Y: G.Y, ST: G.ST, pitch: G.pitch, theta: G.theta, meshSeen: G.meshSeen } });
+      grid: { gx: G.gx, gy: G.gy, X: G.X, Y: G.Y, ST: G.ST, pitch: G.pitch, theta: G.theta, meshSeen: G.meshSeen, nums: Array.from(checkNums()) } });
   } catch (e) {}
 }
 async function restoreScanState() {
@@ -2134,7 +2143,7 @@ async function restoreScanState() {
     const bmp = await createImageBitmap(img.blob), c = document.createElement("canvas"); c.width = bmp.width; c.height = bmp.height; c.getContext("2d").drawImage(bmp, 0, 0);
     S.scan = { canvas: c, dpi: img.dpi, name: img.name, example: false, gray: null, blobSaved: true }; computeGray();
     S.marks = st.marks; S.marksFound = st.marksFound; updateH(); S.darkThreads = !!st.darkThreads;
-    const g = st.grid; S.grid = { gx: g.gx, gy: g.gy, X: Float32Array.from(g.X), Y: Float32Array.from(g.Y), ST: Uint8Array.from(g.ST), pitch: g.pitch, theta: g.theta, meshSeen: g.meshSeen };
+    const g = st.grid; S.grid = { gx: g.gx, gy: g.gy, X: Float32Array.from(g.X), Y: Float32Array.from(g.Y), ST: Uint8Array.from(g.ST), pitch: g.pitch, theta: g.theta, meshSeen: g.meshSeen, nums: Array.isArray(g.nums) ? new Map(g.nums) : null };
     computeCorners(); S.center = st.center; S.place = st.place || { ox: 0, oy: 0 }; S.canvasMesh = st.canvasMesh;
     $("ox").value = S.place.ox; $("oy").value = S.place.oy; $("findGrid").disabled = false; $("dpi").value = Math.round(img.dpi);
     setStatus("scanStatus", `Your last scan (${img.name}) is loaded with its ${S.grid.gx} × ${S.grid.gy} mapped intersections. Load a new scan when you put on a new piece of canvas.`, "ok");
@@ -3558,6 +3567,10 @@ function draw() {
     if (S.scan.example) stat.push("EX");
     stat.push(S.scan.name);
     if (S.grid) stat.push(`${S.grid.gx} × ${S.grid.gy} intersections`);
+    if (S.view === "map" && S.grid && S.selNode >= 0) {
+      const n = checkNums().get(S.selNode), cr = colRowOf(S.selNode);
+      stat.push((n ? `Point ${n} · ` : "Selected · ") + (cr ? (cr.inside ? `column ${cr.c}, row ${cr.r}` : `outside the design (column ${cr.c}, row ${cr.r})`) : ""));
+    }
     stat.push(`${Math.round(V.s * 100)}%`);
   }
   $("vstat").innerHTML = stat.map(s => s === "EX" ? `<span class="ex">Example</span>` : `<span>${String(s).replace(/[<>&]/g, "")}</span>`).join("");
@@ -3609,6 +3622,61 @@ function drawMap(cw, ch) {
     const [x, y] = W2S(G.X[S.selNode], G.Y[S.selNode]), r = Math.max(7, ps * 0.42);
     vctx.strokeStyle = COL.sel; vctx.lineWidth = 2; vctx.strokeRect(x - r, y - r, r * 2, r * 2);
   }
+  // Numbers on the doubtful points, so a spot can be named and found again.
+  if (ps >= 5) {
+    const nums = checkNums(); vctx.save(); vctx.font = `700 ${clamp(Math.round(ps * 0.32), 10, 13)}px Figtree, sans-serif`; vctx.textBaseline = "middle"; vctx.textAlign = "center";
+    for (const [k, n] of nums) {
+      const [x, y] = W2S(G.X[k], G.Y[k]); if (!inView(x, y)) continue;
+      const t = String(n), w = vctx.measureText(t).width + 8, h = 16, bx = x + Math.max(5, arm + 3), by = y - Math.max(5, arm + 3) - h;
+      vctx.fillStyle = k === S.selNode ? COL.sel : G.ST[k] === 3 ? COL.miss : G.ST[k] === 2 ? COL.check : COL.moved;
+      vctx.beginPath(); vctx.roundRect ? vctx.roundRect(bx, by, w, h, 5) : vctx.rect(bx, by, w, h); vctx.fill();
+      vctx.fillStyle = "#17121C"; vctx.fillText(t, bx + w / 2, by + h / 2 + 0.5);
+    }
+    vctx.restore();
+  }
+  drawRulers(cw, ch);
+}
+// Each scan's doubtful points get a fixed number (top-left to bottom-right) that stays the same after they're fixed.
+function checkNums() {
+  const G = S.grid; if (!G) return new Map();
+  if (!G.nums) { G.nums = new Map(); let n = 0; for (let k = 0; k < G.gx * G.gy; k++) if (G.ST[k] === 2 || G.ST[k] === 3) G.nums.set(k, ++n); }
+  return G.nums;
+}
+// Column and row of a crossing, counted like a chart from the design's top-left stitch (1, 1).
+function colRowOf(k) {
+  const G = S.grid, pl = placement(); if (!G || !pl) return null;
+  const i = k % G.gx, j = (k / G.gx) | 0, c = i - pl.i0 + 1, r = j - pl.j0 + 1;
+  return { c, r, inside: c >= 1 && r >= 1 && c <= S.design.w && r <= S.design.h };
+}
+function drawRulers(cw, ch) {
+  const G = S.grid, d = S.design, pl = placement(); if (!G || !d || !pl) return;
+  const ps = G.pitch * V.s; if (ps < 2.5) return;
+  const step = [1, 2, 5, 10, 20, 50].find(n => ps * n >= 30) || 50;
+  vctx.save(); vctx.font = "700 11px Figtree, sans-serif"; vctx.textBaseline = "middle"; vctx.textAlign = "center";
+  const tag = (t, x, y, hot) => { const w = vctx.measureText(t).width + 8; vctx.fillStyle = hot ? "#FFD400" : "rgba(23,18,28,.85)"; vctx.fillRect(x - w / 2, y - 8, w, 16); vctx.fillStyle = hot ? "#17121C" : "#FFFFFF"; vctx.fillText(t, x, y + 0.5); };
+  const sel = S.selNode >= 0 ? colRowOf(S.selNode) : null;
+  // Where a line crosses a screen edge band, by interpolating between its two ends.
+  const along = (a, b, coord, v) => { if (!a || !b) return null; const A = W2S(a[0], a[1]), B = W2S(b[0], b[1]), t = (v - A[coord]) / ((B[coord] - A[coord]) || 1e-9); return [A[0] + (B[0] - A[0]) * t, A[1] + (B[1] - A[1]) * t]; };
+  const top = W2S(...(nodeP(pl.i0, pl.j0) || [0, 0]))[1], left = W2S(...(nodeP(pl.i0, pl.j0) || [0, 0]))[0];
+  const yBand = clamp(top - ps * 0.9 - 4, 64, ch - 40), xBand = clamp(left - ps * 0.9 - 8, 18, cw - 24);
+  const cols = new Set(); for (let c = step; c <= d.w; c += step) cols.add(c); cols.add(d.w); cols.add(1); if (sel && sel.inside) cols.add(sel.c);
+  for (const c of cols) {
+    const p = along(nodeP(pl.i0 + c - 1, pl.j0), nodeP(pl.i0 + c - 1, pl.j0 + d.h - 1), 1, yBand); if (!p || p[0] < 10 || p[0] > cw - 10) continue;
+    tag(String(c), p[0], yBand, sel && sel.c === c);
+  }
+  const rows = new Set(); for (let r = step; r <= d.h; r += step) rows.add(r); rows.add(d.h); rows.add(1); if (sel && sel.inside) rows.add(sel.r);
+  for (const r of rows) {
+    const p = along(nodeP(pl.i0, pl.j0 + r - 1), nodeP(pl.i0 + d.w - 1, pl.j0 + r - 1), 0, xBand); if (!p || p[1] < 60 || p[1] > ch - 30) continue;
+    tag(String(r), xBand, p[1], sel && sel.r === r);
+  }
+  vctx.restore();
+}
+function goToNode(k) {
+  const G = S.grid; if (!G || k < 0) return;
+  if (S.view !== "map") setView("map");
+  S.selNode = k; S.checked.add(k);
+  const r = view.getBoundingClientRect(); V.s = Math.max(V.s, 60 / G.pitch); V.user = true; V.tx = r.width / 2 - G.X[k] * V.s; V.ty = r.height / 2 - G.Y[k] * V.s;
+  updateCounts(); renderView();
 }
 
 /* ---------------- pointer input ---------------- */
@@ -3983,6 +4051,21 @@ $("showPts").onchange = e => { S.showPts = e.target.checked; renderView(); };
 $("pickCenter").onclick = () => { S.pickCenter = !S.pickCenter; $("pickCenter").setAttribute("aria-pressed", S.pickCenter); if (S.pickCenter) { setView("map"); toast("Click the intersection where the design's center stitch should go."); } };
 $("refit").onclick = () => { if (!S.grid) return; refitGuessed(); computeCorners(); previewDirty(); renderView(); toast("Red points re-guessed from their neighbors."); };
 $("vNext").onclick = () => $("nextCheck").click();
+$("goPointBtn").onclick = () => {
+  const n = +$("goPoint").value, nums = checkNums(); let k = -1;
+  for (const [kk, nn] of nums) if (nn === n) k = kk;
+  if (k < 0) { toast(nums.size ? `There's no point ${n}. Points are numbered 1 to ${nums.size}.` : "This scan has no amber or red points to number."); return; }
+  goToNode(k);
+};
+$("goPoint").onkeydown = e => { if (e.key === "Enter") $("goPointBtn").click(); };
+$("goColRowBtn").onclick = () => {
+  const m = $("goColRow").value.match(/(-?\d+)\D+(-?\d+)/), pl = placement(), G = S.grid;
+  if (!m || !pl || !G) { toast("Type a column and row, like 23, 41."); return; }
+  const i = pl.i0 + (+m[1]) - 1, j = pl.j0 + (+m[2]) - 1;
+  if (i < 0 || j < 0 || i >= G.gx || j >= G.gy || !G.ST[j * G.gx + i]) { toast("That spot isn't on the scanned canvas."); return; }
+  goToNode(j * G.gx + i);
+};
+$("goColRow").onkeydown = e => { if (e.key === "Enter") $("goColRowBtn").click(); };
 $("nextCheck").onclick = () => {
   let list = checkList().filter(k => !S.checked.has(k));
 
