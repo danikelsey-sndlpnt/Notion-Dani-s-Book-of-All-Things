@@ -455,6 +455,18 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
           <p class="hint" id="convHint">Converting again replaces hand edits. Undo brings them back. Right-click erases with any tool. Right-click with Fill erases a whole area.</p>
         </div>
 
+        <div class="group" id="aiGroup">
+          <h3>Ask Claude</h3>
+          <label class="f">Tell Claude what to change, or ask a question<textarea id="aiAsk" rows="3" style="font: inherit; width: 100%; box-sizing: border-box; padding: 8px 10px; border-radius: 10px; border: 1.5px solid var(--line, #ccc)" placeholder="Make the background light blue · Change the hair to a darker brown · Add a 2-stitch red border · Clean up stray single stitches · Which DMC would you use for skin?"></textarea></label>
+          <div class="row">
+            <button class="btn primary small" id="aiGo">Ask Claude</button>
+            <button class="btn small" id="aiStop" hidden>Stop</button>
+            <span class="hint" id="aiScope"></span>
+          </div>
+          <div class="status" id="aiOut" hidden></div>
+          <p class="hint" id="aiNote">Claude sees your stitch grid, colors (with DMC numbers) and a picture of the design, then changes the stitches. <b>Undo</b> takes back anything it did. If you've selected part of the design with Select, only that part changes. Uses your own Claude usage.</p>
+        </div>
+
         <div class="group">
           <h3>Edit stitches</h3>
           <div class="tools" role="group" aria-label="Tools">
@@ -842,7 +854,7 @@ function adjustColor(c) {
 }
 
 /* ---------------- files ---------------- */
-const APP_VERSION = "2026.11.17-m";
+const APP_VERSION = "2026.11.17-n";
 { const v = document.getElementById("appVer2"); if (v) v.textContent = "v" + APP_VERSION; }
 let downloadsCap = null;
 (window.claude && window.claude.use ? window.claude.use("downloads") : Promise.resolve(null)).then(d => { downloadsCap = d; }).catch(() => {});
@@ -2945,6 +2957,103 @@ function stampText(cell) {
   toast(n < st.cells.cells.reduce((a, b) => a + b, 0) ? "Text stitched in. Part of it went past 400 stitches and was cut off." : "Text stitched in." + (padL || padT || W !== S.undo[S.undo.length - 1].w || H !== S.undo[S.undo.length - 1].h ? " The design frame grew to fit it." : ""));
   softFit(padL, padT);
 }
+/* ---- Ask Claude: change the design in plain words ---- */
+const AI_KEYS = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+let aiSample = null, aiCtl = null;
+(window.claude && window.claude.use ? window.claude.use("sample") : Promise.resolve(null)).then(f => { aiSample = f; aiAvail(); }).catch(() => aiAvail());
+const AI_NOTE = document.getElementById("aiNote").innerHTML;
+function aiAvail() {
+  const on = !!aiSample;
+  $("aiGo").disabled = !on;
+  if (on) $("aiNote").innerHTML = AI_NOTE; else $("aiNote").textContent = "Ask Claude works when the app is opened on claude.ai (it is turning on, or this copy is running outside claude.ai).";
+}
+function aiScopeText() { const r = S.selection; $("aiScope").textContent = r ? `Only the selected ${r.x1 - r.x0} × ${r.y1 - r.y0} area will change.` : ""; }
+async function aiDesignImage() {
+  const d = S.design, k = Math.max(1, Math.min(10, Math.floor(800 / Math.max(d.w, d.h))));
+  const c = document.createElement("canvas"); c.width = d.w * k; c.height = d.h * k;
+  const x = c.getContext("2d"); x.fillStyle = "#EEECE7"; x.fillRect(0, 0, c.width, c.height);
+  for (let y = 0; y < d.h; y++) for (let i = 0; i < d.w; i++) { const v = d.px[y * d.w + i]; if (v >= 0) { x.fillStyle = hex(d.pal[v]); x.fillRect(i * k, y * k, k, k); } }
+  return await canvasBlob(c);
+}
+function aiPrompt(ask) {
+  const d = S.design, r = S.selection, big = d.w * d.h > 40000 || d.pal.length > AI_KEYS.length;
+  const legend = d.pal.map((c, i) => { const dm = nearestDmc(c); return `${AI_KEYS[i]} = ${hex(c)} (closest DMC ${dm[0]} ${dm[1]})`; }).join("\n");
+  const rows = big ? "(grid too large to list; use recolor ops only)" : Array.from({ length: d.h }, (_, y) => { let t = ""; for (let x = 0; x < d.w; x++) { const v = d.px[y * d.w + x]; t += v < 0 ? "." : AI_KEYS[v]; } return t; }).join("\n");
+  return `You are editing a needlepoint design: a grid of stitches, ${d.w} columns by ${d.h} rows, on ${S.mesh} mesh canvas (${(d.w / S.mesh).toFixed(2)} x ${(d.h / S.mesh).toFixed(2)} inches). Column x runs 0..${d.w - 1} left to right, row y runs 0..${d.h - 1} top to bottom. The attached image shows the design (one square per stitch; light gray = bare canvas).
+Colors (key = color):
+${legend}
+"." = bare canvas (no stitch printed).
+${r ? `ONLY change stitches inside the selected area: x ${r.x0}..${r.x1 - 1}, y ${r.y0}..${r.y1 - 1}. Leave everything else exactly as it is.\n` : ""}
+Grid, one line per row, one character per stitch:
+${rows}
+
+The stitcher asks: "${ask.replace(/"/g, "'")}"
+
+Reply with ONLY a JSON object: {"message": string, "ops": [ ... ]}.
+"message": one or two plain sentences to the stitcher about what you changed, or the answer if they asked a question (then ops is []).
+Color references in ops: a key from the list above (like "3"), "." for bare canvas, "#rrggbb" for a new color, or "DMC 310" for a DMC floss color.
+Ops (applied in order):
+- {"op":"recolor","from":"<key>","to":"<color>"}  every stitch of that color
+- {"op":"rect","x":0,"y":0,"w":5,"h":3,"color":"<color>","outline":false}  fill a rectangle (outline true = border only)
+- {"op":"cells","color":"<color>","cells":[[x,y],[x,y]]}  individual stitches
+- {"op":"rows","x":0,"y":0,"rows":["..33..",".3333."],"legend":{"A":"<color>"}}  paint a patch row by row from (x,y); use keys from the list, ".", letters you define in "legend" for new colors, and " " to leave a stitch unchanged
+Keep changes to what was asked; stay inside the grid; keep shapes clean and stitchable (no single stray stitches unless asked).`;
+}
+function aiColor(ref, d, defs) {
+  if (ref == null) return undefined;
+  ref = String(ref).trim();
+  if (ref === "." || /^bare/i.test(ref)) return -1;
+  if (defs && defs[ref] != null) return aiColor(defs[ref], d);
+  const add = rgb => { let v = d.pal.findIndex(c => hex(c) === hex(rgb)); if (v < 0) { d.pal.push(rgb); v = d.pal.length - 1; } return v; };
+  const m = ref.match(/^#?([0-9a-f]{6})$/i); if (m && ref.length >= 6 && (ref[0] === "#" || ref.length === 6 && !AI_KEYS.includes(ref))) return add(unhex("#" + m[1]));
+  const dm = ref.match(/^DMC\s*(\S+)/i); if (dm) { const e = dmcByCode(dm[1]); return e ? add(unhex("#" + e[2])) : undefined; }
+  if (ref.length === 1) { const i = AI_KEYS.indexOf(ref); if (i >= 0 && i < d.pal.length) return i; }
+  return undefined;
+}
+function aiApply(ops) {
+  const d = S.design, r = S.selection || { x0: 0, y0: 0, x1: d.w, y1: d.h };
+  const before = d.px.slice(); let bad = 0, kept = 0;
+  const put = (x, y, v) => {
+    x = Math.round(x); y = Math.round(y);
+    if (v === undefined || x < 0 || y < 0 || x >= d.w || y >= d.h) { bad++; return; }
+    if (x < r.x0 || y < r.y0 || x >= r.x1 || y >= r.y1) { kept++; return; }
+    d.px[y * d.w + x] = v;
+  };
+  for (const o of Array.isArray(ops) ? ops : []) {
+    if (!o || typeof o !== "object") continue;
+    if (o.op === "recolor") { const f = aiColor(o.from, d), t = aiColor(o.to, d); if (f === undefined || t === undefined) { bad++; continue; } for (let y = r.y0; y < r.y1; y++) for (let x = r.x0; x < r.x1; x++) if (d.px[y * d.w + x] === f) d.px[y * d.w + x] = t; }
+    else if (o.op === "rect") { const v = aiColor(o.color, d); for (let y = o.y; y < o.y + o.h; y++) for (let x = o.x; x < o.x + o.w; x++) if (!o.outline || x === o.x || y === o.y || x === o.x + o.w - 1 || y === o.y + o.h - 1) put(x, y, v); }
+    else if (o.op === "cells") { const v = aiColor(o.color, d); for (const c of o.cells || []) if (Array.isArray(c)) put(c[0], c[1], v); }
+    else if (o.op === "rows") { const defs = o.legend || {}; (o.rows || []).forEach((row, j) => { [...String(row)].forEach((ch, i) => { if (ch === " ") return; put((o.x || 0) + i, (o.y || 0) + j, aiColor(ch, d, defs)); }); }); }
+  }
+  let n = 0; for (let i = 0; i < d.px.length; i++) if (d.px[i] !== before[i]) n++;
+  return { n, bad, kept };
+}
+async function aiRun() {
+  const ask = $("aiAsk").value.trim(); if (!ask) { $("aiAsk").focus(); return; }
+  if (!S.design || !aiSample) return;
+  const out = $("aiOut"); out.hidden = false; out.className = "status"; out.textContent = "Thinking…";
+  $("aiGo").disabled = true; $("aiStop").hidden = false; aiCtl = new AbortController();
+  try {
+    const opts = { signal: aiCtl.signal, cache: false, onText: () => { out.textContent = "Claude is working on it…"; } };
+    try { const lim = await aiSample.limits(); if (lim && lim.images) opts.images = [await aiDesignImage()]; } catch (e) {}
+    const res = await aiSample.json(aiPrompt(ask), opts);
+    const snapBefore = snap();
+    const { n, bad, kept } = aiApply(res && res.ops);
+    if (n) {
+      S.undo.push(snapBefore); if (S.undo.length > 60) S.undo.shift(); S.redo.length = 0; S.edited = true; S.touched = true;
+      const d = S.design, cp = compactPalette(d); d.pal = cp.pal; d.px = cp.px; S.sel = Math.min(S.sel, Math.max(0, d.pal.length - 1));
+      designDirty(); renderView();
+    }
+    out.className = "status ok";
+    out.textContent = (res && res.message ? String(res.message) : "Done.") + (n ? ` (${n} stitch${n === 1 ? "" : "es"} changed. Undo takes it back.)` : "") + (kept ? " Stitches outside your selection were left as they were." : "") + (bad ? ` ${bad} change${bad === 1 ? " was" : "s were"} skipped (outside the design or an unknown color).` : "");
+  } catch (e) {
+    const code = e && e.code;
+    out.className = "status err";
+    out.textContent = code === "cancelled" ? "Stopped." : code === "not_granted" ? "Claude wasn't allowed for this app. You can allow it from the app's Permissions menu." : code === "rate_limited" ? "Claude is busy or your usage limit was reached. Try again in a little while." : code === "invalid_json" ? "Claude's answer couldn't be read as changes. Try saying it a little differently." : code === "prompt_too_large" ? "This design is too big to send. Select a smaller area first." : "Claude couldn't do that right now. Try again.";
+  } finally { $("aiGo").disabled = !aiSample; $("aiStop").hidden = true; aiCtl = null; }
+}
+
 /* ---- Select, copy, cut, paste ---- */
 S.selection = null; S.clipboard = null;
 function selRect(a, b) {
@@ -4443,6 +4552,9 @@ $("makePdf").onclick = makePrintPdf; $("makePng").onclick = makePrintPng;
 $("savePrev").onclick = async () => { if (!S.scan) return; const c = buildPreview(); await saveFile("canvas-preview.png", await canvasBlob(c)); };
 $("testPage").onclick = testPagePdf;
 $("paperCopy").onclick = makePaperCopy;
+$("aiGo").onclick = aiRun; $("aiStop").onclick = () => aiCtl && aiCtl.abort();
+$("aiAsk").onkeydown = e => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) aiRun(); };
+$("aiAsk").onfocus = aiScopeText; aiAvail();
 $("spreadForget").onclick = () => { S.adj.spread = null; store.set("ccp-adj", S.adj); previewDirty(); syncSpread(); toast("Learned ink spread cleared."); };
 syncSpread();
 $("edgeTest").onclick = makeEdgeTest;
