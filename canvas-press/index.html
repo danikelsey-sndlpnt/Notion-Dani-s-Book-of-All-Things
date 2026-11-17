@@ -648,6 +648,7 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
           </div>
           <div class="row" id="dotRow" hidden>
             <label class="f">Dot size <small id="dotOut"></small><input type="range" id="dotSize" min="10" max="45" value="24"></label>
+            <button class="btn small thread" id="dotSheet">Cheat sheet (PDF)</button>
             <p class="hint" style="flex:1 1 200px">Each stitch gets a round dot of its color right on the thread crossing, so the canvas shows exactly which color goes where while you paint. Uses a fraction of the ink. Bigger dots are easier to see; smaller ones hide better under paint.</p>
           </div>
           <p class="hint" id="pmodeNote">Photo prints the original picture across the design's stitches (only where the design has stitches), lined up to your threads, with smooth shading instead of one color per stitch. The stitcher picks thread colors from the color key and chart. Best for photos, pets and portraits.</p>
@@ -884,7 +885,7 @@ function adjustColor(c) {
 }
 
 /* ---------------- files ---------------- */
-const APP_VERSION = "2026.11.17-t";
+const APP_VERSION = "2026.11.17-v";
 { const v = document.getElementById("appVer2"); if (v) v.textContent = "v" + APP_VERSION; }
 let downloadsCap = null;
 (window.claude && window.claude.use ? window.claude.use("downloads") : Promise.resolve(null)).then(d => { downloadsCap = d; }).catch(() => {});
@@ -1230,8 +1231,21 @@ function quantizeArt(n) {
   S.convK = k;
   return used;
 }
+// After a reload, or opening a saved design or design file, the artwork list is empty but the original picture is
+// kept with the design. Rebuild the artwork from it, lined up with the current design frame (crops and moves included).
+function artworkFromOriginal() {
+  const o = S.original, d = S.design; if (!o || !o.canvas || o.example || !d) return false;
+  const k = 8, c = document.createElement("canvas"); c.width = d.w * k; c.height = d.h * k;
+  const x = c.getContext("2d"), m = o.m;
+  x.setTransform(m[0] * k, m[1] * k, m[2] * k, m[3] * k, (m[4] + (d.sx || 0)) * k, (m[5] + (d.sy || 0)) * k);
+  x.imageSmoothingQuality = "high"; x.drawImage(o.canvas, 0, 0);
+  S.layers = [layerDefaults(S.designName ? S.designName.replace(/\.[a-z0-9]+$/i, "") + " (original picture)" : "Original picture", c)];
+  S.wSt = d.w; S.hSt = d.h;
+  if (typeof renderLayers === "function") renderLayers();
+  return true;
+}
 function convert() {
-  if (!S.layers.length) { toast("Add artwork first."); return; }
+  if (!S.layers.length && !artworkFromOriginal()) { toast(S.design && !S.original ? "This design has no original picture to convert (it came from a stitch file, a blank canvas or copies). Add artwork to convert a picture." : "Add artwork first."); return; }
   pushUndo();
   const sameSize = S.design && S.design.w === S.wSt && S.design.h === S.hSt;
   const art = S.convStyle !== "photo" && !S.dither;
@@ -3441,6 +3455,64 @@ async function colorKeyPdf() {
   c += pdfText(0.75, 10.7, 7, "DMC color data: craft-color-codes by MakeBead (makebead.com), CC BY 4.0. Made with Sookie's Canvas Press.");
   await saveFile(fileBase() + "-color-key.pdf", buildPdf(c, img));
 }
+// One page to paint from: the finished look beside the dots, a lettered close-up of a busy spot, and the color list.
+async function dotsCheatSheetPdf() {
+  const d = S.design; if (!d) { toast("Make a design first."); return; }
+  const counts = new Int32Array(d.pal.length); for (const v of d.px) if (v >= 0) counts[v]++;
+  const order = d.pal.map((c, i) => i).filter(i => counts[i]).sort((a, b) => counts[b] - counts[a]);
+  const letter = new Map(order.map((v, n) => [v, n < 26 ? String.fromCharCode(65 + n) : String.fromCharCode(97 + n - 26)]));
+  const ink = d.pal.map(c => adjustColor(c)), r = S.dotSize / 100;
+  const paintPic = (x0, y0, w, h, k, dots, letters, rad = r) => {
+    const c = document.createElement("canvas"); c.width = w * k; c.height = h * k; const x = c.getContext("2d");
+    x.fillStyle = "#F4F1EA"; x.fillRect(0, 0, c.width, c.height);
+    // canvas threads: light lines through each stitch, holes between
+    x.fillStyle = "#D9D3C7"; for (let i = 0; i <= w; i++) x.fillRect(i * k - Math.max(1, k * 0.08) / 2, 0, Math.max(1, k * 0.08), c.height);
+    for (let j = 0; j <= h; j++) x.fillRect(0, j * k - Math.max(1, k * 0.08) / 2, c.width, Math.max(1, k * 0.08));
+    x.textAlign = "center"; x.textBaseline = "middle"; x.font = `700 ${Math.round(k * rad * 1.1)}px sans-serif`;
+    for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) {
+      const v = d.px[(y0 + j) * d.w + x0 + i]; if (v == null || v < 0) continue; const col = ink[v];
+      x.fillStyle = `rgb(${col[0]},${col[1]},${col[2]})`;
+      if (!dots) { x.fillRect(i * k, j * k, k, k); continue; }
+      x.beginPath(); x.arc((i + 0.5) * k, (j + 0.5) * k, k * rad, 0, Math.PI * 2); x.fill();
+      if (letters) { const L = col[0] * 0.3 + col[1] * 0.59 + col[2] * 0.11; x.fillStyle = L > 140 ? "#1a1a1a" : "#ffffff"; x.fillText(letter.get(v), (i + 0.5) * k, (j + 0.5) * k + 0.5); }
+    }
+    return c;
+  };
+  // Busiest 14 x 14 spot (most color changes) for the close-up.
+  const Z = Math.min(14, d.w, d.h); let best = -1, bx = 0, by = 0;
+  for (let y = 0; y + Z <= d.h; y += 2) for (let x = 0; x + Z <= d.w; x += 2) {
+    let ch = 0, ink2 = 0; for (let j = y; j < y + Z; j++) for (let i = x; i < x + Z; i++) { const v = d.px[j * d.w + i]; if (v >= 0) ink2++; if (i + 1 < x + Z && d.px[j * d.w + i + 1] !== v) ch++; if (j + 1 < y + Z && d.px[(j + 1) * d.w + i] !== v) ch++; }
+    const sc = ink2 > Z * Z * 0.5 ? ch : ch * 0.2; if (sc > best) { best = sc; bx = x; by = y; }
+  }
+  const kBig = Math.max(3, Math.floor(900 / Math.max(d.w, d.h)));
+  const imgs = [await canvasToPdfImage(paintPic(0, 0, d.w, d.h, kBig, false)), await canvasToPdfImage(paintPic(0, 0, d.w, d.h, kBig, true)),
+    await canvasToPdfImage(paintPic(bx, by, Z, Z, 60, false)), await canvasToPdfImage(paintPic(bx, by, Z, Z, 60, true, true, 0.4))];
+  const place = (n, x, y, w, h) => `q ${pt(w)} 0 0 ${pt(h)} ${pt(x)} ${ptY(y + h)} cm /Im${n} Do Q\n`;
+  let c = "", name = S.designName ? S.designName.replace(/\.[a-z0-9]+$/i, "") : "";
+  c += "0.1 g\n" + pdfText(0.6, 0.6, 15, ascii(`Color dots cheat sheet${name ? " - " + name : ""}`));
+  c += "0.35 g\n" + pdfText(0.6, 0.83, 8.5, ascii(`${d.w} x ${d.h} stitches on ${S.mesh} mesh  -  ${order.length} colors  -  dots ${S.dotSize}% of a stitch  -  paint each dot's whole intersection in its color`));
+  const bw = 3.5, bh = Math.min(3.0, bw * d.h / d.w), bW = bh * d.w / d.h;
+  c += "0.2 g\n" + pdfText(0.6, 1.12, 9.5, "What it should look like when painted") + pdfText(4.4, 1.12, 9.5, "What the printed dots look like");
+  c += place(0, 0.6 + (bw - bW) / 2, 1.22, bW, bh) + place(1, 4.4 + (bw - bW) / 2, 1.22, bW, bh);
+  const cy = 1.22 + bh + 0.35, cs = 2.3;
+  c += "0.2 g\n" + pdfText(0.6, cy, 9.5, ascii(`Close-up: stitches ${bx + 1}-${bx + Z} across, ${by + 1}-${by + Z} down`)) + pdfText(4.4, cy, 9.5, "The same spot as dots, lettered (drawn larger)");
+  c += place(2, 0.6 + (bw - cs) / 2, cy + 0.1, cs, cs) + place(3, 4.4 + (bw - cs) / 2, cy + 0.1, cs, cs);
+  // Color list
+  let ty = cy + 0.1 + cs + 0.35; const cols = order.length > 12 ? 2 : 1, per = Math.ceil(order.length / cols), colW = cols === 2 ? 3.7 : 7.3, rowH = Math.min(0.33, (10.5 - ty - 0.15) / Math.max(1, per));
+  const sw0 = Math.min(0.42, colW * 0.12);
+  c += "0.35 g\n"; for (let cl = 0; cl < cols; cl++) { const x0 = 0.6 + cl * colW; c += pdfText(x0 + 0.02, ty, 7, "DOT") + pdfText(x0 + 0.4, ty, 7, "PAINT") + pdfText(x0 + 0.4 + sw0 + 0.4, ty, 7, "DMC NUMBER AND NAME") + pdfText(x0 + colW - 0.75, ty, 7, "STITCHES"); }
+  order.forEach((v, n) => {
+    const cl = Math.floor(n / per), x0 = 0.6 + cl * colW, y = ty + 0.1 + (n % per) * rowH, rr = Math.min(0.11, rowH * 0.35), col = ink[v], dm = nearestDmc(d.pal[v]), cx = x0 + 0.13, cyy = y + rowH / 2;
+    const K = 0.5523 * rr, X = +pt(cx), Y = +ptY(cyy), R = +pt(rr), Kp = +pt(K);
+    c += `${(col[0] / 255).toFixed(3)} ${(col[1] / 255).toFixed(3)} ${(col[2] / 255).toFixed(3)} rg ${X + R} ${Y} m ${X + R} ${Y + Kp} ${X + Kp} ${Y + R} ${X} ${Y + R} c ${X - Kp} ${Y + R} ${X - R} ${Y + Kp} ${X - R} ${Y} c ${X - R} ${Y - Kp} ${X - Kp} ${Y - R} ${X} ${Y - R} c ${X + Kp} ${Y - R} ${X + R} ${Y - Kp} ${X + R} ${Y} c f\n`;
+    const sw = Math.min(0.42, colW * 0.12), sh = rowH * 0.6, sx = x0 + 0.4, sy = y + (rowH - sh) / 2;
+    c += `${(col[0] / 255).toFixed(3)} ${(col[1] / 255).toFixed(3)} ${(col[2] / 255).toFixed(3)} rg ${pt(sx)} ${ptY(sy + sh)} ${pt(sw)} ${pt(sh)} re f 0.6 G 0.5 w ${pt(sx)} ${ptY(sy + sh)} ${pt(sw)} ${pt(sh)} re S\n`;
+    const t = cyy + 0.04;
+    c += "0.1 g\n" + pdfText(sx + sw + 0.12, t, 10, letter.get(v)) + pdfText(sx + sw + 0.4, t, 9.5, ascii(`DMC ${dm[0]}`)) + "0.3 g\n" + pdfText(sx + sw + 1.3, t, 8, ascii(dm[1]).slice(0, cols === 2 ? 16 : 45)) + "0.1 g\n" + pdfText(x0 + colW - 0.6, t, 9, String(counts[v]));
+  });
+  c += "0.45 g\n" + pdfText(0.6, 10.7, 7, "Dot and paint colors are the colors the print uses; screen and print colors are approximate - check against real floss and paint. Made with Sookie's Canvas Press.");
+  await saveFile(fileBase() + "-dots-cheat-sheet.pdf", buildPdf(c, imgs));
+}
 function snapAllToDmc() {
   const d = S.design; if (!d) return; pushUndo(); S.edited = true;
   const map = new Map(), pal = [], idx = d.pal.map(c => { const dm = nearestDmc(c); if (!map.has(dm[0])) { map.set(dm[0], pal.length); pal.push(unhex("#" + dm[2])); } return map.get(dm[0]); });
@@ -4827,7 +4899,7 @@ $("testPage").onclick = testPagePdf;
 $("paperCopy").onclick = makePaperCopy;
 $("dotRow").hidden = S.printMode !== "dots"; $("dotSize").value = S.dotSize;
 const dotOut = () => { $("dotOut").textContent = `${S.dotSize}% of a stitch`; };
-dotOut(); $("dotSize").oninput = e => { S.dotSize = +e.target.value; store.set("ccp-dot", S.dotSize); dotOut(); previewDirty(); };
+dotOut(); $("dotSheet").onclick = dotsCheatSheetPdf; $("dotSize").oninput = e => { S.dotSize = +e.target.value; store.set("ccp-dot", S.dotSize); dotOut(); previewDirty(); };
 S.photoMatch = store.get("ccp-pmatch") !== false; $("pmatch").checked = S.photoMatch;
 $("pmatch").onchange = e => { S.photoMatch = e.target.checked; store.set("ccp-pmatch", S.photoMatch); S._matched = null; previewDirty(); photoStatus(); };
 document.querySelectorAll('input[name="pmode"]').forEach(r => { r.checked = r.value === S.printMode; r.onchange = () => {
