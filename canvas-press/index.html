@@ -240,7 +240,7 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
 <div class="wrap">
   <header class="top">
     <h1>Sookie's <span>Canvas Press</span></h1>
-    <p class="sub">Turn artwork into a stitch grid, scan your canvas once, and print straight onto its real threads. Everything stays in your browser.</p>
+    <p class="sub">Turn artwork into a stitch grid, scan your canvas once, and print straight onto its real threads. Everything stays in your browser. <small id="appVer" style="opacity:.6"></small></p>
     <button class="btn small" id="startOver" title="Clear the design and scan to begin a new canvas">Start over</button>
   </header>
 
@@ -813,6 +813,8 @@ function adjustColor(c) {
 }
 
 /* ---------------- files ---------------- */
+const APP_VERSION = "2026.11.17-c";
+{ const v = document.getElementById("appVer"); if (v) v.textContent = "Version " + APP_VERSION; }
 let downloadsCap = null;
 (window.claude && window.claude.use ? window.claude.use("downloads") : Promise.resolve(null)).then(d => { downloadsCap = d; }).catch(() => {});
 async function saveFile(name, blob) {
@@ -965,7 +967,7 @@ function buildPdf(content, image) {
   const xref = len;
   let x = "xref\n0 " + (n + 1) + "\n0000000000 65535 f \n";
   for (let i = 1; i <= n; i++) x += String(offs[i]).padStart(10, "0") + " 00000 n \n";
-  push(x + "trailer\n<< /Size " + (n + 1) + " /Root 1 0 R >>\nstartxref\n" + xref + "\n%%EOF\n");
+  push(x + "trailer\n<< /Size " + (n + 1) + " /Root 1 0 R /Info << /Producer (Sookie's Canvas Press " + APP_VERSION + ") >> >>\nstartxref\n" + xref + "\n%%EOF\n");
   return new Blob(chunks, { type: "application/pdf" });
 }
 // PDF drawing helpers; input in inches from top-left.
@@ -2123,9 +2125,11 @@ function forEachStitch(fn, all = false) {
 function paintedAt() {
   const d = S.design, pl = placement(); if (!d || !pl) return () => false;
   const ini = S.initials && S.initials.on && S.iniCells ? { C: S.iniCells, o: initialsOrigin(S.iniCells) } : null;
+  // White (or nearly white) stitches put no real ink down, so a background of white stitches counts as bare canvas.
+  const inked = d.pal.map(c => { const a = adjustColor(c); return !(a[0] >= 240 && a[1] >= 240 && a[2] >= 240); });
   return (i, j) => {
     const c = i - pl.i0, r = j - pl.j0;
-    if (c >= 0 && r >= 0 && c < d.w && r < d.h && d.px[r * d.w + c] >= 0) return true;
+    if (c >= 0 && r >= 0 && c < d.w && r < d.h) { const v = d.px[r * d.w + c]; if (v >= 0 && inked[v]) return true; }
     if (ini) { const x = c - ini.o.x, y = r - ini.o.y; if (x >= 0 && y >= 0 && x < ini.C.w && y < ini.C.h && ini.C.cells[y * ini.C.w + x]) return true; }
     return false;
   };
