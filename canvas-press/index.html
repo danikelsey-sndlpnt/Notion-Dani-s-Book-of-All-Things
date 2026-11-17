@@ -643,8 +643,15 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
           <label class="f">Deepen <small id="deepOut"></small><input type="range" id="deepen" min="0" max="30" value="8"></label>
           <label class="f">Contrast <small id="conOut"></small><input type="range" id="contrast" min="80" max="140" value="105"></label>
           <label class="f">Ink reach past each stitch <small id="bleedOut"></small><input type="range" id="bleed" min="0" max="30" value="8"></label>
-          <label class="f">Clean edges next to bare canvas <small id="edgeOut"></small><input type="range" id="edge" min="0" max="100" value="80"></label>
-          <p class="hint">Where a stitch sits beside bare canvas, the paint stops just past that stitch's own crossing instead of running halfway down the thread toward the next one, so a stitcher can always tell which crossings to stitch. Canvas soaks ink a little way along each thread, so the paint ends up past where it is printed; at 100% only the crossing itself is printed. 0% paints halfway like a color-to-color edge.</p>
+          <label class="f">Clean edges next to bare canvas <small id="edgeOut"></small><input type="range" id="edge" min="0" max="100" value="100"></label>
+          <p class="hint">Where a stitch sits beside bare canvas, the paint stops just past that stitch's own crossing instead of running halfway down the thread toward the next one, so a stitcher can always tell which crossings to stitch. At 100% the paint covers the whole crossing and stops right there; 0% paints halfway like a color-to-color edge. Not sure? Print the <b>edge test</b> below and pick what looks right on your canvas.</p>
+          <button class="btn small" id="edgeTest">Edge test (PDF)</button>
+          <p class="hint">Prints three small blocks (a square and a one-stitch line) side by side where your design goes, each with a different edge: <b>left</b> tightest, <b>middle</b> in between, <b>right</b> reaching furthest. Use a scrap of canvas scanned on the Carrier. Then tap the one that reads most clearly as stitches:</p>
+          <div class="row">
+            <button class="btn small" data-edgepick="100">Left looked best</button>
+            <button class="btn small" data-edgepick="60">Middle</button>
+            <button class="btn small" data-edgepick="20">Right</button>
+          </div>
           <label class="tog"><input type="checkbox" id="rawColors"> Print my exact colors (no adjusting)</label>
         </details>
         <details class="more">
@@ -756,7 +763,7 @@ const S = {
   layers: [], design: null, sel: 0, tool: "paint", undo: [], redo: [], exampleDesign: false,
   scan: null, grid: null, marks: null, marksFound: false, H: null, darkThreads: false,
   place: { ox: 0, oy: 0 }, center: null,
-  adj: { sat: 125, deepen: 8, contrast: 105, bleed: 8, edge: 80, raw: false },
+  adj: { sat: 125, deepen: 8, contrast: 105, bleed: 8, edge: 100, raw: false },
   nudge: { x: 0, y: 0 }, printDpi: 600,
   look: "mesh", origAlpha: 0, original: null, showArea: false, canvasBorder: 2,
   view: "design", showPts: true, showGrid: true, pickCenter: false, checked: new Set(), selNode: -1,
@@ -814,7 +821,7 @@ function adjustColor(c) {
 }
 
 /* ---------------- files ---------------- */
-const APP_VERSION = "2026.11.17-e";
+const APP_VERSION = "2026.11.17-f";
 { const v = document.getElementById("appVer2"); if (v) v.textContent = "v" + APP_VERSION; }
 let downloadsCap = null;
 (window.claude && window.claude.use ? window.claude.use("downloads") : Promise.resolve(null)).then(d => { downloadsCap = d; }).catch(() => {});
@@ -2138,7 +2145,9 @@ function paintedAt() {
 // The ink patch for one stitch. Toward a painted neighbor it reaches the hole centers (plus the ink reach), so colors
 // meet halfway along the thread. Toward bare canvas it stops just past this stitch's own crossing.
 function stitchShape(q, i, j, f, painted) {
-  const e = (S.adj.edge == null ? 80 : S.adj.edge) / 100, half = 0.5 * f, tight = 0.5 - e * (0.5 - 0.12);
+  const ov = S.edgeFor ? S.edgeFor(i, j) : null, e = (ov != null ? ov : S.adj.edge == null ? 100 : S.adj.edge) / 100, half = 0.5 * f;
+  // 100% stops just past the thread crossing (threads are a bit over half a stitch wide), 0% reaches halfway like a color edge.
+  const tight = 0.5 - e * (0.5 - 0.31);
   const L = painted(i - 1, j) ? -half : -tight, R = painted(i + 1, j) ? half : tight, T = painted(i, j - 1) ? -half : -tight, B = painted(i, j + 1) ? half : tight;
   // Bilinear over the quad (corners at u,v = -0.5 / +0.5), extended past it where needed.
   const at = (u, v) => { const s2 = u + 0.5, t = v + 0.5; return [0, 1].map(k => (1 - s2) * (1 - t) * q[0][k] + s2 * (1 - t) * q[1][k] + s2 * t * q[2][k] + (1 - s2) * t * q[3][k]); };
@@ -2217,6 +2226,36 @@ async function renderPrint(dpi, y0 = 0, hStrip = null) {
     x.fillStyle = pal[v]; x.beginPath(); x.moveTo(g[0][0], g[0][1]); for (let k = 1; k < 4; k++) x.lineTo(g[k][0], g[k][1]); x.closePath(); x.fill();
   }, S.printAll);
   return { canvas: c, ...r };
+}
+// Three test blocks with different edge settings, printed where the design goes.
+async function makeEdgeTest() {
+  if (!S.grid || !S.scan) { toast("Scan the canvas on the Carrier first (a scrap is fine)."); return; }
+  const keep = { design: S.design, initials: S.initials, iniCells: S.iniCells, printAll: S.printAll, edgeFor: S.edgeFor };
+  const blocks = [100, 60, 20], bw = 6, gap = 4, W = blocks.length * bw + (blocks.length - 1) * gap, H = 8;
+  const px = new Int16Array(W * H).fill(-1);
+  for (let b = 0; b < blocks.length; b++) { const x0 = b * (bw + gap); for (let x = 0; x < bw; x++) { for (let y = 0; y < 5; y++) px[y * W + x0 + x] = 0; px[7 * W + x0 + x] = 0; } }
+  // The design's darkest color shows the edges best.
+  let dark = [40, 40, 40];
+  if (keep.design && keep.design.pal.length) dark = keep.design.pal.reduce((a, c) => (c[0] + c[1] + c[2] < a[0] + a[1] + a[2] ? c : a));
+  busy(true, "Building the edge test…", 0.3); await tick();
+  try {
+    S.design = { w: W, h: H, pal: [dark.slice()], px, sx: 0, sy: 0 }; S.initials = null; S.iniCells = null; S.printAll = false;
+    const pl = placement();
+    S.edgeFor = i => blocks[clamp(Math.floor((i - pl.i0) / (bw + gap)), 0, blocks.length - 1)];
+    const chk = forEachStitch(() => {});
+    if (chk.off) throw new Error("part of the test falls off the scanned canvas. Move the design toward the middle (Placement) and try again.");
+    const dpi = S.printDpi, Hp = Math.round(PAGE.h * dpi), n = dpi > 330 ? 4 : 1, sh = Math.ceil(Hp / n), imgs = []; let content = "";
+    for (let k = 0; k < n; k++) {
+      const y0 = k * sh, h = Math.min(sh, Hp - y0), part = await renderPrint(dpi, y0, h);
+      imgs.push(await canvasToPdfImage(part.canvas)); part.canvas.width = 1;
+      content += `q 612 0 0 ${(h / dpi * 72).toFixed(3)} 0 ${(792 - (y0 + h) / dpi * 72).toFixed(3)} cm /Im${k} Do Q\n`;
+    }
+    const blob = buildPdf(content, imgs);
+    busy(false);
+    await saveFile(fileBase() + "-edge-test-v" + APP_VERSION + ".pdf", blob);
+    toast("Print it at 100% on the Carrier with the canvas taped in, then tap the block that looks best.", 6000);
+  } catch (e) { busy(false); toast("The edge test couldn't be made: " + e.message, 7000); }
+  finally { Object.assign(S, keep); previewDirty(); }
 }
 function canPrint() {
   if (!S.design) { toast("Make a design first."); return false; }
@@ -4187,6 +4226,8 @@ $("makePdf").onclick = makePrintPdf; $("makePng").onclick = makePrintPng;
 $("savePrev").onclick = async () => { if (!S.scan) return; const c = buildPreview(); await saveFile("canvas-preview.png", await canvasBlob(c)); };
 $("testPage").onclick = testPagePdf;
 $("paperCopy").onclick = makePaperCopy;
+$("edgeTest").onclick = makeEdgeTest;
+document.querySelectorAll("[data-edgepick]").forEach(b => b.onclick = () => { S.adj.edge = +b.dataset.edgepick; $("edge").value = S.adj.edge; adjOut(); previewDirty(); store.set("ccp-adj", S.adj); toast(`Edges set to ${S.adj.edge}%. Your prints use this from now on.`); });
 $("brushPaint").oninput = e => { S.brush.paint = +e.target.value; syncBrushUI(); };
 $("brushErase").oninput = e => { S.brush.erase = +e.target.value; syncBrushUI(); };
 $("qsize").oninput = e => { if (S.tool === "erase") S.brush.erase = +e.target.value; else S.brush.paint = +e.target.value; syncBrushUI(); };
