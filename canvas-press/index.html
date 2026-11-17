@@ -121,6 +121,9 @@ h1 .ver { display: inline-block; vertical-align: middle; font: 700 12px var(--mo
 .textbar .done { background: #F06292; color: #1D0A13; }
 .textbar .qsep { width: 1px; background: rgba(255,255,255,.2); margin: 4px 2px; }
 @media (max-width: 560px) { .textbar { max-width: calc(100% - 16px); padding: 4px; gap: 2px; } .textbar button { padding: 6px 8px; min-height: 34px; } .textbar .qsep { display: none; } }
+.textbar .tbcols { flex-basis: 100%; display: flex; flex-wrap: wrap; justify-content: center; gap: 4px; }
+.textbar .tbcols button { width: 26px; height: 26px; min-height: 0; padding: 0; border-radius: 7px; border: 2px solid rgba(255,255,255,.35); }
+.textbar .tbcols button[aria-pressed=true] { border-color: #fff; box-shadow: 0 0 0 2px #F06292; }
 .textbar .tbinfo { flex-basis: 100%; text-align: center; color: #BCB2C8; font: 500 11px var(--mono); }
 .stage.full { position: fixed; inset: 0; z-index: 40; background: var(--bg); padding-top: calc(env(safe-area-inset-top, 0px) + 8px); padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 8px); padding-left: max(8px, env(safe-area-inset-left, 0px)); padding-right: max(8px, env(safe-area-inset-right, 0px)); grid-template-rows: auto minmax(0, 1fr); margin: 0; }
 .stage.full .screen { height: auto !important; min-height: 0; }
@@ -198,6 +201,11 @@ input:focus-visible, select:focus-visible, button:focus-visible { outline: 2px s
 .pal { display: grid; grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); gap: 6px; }
 .sw { border: 1px solid var(--line); border-radius: 10px; padding: 5px; background: var(--surface); cursor: pointer; display: grid; gap: 3px; text-align: left; font: 500 11px var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
 .sw i { display: block; height: 22px; border-radius: 6px; border: 1px solid rgba(0,0,0,.12); }
+.shapes { margin: 6px 0 8px; }
+.shapeGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(74px, 1fr)); gap: 6px; }
+.shapeGrid button { border: 1px solid var(--line); border-radius: 10px; background: var(--surface); padding: 6px 4px 4px; cursor: pointer; display: grid; justify-items: center; gap: 2px; font: 600 11px var(--body); color: var(--ink-2); }
+.shapeGrid button:hover { border-color: var(--accent); }
+.shapeGrid canvas { width: 44px; height: 44px; }
 .ctog { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 6px 0 2px; font: 600 12px var(--body); color: var(--ink-2); }
 .ctog label { display: inline-flex; align-items: center; gap: 5px; padding: 4px 8px 4px 5px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); cursor: pointer; }
 .ctog label i { width: 16px; height: 16px; border-radius: 50%; border: 1px solid rgba(0,0,0,.2); display: inline-block; }
@@ -283,6 +291,7 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
             <button data-tool="pick" aria-pressed="false">Pick</button>
             <button data-tool="select" aria-pressed="false">Select</button>
             <button class="qpaste" data-paste hidden>Paste</button>
+            <button data-shapes>Shapes</button>
             <button data-tool="pan" aria-pressed="false">Move view</button>
             <span class="qsep"></span>
             <button id="qUndo" aria-label="Undo">Undo</button>
@@ -311,6 +320,7 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
           <span class="qsep"></span>
           <button id="tbCancel">Cancel</button>
           <button id="tbDone" class="done">Done</button>
+          <span class="tbcols" id="tbCols" hidden></span>
           <span class="tbinfo" id="tbInfo"></span>
         </div>
         <div class="nudge" id="nudgePad" hidden role="group" aria-label="Nudge">
@@ -496,6 +506,7 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
             <button data-tool="crop" aria-pressed="false">Crop</button>
             <button data-tool="text" aria-pressed="false">Text</button>
             <button data-tool="select" aria-pressed="false">Select &amp; copy</button>
+            <button data-shapes>Shapes</button>
             <button data-paste disabled>Paste</button>
             <button data-tool="wand" aria-pressed="false">Magic erase</button>
             <button data-tool="pan" aria-pressed="false">Move view</button>
@@ -526,6 +537,10 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
           <p class="hint"><b>Text</b>: pick the words, font, size and color, then click on the design where the text goes. It becomes regular stitches you can edit. Press Esc to stop placing.</p>
           <p class="hint"><b>Crop</b>: drag a box over the part you want to keep. <b>Remove background</b> clears every color that runs along the outside edge, plus the blurry fringe and loose specks, so those stitches print as bare canvas. Raise <b>Background strength</b> to clear more shades, lower it to protect colors close to the background. <b>Magic erase</b>: tap any leftover patch to clear it and everything touching it in a similar color. Undo brings any of these back.</p>
           <p class="hint"><b>Move stitches</b>: drag the design to shift it. The original picture moves with it, so you can see what you moved. The frame grows if stitches go past the edge.</p>
+          <div class="shapes" id="shapeBox" hidden>
+            <div class="shapeGrid" id="shapeGrid"></div>
+            <p class="hint">Pick a shape: it appears at its real size for your canvas, in the color you have selected. Make it <b>Bigger</b> or <b>Smaller</b>, turn or flip it, drag it into place, tap another color to recolor it, then <b>Done</b>.</p>
+          </div>
           <div class="pal" id="pal"></div>
           <div class="ctog" id="ctog"></div>
           <div class="selbox" id="selbox"></div>
@@ -886,7 +901,7 @@ function adjustColor(c) {
 }
 
 /* ---------------- files ---------------- */
-const APP_VERSION = "2026.11.17-w";
+const APP_VERSION = "2026.11.17-x";
 { const v = document.getElementById("appVer2"); if (v) v.textContent = "v" + APP_VERSION; }
 let downloadsCap = null;
 (window.claude && window.claude.use ? window.claude.use("downloads") : Promise.resolve(null)).then(d => { downloadsCap = d; }).catch(() => {});
@@ -1366,7 +1381,7 @@ function renderPalette() {
     const b = document.createElement("button"); b.className = "sw"; b.setAttribute("aria-pressed", i === S.sel);
     b.title = `${dmcLabel(dm)} ${dm[1]} · ${counts[i]} stitches`;
     b.innerHTML = `<i style="background:${hex(c)}"></i><span class="dm">${dm[0]}</span>${counts[i]}`;
-    b.onclick = () => { S.sel = i; if (S.tool === "erase" || S.tool === "pick" || S.tool === "pan") setTool("paint"); renderPalette(); };
+    b.onclick = () => { if (recolorMotif(i)) return; S.sel = i; if (S.tool === "erase" || S.tool === "pick" || S.tool === "pan") setTool("paint"); renderPalette(); };
     box.appendChild(b);
   });
   const ub = document.createElement("button"); ub.className = "sw"; ub.setAttribute("aria-pressed", S.tool === "erase");
@@ -1377,7 +1392,7 @@ function renderPalette() {
   d.pal.forEach((c, i) => {
     const b = document.createElement("button"); b.className = "qsw"; b.style.background = hex(c); b.title = `${dmcLabel(nearestDmc(c))} ${nearestDmc(c)[1]}`;
     b.setAttribute("aria-pressed", i === S.sel && S.tool !== "erase"); b.setAttribute("aria-label", b.title);
-    b.onclick = () => { S.sel = i; if (S.tool !== "fill") setTool("paint"); else renderPalette(); };
+    b.onclick = () => { if (recolorMotif(i)) return; S.sel = i; if (S.tool !== "fill") setTool("paint"); else renderPalette(); };
     qp.appendChild(b);
   });
   renderColorToggles(counts);
@@ -3127,15 +3142,22 @@ async function rebuildStamp() {
 }
 function textBarInfo() {
   const st = S.stamp; if (!st) return;
-  $("tbInfo").textContent = st.clip ? `Copy ${st.cells.w} × ${st.cells.h} · drag it, then Done` : `${st.cells.w} × ${st.cells.h} stitches · ${st.opts.h} tall · ${((st.angle || 0) + 360) % 360}°`;
+  $("tbInfo").textContent = st.motif ? `${MOTIFS[st.motif.id].name} ${st.cells.w} × ${st.cells.h} stitches · ${(st.cells.h / S.mesh).toFixed(2)} in tall · drag it, then Done` : st.clip ? `Copy ${st.cells.w} × ${st.cells.h} · drag it, then Done` : `${st.cells.w} × ${st.cells.h} stitches · ${st.opts.h} tall · ${((st.angle || 0) + 360) % 360}°`;
 }
 function showTextBar(on) {
   const clip = !!(S.stamp && S.stamp.clip);
-  ["tbRotL", "tbRotR", "tbSmaller", "tbBigger"].forEach(id => $(id).hidden = clip);
+  ["tbRotL", "tbRotR"].forEach(id => $(id).hidden = clip);
+  const motif = !!(S.stamp && S.stamp.motif); ["tbSmaller", "tbBigger"].forEach(id => $(id).hidden = clip && !motif);
   $("tbFlipH").hidden = $("tbFlipV").hidden = !clip;
-  $("textBar").setAttribute("aria-label", clip ? "Place the copy" : "Adjust text");
-  $("textBar").hidden = !on; $("qbar").hidden = on || S.view !== "design"; if (on) textBarInfo(); }
-function endText() { const clip = !!(S.stamp && S.stamp.clip); S.stamp = null; S.stampPos = null; showTextBar(false); setTool(clip ? "select" : "paint"); renderView(); }
+  $("textBar").setAttribute("aria-label", motif ? "Place the shape" : clip ? "Place the copy" : "Adjust text");
+  $("textBar").hidden = !on; $("qbar").hidden = on || S.view !== "design"; if (on) textBarInfo();
+  renderTbColors(); }
+function renderTbColors() {
+  const box = $("tbCols"), st = S.stamp; box.textContent = ""; box.hidden = !(st && st.motif && S.design);
+  if (box.hidden) return;
+  S.design.pal.forEach((c, i) => { const b = document.createElement("button"); b.style.background = hex(c); b.title = `${dmcLabel(nearestDmc(c))} ${nearestDmc(c)[1]}`; b.setAttribute("aria-label", "Color " + b.title); b.setAttribute("aria-pressed", hex(c) === hex(st.motif.main)); b.onclick = () => { recolorMotif(i); renderTbColors(); }; box.appendChild(b); });
+}
+function endText() { const clip = !!(S.stamp && S.stamp.clip && !S.stamp.motif); S.stamp = null; S.stampPos = null; showTextBar(false); setTool(clip ? "select" : "paint"); renderView(); }
 let iniDraft = null;
 function iniFromForm() {
   return { on: true, text: $("iniText").value, font: $("iniFont").value, h: +$("iniH").value, color: iniDraft.color, pos: $("iniPos").value, below: Math.max(0, +$("iniBelow").value || 0) };
@@ -3391,7 +3413,101 @@ function transformClip(kind) {
     if (kind === "rot") { X = h - 1 - y; Y = x; } else if (kind === "h") X = w - 1 - x; else Y = h - 1 - y;
     m[Y * W + X] = cells[y * w + x]; c[Y * W + X] = cols[y * w + x];
   }
-  st.cells = { w: W, h: H, cells: m }; st.colors = c; textBarInfo(); renderView();
+  st.cells = { w: W, h: H, cells: m }; st.colors = c;
+  if (st.motif && !transformClip.replaying) st.motif.ops.push(kind);
+  textBarInfo(); renderView();
+}
+/* ---- Shapes: ready-made motifs at real size ---- */
+// Each shape is drawn in a 100-unit box; parts are filled (or stroked, "w" = line width) in order, later parts on top.
+// color: "main" = the color you have selected, "dark" = a darker shade of it, or a fixed DMC color.
+const starPath = (pts, r1, r2, cx = 50, cy = 52) => { let p = ""; for (let i = 0; i < pts * 2; i++) { const r = i % 2 ? r2 : r1, a = -Math.PI / 2 + i * Math.PI / pts; p += (i ? "L" : "M") + (cx + r * Math.cos(a)).toFixed(1) + " " + (cy + r * Math.sin(a)).toFixed(1) + " "; } return p + "Z"; };
+const circ = (cx, cy, r) => `M${cx - r} ${cy} a${r} ${r} 0 1 0 ${2 * r} 0 a${r} ${r} 0 1 0 ${-2 * r} 0 Z`;
+const MOTIFS = {
+  heart: { name: "Heart", inches: 1, aspect: 1.08, parts: [{ d: "M50 92 C22 72 3 54 3 32 C3 15 16 4 31 4 C41 4 47 10 50 18 C53 10 59 4 69 4 C84 4 97 15 97 32 C97 54 78 72 50 92 Z", color: "main" }] },
+  star: { name: "Star", inches: 1, aspect: 1.05, parts: [{ d: starPath(5, 48, 20), color: "main" }] },
+  bow: { name: "Bow", inches: 1, aspect: 1.45, parts: [
+    { d: "M50 42 C38 22 8 10 4 30 C1 48 30 55 50 46 Z M50 42 C62 22 92 10 96 30 C99 48 70 55 50 46 Z", color: "main" },
+    { d: "M46 46 L30 92 L39 86 L45 95 L52 50 Z M54 46 L70 92 L61 86 L55 95 L48 50 Z", color: "main" },
+    { d: circ(50, 44, 9), color: "dark" }] },
+  flower: { name: "Flower", inches: 1, aspect: 1, parts: [
+    { d: [0, 1, 2, 3, 4].map(i => { const a = -Math.PI / 2 + i * 2 * Math.PI / 5; return circ(50 + 26 * Math.cos(a), 50 + 26 * Math.sin(a), 21); }).join(" "), color: "main" },
+    { d: circ(50, 50, 14), color: "444" }] },
+  circle: { name: "Dot", inches: 0.5, aspect: 1, parts: [{ d: circ(50, 50, 48), color: "main" }] },
+  diamond: { name: "Diamond", inches: 0.75, aspect: 0.75, parts: [{ d: "M50 2 L96 50 L50 98 L4 50 Z", color: "main" }] },
+  tree: { name: "Tree", inches: 1.5, aspect: 0.8, parts: [
+    { d: "M50 2 L72 32 L62 32 L84 60 L70 60 L94 86 L6 86 L30 60 L16 60 L38 32 L28 32 Z", color: "main" },
+    { d: "M43 86 L57 86 L57 99 L43 99 Z", color: "801" }] },
+  snowflake: { name: "Snowflake", inches: 1, aspect: 1, parts: [{ stroke: true, w: 7, d: [0, 1, 2, 3, 4, 5].map(i => { const a = i * Math.PI / 3, c = Math.cos(a), sn = Math.sin(a), px = (r, o) => [50 + r * c - o * sn, 50 + r * sn + o * c]; const e = px(46, 0), m1 = px(30, 0), b1 = px(42, 10), b2 = px(42, -10); return `M50 50 L${e[0]} ${e[1]} M${m1[0]} ${m1[1]} L${b1[0]} ${b1[1]} M${m1[0]} ${m1[1]} L${b2[0]} ${b2[1]}`; }).join(" "), color: "main" }] },
+  moon: { name: "Moon", inches: 1, aspect: 0.8, parts: [{ d: "M70 3 C30 5 4 28 4 52 C4 78 32 98 70 96 C52 84 46 68 46 50 C46 32 52 16 70 3 Z", color: "main" }] },
+  leaf: { name: "Leaf", inches: 1, aspect: 0.6, parts: [{ d: "M50 2 C82 26 82 70 50 96 C18 70 18 26 50 2 Z", color: "main" }, { stroke: true, w: 4, d: "M50 14 L50 88", color: "dark", minW: 12 }] },
+  holly: { name: "Holly", inches: 1, aspect: 1.3, parts: [
+    { d: "M50 52 L40 44 L34 50 L26 40 L18 46 L12 34 L4 36 L8 26 L2 20 L14 16 L20 22 L28 16 L36 24 L44 20 Z M50 52 L60 44 L66 50 L74 40 L82 46 L88 34 L96 36 L92 26 L98 20 L86 16 L80 22 L72 16 L64 24 L56 20 Z", color: "699" },
+    { d: circ(44, 58, 9) + " " + circ(58, 56, 9) + " " + circ(51, 70, 9), color: "321" }] },
+  gift: { name: "Gift", inches: 1, aspect: 1, parts: [
+    { d: "M8 34 L92 34 L92 98 L8 98 Z", color: "main" },
+    { d: "M44 34 L56 34 L56 98 L44 98 Z M8 52 L92 52 L92 62 L8 62 Z", color: "dark" },
+    { d: "M50 34 C40 14 18 12 22 26 C24 34 40 34 50 34 Z M50 34 C60 14 82 12 78 26 C76 34 60 34 50 34 Z", color: "dark" }] },
+  paw: { name: "Paw", inches: 0.75, aspect: 1, parts: [{ d: "M50 50 C28 50 16 70 20 84 C24 97 40 93 50 93 C60 93 76 97 80 84 C84 70 72 50 50 50 Z", color: "main" }, { d: circ(20, 38, 11), color: "main" }, { d: circ(39, 18, 11), color: "main" }, { d: circ(61, 18, 11), color: "main" }, { d: circ(80, 38, 11), color: "main" }] },
+  ornament: { name: "Ornament", inches: 1, aspect: 0.85, parts: [{ d: circ(50, 58, 40), color: "main" }, { d: "M40 8 L60 8 L60 20 L40 20 Z", color: "415" }] },
+  candycane: { name: "Candy cane", inches: 1.5, aspect: 0.6, parts: [{ stroke: true, w: 18, d: "M62 97 L62 32 C62 6 24 6 24 32", color: "main" }, { stroke: true, w: 18, cap: "butt", d: "M62 84 L62 78 M62 64 L62 58 M62 44 L62 38 M30 14 L36 9", color: "BLANC", minW: 9 }] },
+};
+function motifColor(spec, main) {
+  if (spec === "main") return main.slice();
+  if (spec === "dark") return main.map(v => Math.round(v * 0.68));
+  const e = dmcByCode(spec); return e ? unhex("#" + e[2]) : main.slice();
+}
+function rasterMotif(id, H, main) {
+  const M = MOTIFS[id], W = Math.max(2, Math.round(H * M.aspect)), k = 12, cvs = document.createElement("canvas"); cvs.width = W * k; cvs.height = H * k;
+  const x = cvs.getContext("2d"), sx = cvs.width / 100, sy = cvs.height / 100;
+  const cov = M.parts.map(part => {
+    if (part.minW && W < part.minW) return new Float32Array(W * H);
+    x.setTransform(1, 0, 0, 1, 0, 0); x.clearRect(0, 0, cvs.width, cvs.height); x.setTransform(sx, 0, 0, sy, 0, 0);
+    const p = new Path2D(part.d); x.fillStyle = x.strokeStyle = "#000";
+    if (part.stroke) { x.lineCap = part.cap || "round"; x.lineJoin = "round"; x.lineWidth = Math.max(part.w, 100 / Math.min(W, H) * 1.05); x.stroke(p); } else x.fill(p, "nonzero");
+    const d = x.getImageData(0, 0, cvs.width, cvs.height).data, out = new Float32Array(W * H);
+    for (let cy = 0; cy < H; cy++) for (let cx = 0; cx < W; cx++) { let a = 0; for (let yy = cy * k; yy < cy * k + k; yy += 2) for (let xx = cx * k; xx < cx * k + k; xx += 2) a += d[(yy * cvs.width + xx) * 4 + 3]; out[cy * W + cx] = a / ((k / 2) * (k / 2) * 255); }
+    return out;
+  });
+  const cols = M.parts.map(p => motifColor(p.color, main)), mask = new Uint8Array(W * H), colors = new Array(W * H).fill(null);
+  for (let i = 0; i < W * H; i++) {
+    let pick = -1; for (let q = cov.length - 1; q >= 0; q--) if (cov[q][i] >= 0.45) { pick = q; break; }
+    if (pick < 0) { let tot = 0, bq = -1, bv = 0; cov.forEach((c, q) => { tot += c[i]; if (c[i] > bv) { bv = c[i]; bq = q; } }); if (tot >= 0.5) pick = bq; }
+    if (pick >= 0) { mask[i] = 1; colors[i] = cols[pick].slice(); }
+  }
+  return { w: W, h: H, mask, colors };
+}
+function buildMotifStamp() {
+  const st = S.stamp, m = st.motif, r = rasterMotif(m.id, m.h, m.main);
+  st.cells = { w: r.w, h: r.h, cells: r.mask }; st.colors = r.colors;
+  transformClip.replaying = true; for (const op of m.ops) transformClip(op); transformClip.replaying = false;
+  textBarInfo(); renderView();
+}
+function startMotif(id) {
+  if (!S.design) return;
+  const d = S.design, main = (d.pal[S.sel] || (dmcByCode("321") ? unhex("#" + dmcByCode("321")[2]) : [200, 30, 40])).slice();
+  S.selection = null; setTool("text");
+  S.stamp = { clip: true, motif: { id, h: Math.max(4, Math.round(MOTIFS[id].inches * S.mesh)), main, ops: [] }, color: [0, 0, 0], cells: { w: 1, h: 1, cells: new Uint8Array(1) }, colors: [null] };
+  buildMotifStamp();
+  // Start in the middle of what you're looking at.
+  const r = view.getBoundingClientRect(), [wx, wy] = toWorld(splitOn() ? r.width * 0.75 : r.width / 2, r.height / 2);
+  S.stampPos = [clamp(Math.round(wx), 0, d.w - 1), clamp(Math.round(wy), 0, d.h - 1)];
+  $("shapeBox").hidden = true; showTextBar(true); renderView();
+  toast(`${MOTIFS[id].name}: ${S.stamp.cells.w} × ${S.stamp.cells.h} stitches (${(S.stamp.cells.h / S.mesh).toFixed(2)} in tall on ${S.mesh} mesh). Drag it, resize it, then Done.`, 5000);
+}
+function recolorMotif(i) {
+  const st = S.stamp; if (!st || !st.motif || !S.design.pal[i]) return false;
+  S.sel = i; st.motif.main = S.design.pal[i].slice(); buildMotifStamp(); renderPalette(); return true;
+}
+function renderShapeGrid() {
+  const g = $("shapeGrid"); if (g.childElementCount) return;
+  for (const id in MOTIFS) {
+    const b = document.createElement("button"); b.type = "button"; b.title = MOTIFS[id].name;
+    const c = document.createElement("canvas"); c.width = 88; c.height = 88; const x = c.getContext("2d");
+    const asp = MOTIFS[id].aspect, w = asp >= 1 ? 80 : 80 * asp, h = asp >= 1 ? 80 / asp : 80; x.translate((88 - w) / 2, (88 - h) / 2); x.scale(w / 100, h / 100);
+    for (const part of MOTIFS[id].parts) { const col = motifColor(part.color, [199, 43, 59]), p = new Path2D(part.d); x.fillStyle = x.strokeStyle = hex(col); if (part.stroke) { x.lineWidth = part.w; x.lineCap = "round"; x.stroke(p); } else x.fill(p); }
+    const t = document.createElement("span"); t.textContent = MOTIFS[id].name;
+    b.append(c, t); b.onclick = () => startMotif(id); g.appendChild(b);
+  }
 }
 function openInitials() {
   setDlgMode("initials");
@@ -4937,6 +5053,10 @@ $("makePdf").onclick = makePrintPdf; $("makePng").onclick = makePrintPng;
 $("savePrev").onclick = async () => { if (!S.scan) return; const c = buildPreview(); await saveFile("canvas-preview.png", await canvasBlob(c)); };
 $("testPage").onclick = testPagePdf;
 $("paperCopy").onclick = makePaperCopy;
+document.querySelectorAll("[data-shapes]").forEach(b => b.onclick = () => {
+  renderShapeGrid(); const box = $("shapeBox"); box.hidden = !box.hidden;
+  if (!box.hidden) { if ($("tab1").getAttribute("aria-selected") !== "true") setTab(1); box.scrollIntoView({ block: "nearest", behavior: "smooth" }); }
+});
 $("vSplit").onclick = () => {
   if (!(S.original && S.original.canvas)) { toast("This design has no original picture to show beside it."); return; }
   S.split = !S.split; $("vSplit").setAttribute("aria-pressed", S.split);
@@ -5000,7 +5120,8 @@ $("qsize").oninput = e => { if (S.tool === "erase") S.brush.erase = +e.target.va
 $("tbRotL").onclick = () => { if (!S.stamp) return; S.stamp.angle = (S.stamp.angle || 0) - 15; rebuildStamp(); };
 $("tbRotR").onclick = () => { if (!S.stamp) return; S.stamp.angle = (S.stamp.angle || 0) + 15; rebuildStamp(); };
 $("tbRot90").onclick = () => { if (!S.stamp) return; if (S.stamp.clip) { transformClip("rot"); return; } S.stamp.angle = (S.stamp.angle || 0) + 90; rebuildStamp(); };
-const resizeStamp = dir => { if (!S.stamp) return; const o = S.stamp.opts, step = o.font === "block" ? 7 : Math.max(1, Math.round(o.h * 0.15)); o.h = clamp(o.h + dir * step, o.font === "block" ? 7 : 4, 120); rebuildStamp(); };
+const resizeStamp = dir => { if (!S.stamp) return;
+  if (S.stamp.motif) { const m = S.stamp.motif; m.h = clamp(m.h + dir * Math.max(1, Math.round(m.h * 0.12)), 3, 300); buildMotifStamp(); return; } const o = S.stamp.opts, step = o.font === "block" ? 7 : Math.max(1, Math.round(o.h * 0.15)); o.h = clamp(o.h + dir * step, o.font === "block" ? 7 : 4, 120); rebuildStamp(); };
 $("tbSmaller").onclick = () => resizeStamp(-1); $("tbBigger").onclick = () => resizeStamp(1);
 $("tbCancel").onclick = endText;
 document.querySelectorAll("[data-nd]").forEach(b => {
