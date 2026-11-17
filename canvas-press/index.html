@@ -661,6 +661,8 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
             </div>
             <p class="hint" style="flex:1 1 160px">Each tap moves the print 1/400 inch (about 1/30 of a stitch on 13 mesh). Check my print below works out the exact nudge for you. Your nudge is remembered on this device.</p>
           </div>
+          <button class="btn small" id="paperCopy">Paper copy of my scanned canvas (PDF)</button>
+          <p class="hint"><b>Dress rehearsal without canvas:</b> this prints your scanned canvas onto plain paper, placed exactly where the real canvas sits on the Carrier. Print it at 100% / Actual Size. Then load that paper the same way you load the Carrier and print your design PDF on it (same printer, same nudge). Ink should land on the printed threads the way it will on the real canvas. Threads print gray and the holes stay white, so it uses little ink.</p>
           <button class="btn small" id="testPage">Test page for plain paper (PDF)</button>
           <p class="hint">Print it on plain paper, lay it on the Carrier and hold both up to a window. The crosshairs should sit on the four dots. If part of a print goes missing, turn off paper width detection in your printer settings.</p>
         </details>
@@ -2217,6 +2219,65 @@ async function makePrintPdf() {
     printSummary(r);
     await saveFile(fileBase() + "-print.pdf", blob);
   } catch (e) { busy(false); setStatus("printStatus", "The print file could not be made: " + e.message, "err"); }
+}
+// A paper stand-in for the canvas: the scan, mapped through the Carrier dots onto the page, so the threads print where
+// the real threads sit on the Carrier. The design printed on top of it then shows how the real print will line up.
+async function renderPaperCopy(dpi) {
+  const sc = S.scan.canvas, G = S.grid, W = Math.round(PAGE.w * dpi), Hh = Math.round(PAGE.h * dpi);
+  // Threads dark gray, holes and backing white.
+  const src = document.createElement("canvas"); src.width = sc.width; src.height = sc.height;
+  const sx = src.getContext("2d"); sx.drawImage(sc, 0, 0);
+  const im = sx.getImageData(0, 0, src.width, src.height), a = im.data, dark = !!S.darkThreads;
+  for (let i = 0; i < a.length; i += 4) {
+    const L = 0.3 * a[i] + 0.59 * a[i + 1] + 0.11 * a[i + 2];
+    let t = clamp((L - 70) / 150, 0, 1); if (dark) t = 1 - t;
+    const v = Math.round(255 - t * 165); a[i] = a[i + 1] = a[i + 2] = v; a[i + 3] = 255;
+  }
+  sx.putImageData(im, 0, 0);
+  const out = document.createElement("canvas"); out.width = W; out.height = Hh;
+  const x = out.getContext("2d"); x.fillStyle = "#fff"; x.fillRect(0, 0, W, Hh);
+  // Page inches -> scan pixels, drawn in small tiles that are each close to flat.
+  const Hinv = homography(MARKS.map(m => [m[0], m[1]]), S.marks.map(m => [m[0], m[1]]));
+  const nx = 17, ny = 22, tw = PAGE.w / nx, th = PAGE.h / ny;
+  const layer = document.createElement("canvas"); layer.width = W; layer.height = Hh; const lx = layer.getContext("2d");
+  for (let ty = 0; ty < ny; ty++) for (let tx = 0; tx < nx; tx++) {
+    const P = [[tx * tw, ty * th], [(tx + 1) * tw, ty * th], [tx * tw, (ty + 1) * th]], Q = P.map(p => applyH(Hinv, p[0], p[1]));
+    // Affine taking scan Q -> page P (in pixels).
+    const [q0, q1, q2] = Q, [p0, p1, p2] = P.map(p => [p[0] * dpi, p[1] * dpi]);
+    const det = (q1[0] - q0[0]) * (q2[1] - q0[1]) - (q2[0] - q0[0]) * (q1[1] - q0[1]); if (!det) continue;
+    const ia = (q2[1] - q0[1]) / det, ib = -(q2[0] - q0[0]) / det, ic = -(q1[1] - q0[1]) / det, id = (q1[0] - q0[0]) / det;
+    const m11 = (p1[0] - p0[0]) * ia + (p2[0] - p0[0]) * ic, m12 = (p1[0] - p0[0]) * ib + (p2[0] - p0[0]) * id;
+    const m21 = (p1[1] - p0[1]) * ia + (p2[1] - p0[1]) * ic, m22 = (p1[1] - p0[1]) * ib + (p2[1] - p0[1]) * id;
+    lx.save(); lx.beginPath(); lx.rect(Math.floor(p0[0]) - 1, Math.floor(p0[1]) - 1, tw * dpi + 2, th * dpi + 2); lx.clip();
+    lx.setTransform(m11, m21, m12, m22, p0[0] - m11 * q0[0] - m12 * q0[1], p0[1] - m21 * q0[0] - m22 * q0[1]);
+    lx.drawImage(src, 0, 0); lx.restore();
+  }
+  src.width = 1;
+  // Keep only the mapped canvas (not the tape, Carrier paper or backing around it).
+  const mask = document.createElement("canvas"); mask.width = W; mask.height = Hh; const mx = mask.getContext("2d"); mx.fillStyle = "#000"; mx.beginPath();
+  for (let j = 0; j < G.gy; j++) for (let i = 0; i < G.gx; i++) {
+    if (!G.ST[j * G.gx + i]) continue; const q = stitchQuad(i, j); if (!q) continue;
+    const g = q.map(p => scanToPage(p[0], p[1]).map(v => v * dpi));
+    mx.moveTo(g[0][0], g[0][1]); for (let k = 1; k < 4; k++) mx.lineTo(g[k][0], g[k][1]); mx.closePath();
+  }
+  mx.fill();
+  lx.globalCompositeOperation = "destination-in"; lx.drawImage(mask, 0, 0); mask.width = 1;
+  x.drawImage(layer, 0, 0); layer.width = 1;
+  x.fillStyle = "#777"; x.font = `${Math.round(0.11 * dpi)}px sans-serif`;
+  x.fillText("Paper copy of " + (S.scan.name || "my scan") + ". Load it like the Carrier, then print the design on it.", 0.75 * dpi, 10.85 * dpi);
+  return out;
+}
+async function makePaperCopy() {
+  if (!S.scan || !S.grid || !S.marks) { toast("Scan the canvas and find its intersections first."); return; }
+  busy(true, "Making the paper copy…", 0.3); await tick();
+  try {
+    const dpi = 300, c = await renderPaperCopy(dpi);
+    const img = await canvasToPdfImage(c); c.width = 1;
+    const blob = buildPdf("q 612 0 0 792 0 0 cm /Im0 Do Q\n", [img]);
+    busy(false);
+    await saveFile(fileBase() + "-paper-copy-of-canvas.pdf", blob);
+    toast("Print it at 100% / Actual Size on plain paper, then print your design on that paper.", 6000);
+  } catch (e) { busy(false); toast("The paper copy couldn't be made: " + e.message, 6000); }
 }
 async function makePrintPng() {
   if (!canPrint()) return;
@@ -4096,6 +4157,7 @@ $("printDpi").onchange = e => { S.printDpi = +e.target.value; store.set("ccp-pri
 $("makePdf").onclick = makePrintPdf; $("makePng").onclick = makePrintPng;
 $("savePrev").onclick = async () => { if (!S.scan) return; const c = buildPreview(); await saveFile("canvas-preview.png", await canvasBlob(c)); };
 $("testPage").onclick = testPagePdf;
+$("paperCopy").onclick = makePaperCopy;
 $("brushPaint").oninput = e => { S.brush.paint = +e.target.value; syncBrushUI(); };
 $("brushErase").oninput = e => { S.brush.erase = +e.target.value; syncBrushUI(); };
 $("qsize").oninput = e => { if (S.tool === "erase") S.brush.erase = +e.target.value; else S.brush.paint = +e.target.value; syncBrushUI(); };
