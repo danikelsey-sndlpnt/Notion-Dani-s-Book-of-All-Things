@@ -642,6 +642,8 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
             <label class="tog"><input type="radio" name="pmode" value="photo"> <b>Photo</b>: prints your picture itself, smooth like a photo canvas</label>
           </div>
           <p class="hint" id="pmodeNote">Photo prints the original picture across the design's stitches (only where the design has stitches), lined up to your threads, with smooth shading instead of one color per stitch. The stitcher picks thread colors from the color key and chart. Best for photos, pets and portraits.</p>
+          <label class="tog" id="pmatchRow"><input type="checkbox" id="pmatch" checked> Match the photo's colors to my pattern (recommended: the canvas then agrees with the color key)</label>
+          <div class="status" id="pmodeStatus" hidden></div>
           <button class="btn primary wide" id="makePdf">Save print file (PDF)</button>
           <button class="btn small" id="saveKey2">Save the color key to print (PDF)</button>
           <div class="status" id="fitStatus"></div>
@@ -873,7 +875,7 @@ function adjustColor(c) {
 }
 
 /* ---------------- files ---------------- */
-const APP_VERSION = "2026.11.17-p";
+const APP_VERSION = "2026.11.17-q";
 { const v = document.getElementById("appVer2"); if (v) v.textContent = "v" + APP_VERSION; }
 let downloadsCap = null;
 (window.claude && window.claude.use ? window.claude.use("downloads") : Promise.resolve(null)).then(d => { downloadsCap = d; }).catch(() => {});
@@ -2348,6 +2350,55 @@ async function restoreScanState() {
 // grid, kept only inside the design's stitches. map(x, y) takes a scan point to the target canvas's pixels.
 S.printMode = store.get("ccp-pmode") === "photo" ? "photo" : "stitch";
 function photoReady() { return S.printMode === "photo" && S.original && S.original.canvas && !S.original.example && S.design && S.grid; }
+// The picture with its colors pulled onto the pattern: each stitch's area is shifted so its average becomes that
+// stitch's pattern color (with the same canvas color boost as a stitch print), keeping the picture's light and dark
+// detail inside it. The shift blends smoothly from stitch to stitch so no blocks show.
+function matchedPhoto() {
+  const d = S.design, o = S.original, m = o.m, key = [o.id, d.w, d.h, d.sx, d.sy, d.pal.map(hex).join(), hashPx(d.px), JSON.stringify(S.adj)].join("|");
+  if (S._matched && S._matched.key === key) return S._matched;
+  const W = o.canvas.width, H = o.canvas.height, src = o.canvas.getContext("2d").getImageData(0, 0, W, H), a = src.data;
+  const cell = (x, y) => [m[0] * x + m[2] * y + m[4] + (d.sx || 0), m[1] * x + m[3] * y + m[5] + (d.sy || 0)];
+  const n = d.w * d.h, sum = new Float64Array(n * 3), cnt = new Float64Array(n);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const [u, v] = cell(x + 0.5, y + 0.5), c = Math.floor(u), r = Math.floor(v); if (c < 0 || r < 0 || c >= d.w || r >= d.h) continue; const k = r * d.w + c, i = (y * W + x) * 4; sum[k * 3] += a[i]; sum[k * 3 + 1] += a[i + 1]; sum[k * 3 + 2] += a[i + 2]; cnt[k]++; }
+  const target = d.pal.map(c => adjustColor(c)), sh = new Float32Array(n * 3);
+  for (let k = 0; k < n; k++) { const v = d.px[k]; if (v < 0 || !cnt[k]) continue; for (let ch = 0; ch < 3; ch++) sh[k * 3 + ch] = target[v][ch] - sum[k * 3 + ch] / cnt[k]; }
+  // Bare or empty cells borrow the shift of a stitched neighbor so blending near the outline stays right.
+  const has = k => d.px[k] >= 0 && cnt[k] > 0;
+  const out = new ImageData(W, H), b = out.data;
+  const shAt = (u, v, ch) => {
+    const fu = u - 0.5, fv = v - 0.5, c0 = Math.floor(fu), r0 = Math.floor(fv), tx = fu - c0, ty = fv - r0; let acc = 0, wsum = 0;
+    for (const [dc, dr, w] of [[0, 0, (1 - tx) * (1 - ty)], [1, 0, tx * (1 - ty)], [0, 1, (1 - tx) * ty], [1, 1, tx * ty]]) {
+      const c = c0 + dc, r = r0 + dr; if (c < 0 || r < 0 || c >= d.w || r >= d.h) continue; const k = r * d.w + c; if (!has(k)) continue; acc += sh[k * 3 + ch] * w; wsum += w;
+    }
+    if (wsum > 0) return acc / wsum;
+    const c = clamp(Math.floor(u), 0, d.w - 1), r = clamp(Math.floor(v), 0, d.h - 1), k = r * d.w + c; return has(k) ? sh[k * 3 + ch] : 0;
+  };
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const i = (y * W + x) * 4, [u, v] = cell(x + 0.5, y + 0.5);
+    for (let ch = 0; ch < 3; ch++) b[i + ch] = clamp(Math.round(a[i + ch] + shAt(u, v, ch)), 0, 255);
+    b[i + 3] = 255;
+  }
+  const c = document.createElement("canvas"); c.width = W; c.height = H; c.getContext("2d").putImageData(out, 0, 0);
+  // Check: how close each stitch's printed average lands to its pattern color.
+  const sum2 = new Float64Array(n * 3);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const [u, v] = cell(x + 0.5, y + 0.5), cc = Math.floor(u), r = Math.floor(v); if (cc < 0 || r < 0 || cc >= d.w || r >= d.h) continue; const k = r * d.w + cc, i = (y * W + x) * 4; sum2[k * 3] += b[i]; sum2[k * 3 + 1] += b[i + 1]; sum2[k * 3 + 2] += b[i + 2]; }
+  let ok = 0, tot = 0, worst = 0;
+  for (let k = 0; k < n; k++) { const v = d.px[k]; if (v < 0 || !cnt[k]) continue; tot++; const L1 = rgb2lab(sum2[k * 3] / cnt[k], sum2[k * 3 + 1] / cnt[k], sum2[k * 3 + 2] / cnt[k]), L2 = rgb2lab(...target[v]); const de = Math.hypot(L1[0] - L2[0], L1[1] - L2[1], L1[2] - L2[2]); worst = Math.max(worst, de); if (de < 6) ok++; }
+  S._matched = { key, canvas: c, ok, tot, worst };
+  return S._matched;
+}
+function hashPx(px) { let h = 0; for (let i = 0; i < px.length; i++) h = (h * 31 + px[i] + 2) | 0; return h; }
+function photoStatus() {
+  const el = $("pmodeStatus"); if (!el) return;
+  $("pmatchRow").hidden = S.printMode !== "photo";
+  if (S.printMode !== "photo") { el.hidden = true; return; }
+  el.hidden = false;
+  if (!(S.original && S.original.canvas && !S.original.example)) { el.className = "status err"; el.textContent = "Photo is on, but this design has no original picture (it came from a stitch file, a blank canvas or the example), so it prints stitch-painted. Add artwork and convert it to use Photo."; return; }
+  if (!S.design) return;
+  const mt = matchedPhoto(), pct = mt.tot ? Math.round(100 * mt.ok / mt.tot) : 0;
+  el.className = "status " + (pct >= 95 ? "ok" : "err");
+  el.textContent = `Photo is on and matched to your pattern: ${pct}% of the ${mt.tot} stitches print within a close match of their pattern color.` + (pct < 95 ? " The rest are spots where the picture is much darker or lighter than the pattern color (pure black or white areas), so they can't shift all the way. Check them in the Preview." : " The Preview shows exactly what will print.");
+}
 function drawPhoto(x, map, W, H, yOff = 0) {
   const d = S.design, pl = placement(), o = S.original, m = o.m; if (!pl) return;
   const det = m[0] * m[3] - m[1] * m[2]; if (!det) return;
@@ -2357,7 +2408,9 @@ function drawPhoto(x, map, W, H, yOff = 0) {
   // Color boost to match the stitch print's settings.
   const k = S.adj.raw ? 1 : S.adj.sat / 100, ct = S.adj.raw ? 1 : S.adj.contrast / 100, br = S.adj.raw ? 1 : 1 - S.adj.deepen / 100 * 0.6;
   const layer = document.createElement("canvas"); layer.width = W; layer.height = H; const lx = layer.getContext("2d");
-  lx.filter = `saturate(${k}) contrast(${ct}) brightness(${br})`;
+  // Matched to the pattern (the color boost is already in it); unmatched falls back to the plain picture with the boost.
+  const src = S.photoMatch === false ? o.canvas : matchedPhoto().canvas;
+  if (S.photoMatch === false) lx.filter = `saturate(${k}) contrast(${ct}) brightness(${br})`;
   const T = 3;
   const tri = (P, Q) => {
     const [p0, p1, p2] = P, [q0, q1, q2] = Q;
@@ -2370,7 +2423,7 @@ function drawPhoto(x, map, W, H, yOff = 0) {
     // grow the clip a hair so neighboring tiles leave no seam
     lx.translate(cx2, cy2); lx.scale(1.02, 1.02); lx.translate(-cx2, -cy2); lx.clip();
     lx.setTransform(a, c2, b2, d2, p0[0] - a * q0[0] - b2 * q0[1], p0[1] - c2 * q0[0] - d2 * q0[1]);
-    lx.drawImage(o.canvas, 0, 0); lx.restore();
+    lx.drawImage(src, 0, 0); lx.restore();
   };
   for (let r = 0; r < d.h; r += T) for (let c = 0; c < d.w; c += T) {
     const c1 = Math.min(d.w, c + T), r1 = Math.min(d.h, r + T);
@@ -4426,7 +4479,7 @@ function setTab(n) {
   [1, 2, 3].forEach(k => { $("tab" + k).setAttribute("aria-selected", k === n); $("pane" + k).hidden = k !== n; });
   if (n === 1) setView("design");
   if (n === 2) { if (!S.scan) runExample(); else setView(S.grid ? "map" : "snap"); }
-  if (n === 3) { if (S.scan) setView("prev"); else { setView("design"); toast("Your design is shown. Load your scan on step 2 to see it on your canvas."); } updateFit(); }
+  if (n === 3) { photoStatus(); if (S.scan) setView("prev"); else { setView("design"); toast("Your design is shown. Load your scan on step 2 to see it on your canvas."); } updateFit(); }
 }
 function updateCounts() {
   const G = S.grid; if (!G) return; const c = [0, 0, 0, 0, 0];
@@ -4675,8 +4728,10 @@ $("makePdf").onclick = makePrintPdf; $("makePng").onclick = makePrintPng;
 $("savePrev").onclick = async () => { if (!S.scan) return; const c = buildPreview(); await saveFile("canvas-preview.png", await canvasBlob(c)); };
 $("testPage").onclick = testPagePdf;
 $("paperCopy").onclick = makePaperCopy;
+S.photoMatch = store.get("ccp-pmatch") !== false; $("pmatch").checked = S.photoMatch;
+$("pmatch").onchange = e => { S.photoMatch = e.target.checked; store.set("ccp-pmatch", S.photoMatch); S._matched = null; previewDirty(); photoStatus(); };
 document.querySelectorAll('input[name="pmode"]').forEach(r => { r.checked = r.value === S.printMode; r.onchange = () => {
-  S.printMode = r.value; store.set("ccp-pmode", S.printMode); previewDirty();
+  S.printMode = r.value; store.set("ccp-pmode", S.printMode); previewDirty(); photoStatus();
   if (S.printMode === "photo" && !(S.original && S.original.canvas && !S.original.example)) toast("Photo needs the design's original picture (artwork you added). This design has none, so it will print stitch-painted.", 6000);
   else toast(S.printMode === "photo" ? "Photo canvas: the print file now carries your picture itself. Check the Preview." : "Stitch-painted: one clear color per intersection.");
 }; });
