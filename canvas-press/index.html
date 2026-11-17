@@ -644,6 +644,11 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
           <div class="row" role="radiogroup" aria-label="Canvas type">
             <label class="tog"><input type="radio" name="pmode" value="stitch" checked> <b>Stitch-painted</b>: every intersection one clear color</label>
             <label class="tog"><input type="radio" name="pmode" value="photo"> <b>Photo</b>: prints your picture itself, smooth like a photo canvas</label>
+            <label class="tog"><input type="radio" name="pmode" value="dots"> <b>Color dots</b>: a small dot of each stitch's color on its intersection, a guide to paint over by hand</label>
+          </div>
+          <div class="row" id="dotRow" hidden>
+            <label class="f">Dot size <small id="dotOut"></small><input type="range" id="dotSize" min="10" max="45" value="24"></label>
+            <p class="hint" style="flex:1 1 200px">Each stitch gets a round dot of its color right on the thread crossing, so the canvas shows exactly which color goes where while you paint. Uses a fraction of the ink. Bigger dots are easier to see; smaller ones hide better under paint.</p>
           </div>
           <p class="hint" id="pmodeNote">Photo prints the original picture across the design's stitches (only where the design has stitches), lined up to your threads, with smooth shading instead of one color per stitch. The stitcher picks thread colors from the color key and chart. Best for photos, pets and portraits.</p>
           <label class="tog" id="pmatchRow"><input type="checkbox" id="pmatch" checked> Match the photo's colors to my pattern (recommended: the canvas then agrees with the color key)</label>
@@ -879,7 +884,7 @@ function adjustColor(c) {
 }
 
 /* ---------------- files ---------------- */
-const APP_VERSION = "2026.11.17-s";
+const APP_VERSION = "2026.11.17-t";
 { const v = document.getElementById("appVer2"); if (v) v.textContent = "v" + APP_VERSION; }
 let downloadsCap = null;
 (window.claude && window.claude.use ? window.claude.use("downloads") : Promise.resolve(null)).then(d => { downloadsCap = d; }).catch(() => {});
@@ -2419,7 +2424,15 @@ async function restoreScanState() {
 }
 // Photo canvas: the original picture, carried onto the canvas stitch block by stitch block through the mapped
 // grid, kept only inside the design's stitches. map(x, y) takes a scan point to the target canvas's pixels.
-S.printMode = store.get("ccp-pmode") === "photo" ? "photo" : "stitch";
+S.printMode = ["photo", "dots"].includes(store.get("ccp-pmode")) ? store.get("ccp-pmode") : "stitch";
+S.dotSize = store.get("ccp-dot") || 24;
+// Color dots: a round dot of the stitch's color centered on its crossing; r = fraction of a stitch.
+function dotPath(x, q, map, r) {
+  const c = [(q[0][0] + q[1][0] + q[2][0] + q[3][0]) / 4, (q[0][1] + q[1][1] + q[2][1] + q[3][1]) / 4];
+  const P = map(c[0], c[1]), E = map(c[0] + (q[1][0] - q[0][0] + q[2][0] - q[3][0]) / 2, c[1] + (q[1][1] - q[0][1] + q[2][1] - q[3][1]) / 2);
+  const rad = Math.hypot(E[0] - P[0], E[1] - P[1]) * r;
+  x.beginPath(); x.arc(P[0], P[1], rad, 0, Math.PI * 2); x.fill();
+}
 function photoReady() { return S.printMode === "photo" && S.original && S.original.canvas && !S.original.example && S.design && S.grid; }
 // The picture with its colors pulled onto the pattern: each stitch's area is shifted so its average becomes that
 // stitch's pattern color (with the same canvas color boost as a stitch print), keeping the picture's light and dark
@@ -2527,7 +2540,8 @@ function buildPreview() {
     x.globalCompositeOperation = "multiply";
     const painted = paintedAt(), photo = photoReady();
     if (photo) { const mp = (a, b) => [a, b]; mp.landed = true; drawPhoto(x, mp, previewCanvas.width, previewCanvas.height); }
-    forEachStitch((q, v, i, j) => { if (photo && v < S.design.pal.length) return; const g = stitchShape(q, i, j, f, painted, true); x.fillStyle = pal[v]; x.beginPath(); x.moveTo(g[0][0], g[0][1]); for (let k = 1; k < 4; k++) x.lineTo(g[k][0], g[k][1]); x.closePath(); x.fill(); }, S.printAll);
+    const dots = S.printMode === "dots";
+    forEachStitch((q, v, i, j) => { if (photo && v < S.design.pal.length) return; if (dots) { x.fillStyle = pal[v]; dotPath(x, q, (a, b) => [a, b], S.dotSize / 100); return; } const g = stitchShape(q, i, j, f, painted, true); x.fillStyle = pal[v]; x.beginPath(); x.moveTo(g[0][0], g[0][1]); for (let k = 1; k < 4; k++) x.lineTo(g[k][0], g[k][1]); x.closePath(); x.fill(); }, S.printAll);
     x.globalCompositeOperation = "source-over";
   }
   previewStale = false;
@@ -2551,8 +2565,10 @@ async function renderPrint(dpi, y0 = 0, hStrip = null) {
   const painted = paintedAt(), photo = photoReady();
   // Drawn strip by strip: the layer covers just this strip, then lands at its place on the page.
   if (photo) drawPhoto(x, (a, b) => { const pg = scanToPage(a, b); return [(pg[0] + nx) * dpi, (pg[1] + ny) * dpi - y0]; }, W, H, y0);
+  const dots = S.printMode === "dots", toPg = (a, b) => { const pg = scanToPage(a, b); return [(pg[0] + nx) * dpi, (pg[1] + ny) * dpi]; };
   const r = forEachStitch((q, v, i, j) => {
     if (photo && v < S.design.pal.length) return;
+    if (dots) { x.fillStyle = pal[v]; dotPath(x, q, toPg, S.dotSize / 100); return; }
     const g = stitchShape(q, i, j, f, painted).map(p => { const pg = scanToPage(p[0], p[1]); return [(pg[0] + nx) * dpi, (pg[1] + ny) * dpi]; });
     x.fillStyle = pal[v]; x.beginPath(); x.moveTo(g[0][0], g[0][1]); for (let k = 1; k < 4; k++) x.lineTo(g[k][0], g[k][1]); x.closePath(); x.fill();
   }, S.printAll);
@@ -4809,10 +4825,14 @@ $("makePdf").onclick = makePrintPdf; $("makePng").onclick = makePrintPng;
 $("savePrev").onclick = async () => { if (!S.scan) return; const c = buildPreview(); await saveFile("canvas-preview.png", await canvasBlob(c)); };
 $("testPage").onclick = testPagePdf;
 $("paperCopy").onclick = makePaperCopy;
+$("dotRow").hidden = S.printMode !== "dots"; $("dotSize").value = S.dotSize;
+const dotOut = () => { $("dotOut").textContent = `${S.dotSize}% of a stitch`; };
+dotOut(); $("dotSize").oninput = e => { S.dotSize = +e.target.value; store.set("ccp-dot", S.dotSize); dotOut(); previewDirty(); };
 S.photoMatch = store.get("ccp-pmatch") !== false; $("pmatch").checked = S.photoMatch;
 $("pmatch").onchange = e => { S.photoMatch = e.target.checked; store.set("ccp-pmatch", S.photoMatch); S._matched = null; previewDirty(); photoStatus(); };
 document.querySelectorAll('input[name="pmode"]').forEach(r => { r.checked = r.value === S.printMode; r.onchange = () => {
-  S.printMode = r.value; store.set("ccp-pmode", S.printMode); previewDirty(); photoStatus();
+  S.printMode = r.value; store.set("ccp-pmode", S.printMode); previewDirty(); photoStatus(); $("dotRow").hidden = S.printMode !== "dots";
+  if (S.printMode === "dots") { toast("Color dots: each stitch prints as a small dot of its color. Check the Preview."); return; }
   if (S.printMode === "photo" && !(S.original && S.original.canvas && !S.original.example)) toast("Photo needs the design's original picture (artwork you added). This design has none, so it will print stitch-painted.", 6000);
   else toast(S.printMode === "photo" ? "Photo canvas: the print file now carries your picture itself. Check the Preview." : "Stitch-painted: one clear color per intersection.");
 }; });
