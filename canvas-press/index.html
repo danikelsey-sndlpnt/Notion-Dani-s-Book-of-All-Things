@@ -795,7 +795,7 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
           <button class="btn small" id="gmGauge">Mesh gauge (PDF)</button>
           <p class="hint"><b>2. Print the grid sheet</b> on plain paper at 100% / Actual Size. It's also a Carrier (it has the four dots), so it feeds the same way.</p>
           <button class="btn small" id="gmSheet">Grid sheet (PDF)</button>
-          <p class="hint"><b>3. Line up the canvas.</b> Lay it over the grid, centered on the red arrows. Slide and turn it until every hole looks solid black, with no white slivers along the thread edges, near the arrows and out at the corners. Tape all four sides flat.</p>
+          <p class="hint"><b>3. Line up the canvas.</b> Lay it over the grid, centered on the red arrows. The numbers around the edge count holes out from the arrows in 5s, so you can check the same hole number lines up on both sides. Slide and turn it until every hole looks solid black, with no white slivers along the thread edges, near the arrows and out at the corners. Tape all four sides flat.</p>
           <p class="hint"><b>4. Print the design</b> onto the sheet with the canvas on it, loaded exactly like you loaded the sheet in step 2. Your nudge and edge settings still apply.</p>
           <button class="btn thread wide" id="gmPrint">Design for the grid sheet (PDF)</button>
           <div class="status" id="gmStatus" hidden></div>
@@ -964,7 +964,7 @@ function adjustColor(c) {
 }
 
 /* ---------------- files ---------------- */
-const APP_VERSION = "2026.11.18-c";
+const APP_VERSION = "2026.11.18-d";
 { const v = document.getElementById("appVer2"); if (v) v.textContent = "v" + APP_VERSION; }
 let downloadsCap = null;
 (window.claude && window.claude.use ? window.claude.use("downloads") : Promise.resolve(null)).then(d => { downloadsCap = d; }).catch(() => {});
@@ -3650,11 +3650,24 @@ function gridSheetPdf() {
   const tri = (ax, ay, bx, by, cx2, cy2) => `${pt(ax)} ${ptY(ay)} m ${pt(bx)} ${ptY(by)} l ${pt(cx2)} ${ptY(cy2)} l f\n`;
   c += tri(cxh, y0 - 0.02, cxh - 0.07, y0 - 0.17, cxh + 0.07, y0 - 0.17) + tri(cxh, y1 + 0.02, cxh - 0.07, y1 + 0.17, cxh + 0.07, y1 + 0.17);
   c += tri(x0 - 0.02, cyh, x0 - 0.17, cyh - 0.07, x0 - 0.17, cyh + 0.07) + tri(x1 + 0.02, cyh, x1 + 0.17, cyh - 0.07, x1 + 0.17, cyh + 0.07);
-  c += "0.55 G 0.5 w\n";
-  for (let a = L.ci % 10; a < L.gx; a += 10) { const x = L.sx(a + 0.5); if (x < x0 || x > x1 || a === L.ci) continue; c += `${pt(x)} ${ptY(y0 - 0.02)} m ${pt(x)} ${ptY(y0 - 0.1)} l ${pt(x)} ${ptY(y1 + 0.02)} m ${pt(x)} ${ptY(y1 + 0.1)} l\n`; }
-  for (let b = L.cj % 10; b < L.gy; b += 10) { const y = L.sy(b + 0.5); if (y < y0 || y > y1 || b === L.cj) continue; c += `${pt(x0 - 0.02)} ${ptY(y)} m ${pt(x0 - 0.1)} ${ptY(y)} l ${pt(x1 + 0.02)} ${ptY(y)} m ${pt(x1 + 0.1)} ${ptY(y)} l\n`; }
-  c += "S\n0.35 g\n" + pdfText(2.2, 0.42, 7, `Sookie's Canvas Press grid sheet: ${L.m.a} x ${L.m.d} holes per inch  -  print at 100% / Actual Size`);
-  c += pdfText(2.2, 0.56, 7, "Line the canvas holes up on the black squares, centered on the red arrows. This edge goes in first.");
+  // Ticks every 5 holes (longer every 10), numbered as holes counted out from the red arrows.
+  const tw = (str, size) => str.length * 0.55 * size / 72;
+  let lines = "", nums = "";
+  for (let a = L.ci % 5; a < L.gx; a += 5) {
+    const x = L.sx(a + 0.5), k = a - L.ci; if (x < x0 || x > x1 || k === 0) continue;
+    const t = k % 10 === 0 ? 0.13 : 0.08, lab = String(Math.abs(k)), lx = x - tw(lab, 5.5) / 2;
+    lines += `${pt(x)} ${ptY(y0 - 0.02)} m ${pt(x)} ${ptY(y0 - 0.02 - t)} l ${pt(x)} ${ptY(y1 + 0.02)} m ${pt(x)} ${ptY(y1 + 0.02 + t)} l\n`;
+    nums += pdfText(lx, y0 - 0.2, 5.5, lab) + pdfText(lx, y1 + 0.26, 5.5, lab);
+  }
+  for (let b = L.cj % 5; b < L.gy; b += 5) {
+    const y = L.sy(b + 0.5), k = b - L.cj; if (y < y0 || y > y1 || k === 0) continue;
+    const t = k % 10 === 0 ? 0.13 : 0.08, lab = String(Math.abs(k));
+    lines += `${pt(x0 - 0.02)} ${ptY(y)} m ${pt(x0 - 0.02 - t)} ${ptY(y)} l ${pt(x1 + 0.02)} ${ptY(y)} m ${pt(x1 + 0.02 + t)} ${ptY(y)} l\n`;
+    nums += pdfText(x0 - 0.2 - tw(lab, 5.5), y + 0.025, 5.5, lab) + pdfText(x1 + 0.2, y + 0.025, 5.5, lab);
+  }
+  c += "0.45 G 0.5 w\n" + lines + "S\n0.3 g\n" + nums;
+  c += "0.35 g\n" + pdfText(2.2, 0.22, 7, `Sookie's Canvas Press grid sheet: ${L.m.a} x ${L.m.d} holes per inch  -  print at 100% / Actual Size`);
+  c += pdfText(2.2, 0.34, 7, "Line the canvas holes up on the black squares, centered on the red arrows. This edge goes in first.");
   saveFile(`grid-sheet-${L.m.a}x${L.m.d}-v${APP_VERSION}.pdf`, buildPdf(c));
   store.set("ccp-gridmesh", L.m);
 }
