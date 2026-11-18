@@ -60,3 +60,8 @@ Reading a PDF uses pdf.js from cdnjs. If that can't load, the app pulls the scan
 
 DMC color data: [craft-color-codes](https://www.npmjs.com/package/craft-color-codes) by [MakeBead](https://makebead.com/), CC BY 4.0. DMC doesn't publish screen colors, so all DMC matches are approximate; check against real floss.
 
+
+## Tools panel: hide, fold, search (2026.11.18-b)
+- **Hide ⟩** at the top of the panel tucks it away so the picture gets the full width; **⟨ Tools** (next to Full screen) brings it back. Remembered between visits.
+- Tap any section heading in the panel to fold or unfold it (remembered too).
+- **Search tools** box: type a word (circle, dots, nudge, ink spread, shapes…) and tap a result, or press Enter for the first one. The app jumps to that step, opens the section and flashes the tool. Press **/** anywhere to jump to the search box.

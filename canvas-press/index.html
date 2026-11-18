@@ -148,6 +148,22 @@ h1 .ver { display: inline-block; vertical-align: middle; font: 700 12px var(--mo
 .busy .meter { width: 220px; }
 
 /* Panel */
+.app.nopanel { grid-template-columns: minmax(0, 1fr); }
+.app.nopanel .panel { display: none; }
+.psearch { display: flex; gap: 8px; padding: 12px 14px 0; align-items: center; }
+.psearch input { flex: 1; min-width: 0; font: 500 14px var(--body); padding: 9px 12px; border-radius: 10px; border: 1.5px solid var(--line); background: var(--bg, #fff); color: var(--ink); }
+.sres { margin: 8px 14px 0; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); max-height: 320px; overflow: auto; box-shadow: var(--shadow); }
+.sres button { display: block; width: 100%; text-align: left; border: 0; border-bottom: 1px solid var(--line); background: none; padding: 9px 12px; cursor: pointer; font: 600 13px var(--body); color: var(--ink); }
+.sres button:last-child { border-bottom: 0; }
+.sres button:hover, .sres button:focus { background: rgba(240,98,146,.1); outline: none; }
+.sres small { display: block; font: 500 11px var(--body); color: var(--muted); margin-top: 2px; }
+.sres .none { padding: 10px 12px; font: 500 13px var(--body); color: var(--muted); }
+.group > h3 { cursor: pointer; user-select: none; display: flex; justify-content: space-between; align-items: center; }
+.group > h3::after { content: "\2212"; font: 700 14px var(--body); color: var(--muted); padding: 0 2px; }
+.group.folded > h3::after { content: "+"; }
+.group.folded > :not(h3) { display: none !important; }
+@keyframes flashIt { 0%, 60% { box-shadow: 0 0 0 3px #F06292, 0 0 0 7px rgba(240,98,146,.3); } 100% { box-shadow: none; } }
+.flashIt { animation: flashIt 1.8s ease-out; border-radius: 8px; }
 .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 18px; box-shadow: var(--shadow); min-width: 0; }
 .tabs { display: flex; gap: 2px; padding: 6px; border-bottom: 1px solid var(--line); }
 .tabs button { flex: 1 1 0; border: 0; background: transparent; color: var(--ink-2); font: 600 14px var(--body); padding: 9px 8px; border-radius: 10px; cursor: pointer; display: flex; align-items: center; gap: 7px; justify-content: center; }
@@ -280,6 +296,7 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
           <button id="zIn" aria-label="Zoom in">+</button>
         </div>
         <button class="btn small" id="fullBtn" aria-pressed="false">Full screen</button>
+        <button class="btn small" id="panelShow" hidden title="Show the tools panel">⟨ Tools</button>
       </div>
       <div class="screen" id="screen">
         <canvas id="view"></canvas>
@@ -337,7 +354,12 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
       </div>
     </section>
 
-    <section class="panel">
+    <section class="panel" id="panel">
+      <div class="psearch">
+        <input type="search" id="toolSearch" placeholder="Search tools: circle, dots, nudge…" aria-label="Search tools" autocomplete="off">
+        <button class="btn small" id="panelHide" title="Hide this panel so the picture gets the whole width">Hide ⟩</button>
+      </div>
+      <div class="sres" id="searchRes" hidden role="listbox" aria-label="Matching tools"></div>
       <div class="tabs" role="tablist">
         <button role="tab" id="tab1" aria-selected="true"><span class="n">1</span>Design</button>
         <button role="tab" id="tab2" aria-selected="false"><span class="n">2</span>Scan</button>
@@ -923,7 +945,7 @@ function adjustColor(c) {
 }
 
 /* ---------------- files ---------------- */
-const APP_VERSION = "2026.11.18-a";
+const APP_VERSION = "2026.11.18-b";
 { const v = document.getElementById("appVer2"); if (v) v.textContent = "v" + APP_VERSION; }
 let downloadsCap = null;
 (window.claude && window.claude.use ? window.claude.use("downloads") : Promise.resolve(null)).then(d => { downloadsCap = d; }).catch(() => {});
@@ -3488,6 +3510,73 @@ function transformClip(kind) {
   if (st.motif && !transformClip.replaying) st.motif.ops.push(kind);
   textBarInfo(); renderView();
 }
+/* ---- Panel: hide/show, fold sections, search tools ---- */
+function setPanel(show) {
+  document.querySelector(".app").classList.toggle("nopanel", !show);
+  $("panelShow").hidden = show; store.set("ccp-panel", show);
+  setTimeout(() => { resize(); softFit(); }, 30);
+}
+function initFolding() {
+  const folded = store.get("ccp-folded") || [];
+  document.querySelectorAll("#panel .group > h3").forEach(h => {
+    const key = h.textContent.trim(); if (folded.includes(key)) h.parentElement.classList.add("folded");
+    h.setAttribute("role", "button"); h.tabIndex = 0; h.title = "Tap to fold or unfold this section";
+    const flip = () => { h.parentElement.classList.toggle("folded"); const now = [...document.querySelectorAll("#panel .group.folded > h3")].map(x => x.textContent.trim()); store.set("ccp-folded", now); };
+    h.onclick = flip; h.onkeydown = e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); flip(); } };
+  });
+}
+function toolIndex() {
+  const out = [], tabName = { pane1: "Design", pane2: "Scan", pane3: "Print" };
+  for (const pid of ["pane1", "pane2", "pane3"]) {
+    const pane = $(pid); if (!pane) continue;
+    pane.querySelectorAll("h3, summary, button, label, p.hint").forEach(el => {
+      if (el.closest(".sres") || el.closest("[hidden]:not(.sec)") ) return;
+      let text = (el.tagName === "LABEL" ? [...el.childNodes].filter(n => n.nodeType === 3 || (n.tagName && !/INPUT|SELECT|TEXTAREA/.test(n.tagName))).map(n => n.textContent).join(" ") : el.textContent).replace(/\s+/g, " ").trim();
+      if (!text || text.length < 3 || /^[+\-−◀▶▲▼⟲⟳]+$/.test(text)) return;
+      if (text.length > 90) text = text.slice(0, 88) + "…";
+      const grp = el.closest(".group"), sec = grp && grp.querySelector("h3") ? grp.querySelector("h3").textContent.trim() : "", det = el.closest("details");
+      const where = [tabName[pid] + " step", sec, det && el.tagName !== "SUMMARY" ? det.querySelector("summary").textContent.trim() : ""].filter(Boolean).join(" › ");
+      out.push({ el, text, where, pid, hay: (text + " " + where + " " + (el.title || "")).toLowerCase() });
+    });
+  }
+  return out;
+}
+const SYNONYMS = { round: "circle", ornament: "circle", oval: "circle", dot: "dots", guide: "guide", ink: "ink", align: "nudge", offset: "nudge", shift: "nudge", save: "save", backup: "backup", background: "background", erase: "erase", ai: "claude", help: "claude", copy: "copy", paste: "paste", size: "size", inch: "size", mesh: "mesh", photo: "photo", key: "key", chart: "chart", initials: "initials", text: "text", shape: "shapes", heart: "shapes", star: "shapes", bow: "shapes" };
+function runToolSearch() {
+  const q = $("toolSearch").value.trim().toLowerCase(), box = $("searchRes");
+  if (!q) { box.hidden = true; return; }
+  const words = q.split(/\s+/).map(w => SYNONYMS[w] && !q.includes(SYNONYMS[w]) ? [w, SYNONYMS[w]] : [w]);
+  const seen = new Set(), hits = [];
+  for (const it of toolIndex()) {
+    if (!words.every(alts => alts.some(w => it.hay.includes(w)))) continue;
+    const k = it.text + "|" + it.where; if (seen.has(k)) continue; seen.add(k);
+    const score = (it.text.toLowerCase().startsWith(words[0][0]) ? 0 : 1) + (it.text.toLowerCase().includes(words[0][0]) ? 0 : 2) + (it.el.tagName === "H3" || it.el.tagName === "SUMMARY" ? -0.5 : 0);
+    hits.push([score, it]);
+  }
+  hits.sort((a, b) => a[0] - b[0]);
+  box.textContent = ""; box.hidden = false;
+  if (!hits.length) { const d = document.createElement("div"); d.className = "none"; d.textContent = `No tools match "${q}". Try another word, like circle, print, scan, color or size.`; box.appendChild(d); return; }
+  hits.slice(0, 10).forEach(([, it]) => {
+    const b = document.createElement("button"); b.type = "button"; b.setAttribute("role", "option");
+    const t = document.createElement("span"); t.textContent = it.text; const w = document.createElement("small"); w.textContent = it.where;
+    b.append(t, w); b.onclick = () => goToTool(it); box.appendChild(b);
+  });
+}
+function goToTool(it) {
+  const n = { pane1: 1, pane2: 2, pane3: 3 }[it.pid];
+  if ($("tab" + n).getAttribute("aria-selected") !== "true") setTab(n);
+  let d = it.el.closest("details"); while (d) { d.open = true; d = d.parentElement && d.parentElement.closest("details"); }
+  const g = it.el.closest(".group"); if (g) g.classList.remove("folded");
+  $("searchRes").hidden = true; $("toolSearch").value = "";
+  setTimeout(() => {
+    const el = it.el.offsetParent ? it.el : (it.el.closest("label, .row, .group") || it.el);
+    el.scrollIntoView({ block: "center", behavior: "smooth" });
+    el.classList.remove("flashIt"); void el.offsetWidth; el.classList.add("flashIt"); setTimeout(() => el.classList.remove("flashIt"), 2000);
+    const inp = el.matches("input, select, textarea, button") ? el : el.querySelector("input, select, textarea");
+    if (inp && inp.focus) inp.focus({ preventScroll: true });
+  }, 60);
+}
+
 /* ---- Circle guide ---- */
 // Same rule as Dani's 13-4 Circle Stitchly chart: every stitch whose center lies inside the circle and that touches
 // the outside on a side is part of the outline (52 stitches across gives that exact chart, stitch for stitch).
@@ -5174,6 +5263,12 @@ $("makePdf").onclick = makePrintPdf; $("makePng").onclick = makePrintPng;
 $("savePrev").onclick = async () => { if (!S.scan) return; const c = buildPreview(); await saveFile("canvas-preview.png", await canvasBlob(c)); };
 $("testPage").onclick = testPagePdf;
 $("paperCopy").onclick = makePaperCopy;
+$("panelHide").onclick = () => setPanel(false); $("panelShow").onclick = () => setPanel(true);
+if (store.get("ccp-panel") === false) setPanel(false);
+initFolding();
+$("toolSearch").oninput = runToolSearch;
+$("toolSearch").onkeydown = e => { if (e.key === "Enter") { const f = $("searchRes").querySelector("button"); if (f) f.click(); } if (e.key === "Escape") { $("toolSearch").value = ""; runToolSearch(); } if (e.key === "ArrowDown") { const f = $("searchRes").querySelector("button"); if (f) { e.preventDefault(); f.focus(); } } };
+window.addEventListener("keydown", e => { if (e.key === "/" && !e.target.matches("input, select, textarea")) { e.preventDefault(); setPanel(true); $("toolSearch").focus(); } });
 { const sel = $("guideSize"), std = ["3", "3.5", "4", "4.5", "5"], v = String(S.guide.inches);
   if (std.includes(v)) sel.value = v; else { sel.value = "custom"; $("guideCustom").value = v; $("guideCustomWrap").hidden = false; } }
 $("guideOn").onchange = e => { S.guide.on = e.target.checked; $("guideCtl").hidden = !S.guide.on; if (S.guide.on && S.view !== "design") setView("design"); guideChanged(); };
