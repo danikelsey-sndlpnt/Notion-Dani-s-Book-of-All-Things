@@ -884,7 +884,7 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
   <div class="dlg-in">
     <h3 id="iniTitle">Initials on the canvas</h3>
     <div class="row">
-      <label class="f"><span id="iniTextLbl">Initials</span><input type="text" id="iniText" maxlength="8" placeholder="DK" autocomplete="off"></label>
+      <label class="f"><span id="iniTextLbl">Initials or name</span><input type="text" id="iniText" maxlength="32" placeholder="DK or Sookie" autocomplete="off"></label>
       <label class="f">Font<select id="iniFont">
         <option value="block">Block letters (crisp when small)</option>
         <option value="tiny">Tiny block letters (5 stitches tall)</option>
@@ -995,7 +995,7 @@ function adjustColor(c) {
 }
 
 /* ---------------- files ---------------- */
-const APP_VERSION = "2026.11.18-i";
+const APP_VERSION = "2026.11.18-j";
 { const v = document.getElementById("appVer2"); if (v) v.textContent = "v" + APP_VERSION; }
 let downloadsCap = null;
 (window.claude && window.claude.use ? window.claude.use("downloads") : Promise.resolve(null)).then(d => { downloadsCap = d; }).catch(() => {});
@@ -3397,7 +3397,7 @@ let dlgMode = "initials";
 function setDlgMode(m) {
   dlgMode = m; const t = m === "text";
   $("iniTitle").textContent = t ? "Add text to the design" : "Initials on the canvas";
-  $("iniTextLbl").textContent = t ? "Text" : "Initials";
+  $("iniTextLbl").textContent = t ? "Text" : "Initials or name";
   $("iniText").maxLength = t ? 40 : 8; $("iniText").placeholder = t ? "Merry Christmas" : "DK";
   $("iniPlaceRow").hidden = t; $("iniSave").textContent = t ? "Place on the design" : "Add to the print";
 }
