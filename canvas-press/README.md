@@ -79,3 +79,7 @@ Where two different colors touch, the print now meets exactly halfway (the white
 
 ## Color legend on the canvas (2026.11.18-h)
 Print step → "Color legend on the canvas": None / Beside the design (right) / Under the design. Prints a 3 x 3 stitch block of each used color, 4 stitches from the design, with its DMC number beside it (up to 12 per column, then wraps). Works for the scanned print, the grid-sheet print, Preview, and the grid sheet outline.
+
+## Initials: remove, resize, place by hand; Preview without a scan (2026.11.18-i)
+- Print step, under Edit initials: **Smaller / Bigger** (block letters step down to new *Tiny block letters*, 5 stitches tall), **Remove initials**, and arrow buttons that move them 1 stitch. Or drag the initials on the Preview. The hand placement (dx, dy) is saved with the initials.
+- With no scan loaded, **Preview** shows the design, initials and color legend on a plain canvas at the grid sheet mesh.

@@ -700,6 +700,19 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
             <button class="btn small" id="iniOpen">Add initials</button>
             <span class="hint" id="iniSummary" style="flex:1 1 160px"></span>
           </div>
+          <div class="row" id="iniQuick" hidden style="align-items:center">
+            <button class="btn small" id="iniSmaller" title="Make the initials smaller">Smaller</button>
+            <button class="btn small" id="iniBigger" title="Make the initials bigger">Bigger</button>
+            <button class="btn small" id="iniDel">Remove initials</button>
+          </div>
+          <div class="row" id="iniMoveRow" hidden style="align-items:center;gap:6px">
+            <span class="hint">Move 1 stitch:</span>
+            <button class="btn small" id="iniL" aria-label="Move initials left">←</button>
+            <button class="btn small" id="iniU" aria-label="Move initials up">↑</button>
+            <button class="btn small" id="iniD" aria-label="Move initials down">↓</button>
+            <button class="btn small" id="iniR" aria-label="Move initials right">→</button>
+            <p class="hint" style="flex:1 1 160px">Or drag the initials right on the Preview to place them.</p>
+          </div>
           <div class="row" role="radiogroup" aria-label="Canvas type">
             <label class="tog"><input type="radio" name="pmode" value="stitch" checked> <b>Stitch-painted</b>: every intersection one clear color</label>
             <label class="tog"><input type="radio" name="pmode" value="photo"> <b>Photo</b>: prints your picture itself, smooth like a photo canvas</label>
@@ -874,6 +887,7 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
       <label class="f"><span id="iniTextLbl">Initials</span><input type="text" id="iniText" maxlength="8" placeholder="DK" autocomplete="off"></label>
       <label class="f">Font<select id="iniFont">
         <option value="block">Block letters (crisp when small)</option>
+        <option value="tiny">Tiny block letters (5 stitches tall)</option>
         <option value="Cinzel">Classic capitals</option>
         <option value="Playfair Display">Serif</option>
         <option value="Montserrat">Clean sans</option>
@@ -981,7 +995,7 @@ function adjustColor(c) {
 }
 
 /* ---------------- files ---------------- */
-const APP_VERSION = "2026.11.18-h";
+const APP_VERSION = "2026.11.18-i";
 { const v = document.getElementById("appVer2"); if (v) v.textContent = "v" + APP_VERSION; }
 let downloadsCap = null;
 (window.claude && window.claude.use ? window.claude.use("downloads") : Promise.resolve(null)).then(d => { downloadsCap = d; }).catch(() => {});
@@ -2407,7 +2421,8 @@ function printPalette() {
 function initialsOrigin(cells) {
   const d = S.design, ini = S.initials, below = Math.round(ini.below * (S.canvasMesh || S.mesh));
   const x = ini.pos === "bl" ? 0 : ini.pos === "bc" ? Math.floor((d.w - cells.w) / 2) : d.w - cells.w;
-  return { x, y: d.h + below };
+  // dx, dy: where you moved them yourself (stitches), on top of the chosen spot.
+  return { x: x + (ini.dx || 0), y: d.h + below + (ini.dy || 0) };
 }
 // For stitches past the mapped part of the canvas: continue the grid with a straight-line fit of the crossings
 // found around the design, so "print anyway" still places them on the canvas's spacing and angle.
@@ -3244,17 +3259,28 @@ const BLOCK = {
   "9": "01110100011000101111000010001001100", ".": "00000000000000000000000000110001100", "-": "00000000000000001110000000000000000",
   "&": "01100100101010001000101011001001101",
 };
+// Tiny 3 x 5 letters, for initials only 5 stitches tall.
+const TINY = {
+  A: "010101111101101", B: "110101110101110", C: "011100100100011", D: "110101101101110", E: "111100110100111", F: "111100110100100",
+  G: "011100101101011", H: "101101111101101", I: "111010010010111", J: "001001001101010", K: "101101110101101", L: "100100100100111",
+  M: "101111111101101", N: "110101101101101", O: "010101101101010", P: "110101110100100", Q: "010101101110011", R: "110101110101101",
+  S: "011100010001110", T: "111010010010010", U: "101101101101111", V: "101101101101010", W: "101101111111101", X: "101101010101101",
+  Y: "101101010010010", Z: "111001010100111", "0": "111101101101111", "1": "010110010010111", "2": "110001010100111", "3": "110001010001110",
+  "4": "101101111001001", "5": "111100110001110", "6": "011100111101111", "7": "111001010010010", "8": "111101111101111", "9": "111101111001110",
+  ".": "000000000000010", "-": "000000111000000", "&": "010101010101011",
+};
 S.initials = store.get("ccp-initials") || null; S.iniCells = null;
 async function initialsCells(ini) {
   const text = (ini.text || "").trim(); if (!text) return null;
-  if (ini.font === "block") {
-    const sc = Math.max(1, Math.round(ini.h / 7)), chars = [...text.toUpperCase()];
-    const widths = chars.map(ch => ch === " " ? 3 : BLOCK[ch] ? 5 : 0);
-    const W = (widths.reduce((a, b) => a + b, 0) + Math.max(0, chars.length - 1)) * sc, H = 7 * sc, cells = new Uint8Array(W * H);
+  if (ini.font === "block" || ini.font === "tiny") {
+    const F = ini.font === "tiny" ? TINY : BLOCK, gw = ini.font === "tiny" ? 3 : 5, gh = ini.font === "tiny" ? 5 : 7;
+    const sc = Math.max(1, Math.round(ini.h / gh)), chars = [...text.toUpperCase()];
+    const widths = chars.map(ch => ch === " " ? (gw === 3 ? 2 : 3) : F[ch] ? gw : 0);
+    const W = (widths.reduce((a, b) => a + b, 0) + Math.max(0, chars.length - 1)) * sc, H = gh * sc, cells = new Uint8Array(W * H);
     let x0 = 0;
     chars.forEach((ch, k) => {
-      const g = BLOCK[ch];
-      if (g) for (let y = 0; y < 7; y++) for (let x = 0; x < 5; x++) if (g[y * 5 + x] === "1")
+      const g = F[ch];
+      if (g) for (let y = 0; y < gh; y++) for (let x = 0; x < gw; x++) if (g[y * gw + x] === "1")
         for (let yy = 0; yy < sc; yy++) for (let xx = 0; xx < sc; xx++) cells[(y * sc + yy) * W + (x0 + x) * sc + xx] = 1;
       x0 += widths[k] + 1;
     });
@@ -3332,7 +3358,10 @@ function renderTbColors() {
 function endText() { const clip = !!(S.stamp && S.stamp.clip && !S.stamp.motif); S.stamp = null; S.stampPos = null; showTextBar(false); setTool(clip ? "select" : "paint"); renderView(); }
 let iniDraft = null;
 function iniFromForm() {
-  return { on: true, text: $("iniText").value, font: $("iniFont").value, h: +$("iniH").value, color: iniDraft.color, pos: $("iniPos").value, below: Math.max(0, +$("iniBelow").value || 0) };
+  const ini = { on: true, text: $("iniText").value, font: $("iniFont").value, h: +$("iniH").value, color: iniDraft.color, pos: $("iniPos").value, below: Math.max(0, +$("iniBelow").value || 0) };
+  // Keep where you dragged them, unless you picked a different spot here.
+  const o = S.initials; if (o && o.pos === ini.pos && o.below === ini.below) { ini.dx = o.dx || 0; ini.dy = o.dy || 0; }
+  return ini;
 }
 async function drawIniPreview() {
   const ini = iniFromForm(); $("iniHOut").textContent = `${ini.h} stitches (${(ini.h / (S.canvasMesh || S.mesh)).toFixed(2)} in)`;
@@ -3764,6 +3793,53 @@ async function withGridLattice(fn) {
   try { S.grid = gridSyntheticGrid(L); S.center = { i: L.ci, j: L.cj }; S.H = null; S.scan = { dpi: 1 }; S.printAll = false; return await fn(L); }
   finally { Object.assign(S, keep); }
 }
+function withGridLatticeSync(fn) {
+  const L = gridLattice(), keep = { grid: S.grid, center: S.center, H: S.H, scan: S.scan, printAll: S.printAll };
+  try { S.grid = gridSyntheticGrid(L); S.center = { i: L.ci, j: L.cj }; S.H = null; S.scan = { dpi: 1 }; S.printAll = false; return fn(L); }
+  finally { Object.assign(S, keep); }
+}
+// Preview with no scan: the design (plus initials and legend) on a plain canvas at the grid sheet's mesh.
+const VPK = 150; let virtCanvas = null, virtBounds = null;
+function buildVirtualPreview() {
+  const W = Math.round(PAGE.w * VPK), H = Math.round(PAGE.h * VPK), c = virtCanvas && virtCanvas.width === W ? virtCanvas : document.createElement("canvas");
+  c.width = W; c.height = H; const x = c.getContext("2d");
+  x.fillStyle = "#e9e5dc"; x.fillRect(0, 0, W, H);
+  withGridLatticeSync(L => {
+    const pw = VPK / L.m.a, ph = VPK / L.m.d, X0 = WINDOW.x * VPK, Y0 = WINDOW.y * VPK, WW = WINDOW.w * VPK, HH = WINDOW.h * VPK;
+    x.fillStyle = "#34303a"; x.fillRect(X0, Y0, WW, HH);
+    x.fillStyle = "#f7f5ef";
+    for (let i = 0; i < L.gx; i++) x.fillRect(L.sx(i) * VPK - pw * 0.28, Y0, pw * 0.56, HH);
+    for (let j = 0; j < L.gy; j++) x.fillRect(X0, L.sy(j) * VPK - ph * 0.28, WW, ph * 0.56);
+    if (!S.design) return;
+    const pal = printPalette(), f = 1 + S.adj.bleed / 100, painted = paintedAt(), dots = S.printMode === "dots";
+    let mnx = 1e9, mny = 1e9, mxx = -1e9, mxy = -1e9;
+    x.globalCompositeOperation = "multiply";
+    forEachStitch((q, v, i, j) => {
+      x.fillStyle = pal[v];
+      if (dots) { dotPath(x, q, (a, b) => [a * VPK, b * VPK], S.dotSize / 100); }
+      else { const g = stitchShape(q, i, j, f, painted, true); x.beginPath(); x.moveTo(g[0][0] * VPK, g[0][1] * VPK); for (let k = 1; k < 4; k++) x.lineTo(g[k][0] * VPK, g[k][1] * VPK); x.closePath(); x.fill(); }
+      for (const p of q) { mnx = Math.min(mnx, p[0]); mxx = Math.max(mxx, p[0]); mny = Math.min(mny, p[1]); mxy = Math.max(mxy, p[1]); }
+    });
+    x.globalCompositeOperation = "source-over";
+    const pl = placement(), leg = legendCells();
+    drawLegendText(x, leg, (cc, rr) => { const q = corner(pl.i0 + cc - 1, pl.j0 + rr - 1); return q && [q[0] * VPK, q[1] * VPK]; });
+    if (leg) for (const lb of leg.labels) mxx = Math.max(mxx, L.sx(pl.i0 + lb.c + 6));
+    virtBounds = mnx < 1e9 ? [mnx * VPK, mny * VPK, mxx * VPK, mxy * VPK] : null;
+  });
+  virtCanvas = c; previewStale = false; return c;
+}
+// The canvas stitch (grid i, j) under a point of the Preview, and whether it's on the initials.
+function iniHit(wx, wy) {
+  const ini = S.initials, C = S.iniCells; if (!ini || !ini.on || !C || !S.design) return null;
+  const find = () => {
+    let i, j;
+    if (S.scan && S.scan.canvas) { const n = nearestNode(wx, wy); if (!n) return null; i = n.i; j = n.j; }
+    else { i = Math.round((wx / VPK - S.grid.X[0]) * gridMesh().a); j = Math.round((wy / VPK - S.grid.Y[0]) * gridMesh().d); }
+    const pl = placement(); if (!pl) return null; const o = initialsOrigin(C), a = i - pl.i0 - o.x, b = j - pl.j0 - o.y;
+    return { i, j, inside: a >= -1 && b >= -1 && a <= C.w && b <= C.h };
+  };
+  return S.scan && S.grid ? find() : withGridLatticeSync(find);
+}
 async function makeGridPrintPdf() {
   if (!S.design) { toast("Make a design first."); return; }
   busy(true, "Building the print for the grid sheet…", 0.2); await tick();
@@ -3939,11 +4015,26 @@ async function applyInitials(ini) {
   S.iniCells = ini && ini.on ? await initialsCells(ini) : null;
   iniSummary(); previewDirty(); updateFit(); renderView();
 }
+async function iniResize(dir) {
+  const o = S.initials; if (!o) return; const ini = { ...o };
+  if (ini.font === "block") { if (dir < 0 && ini.h <= 7) { ini.font = "tiny"; ini.h = 5; } else ini.h = Math.max(7, Math.min(28, (Math.round(ini.h / 7) + dir) * 7)); }
+  else if (ini.font === "tiny") { if (dir > 0 && ini.h <= 5) { ini.font = "block"; ini.h = 7; } else ini.h = Math.max(5, Math.min(25, (Math.round(ini.h / 5) + dir) * 5)); }
+  else ini.h = Math.max(4, Math.min(40, ini.h + dir));
+  await applyInitials(ini);
+  toast(`Initials ${S.iniCells ? S.iniCells.h + " stitches tall" : ""}.`);
+}
+function iniMove(dx, dy) {
+  const ini = S.initials; if (!ini) return;
+  ini.dx = (ini.dx || 0) + dx; ini.dy = (ini.dy || 0) + dy; store.set("ccp-initials", ini);
+  iniSummary(); previewDirty(); updateFit(); renderView();
+}
 function iniSummary() {
   const ini = S.initials, el = $("iniSummary");
+  $("iniQuick").hidden = $("iniMoveRow").hidden = !(ini && ini.on && ini.text.trim());
   if (!ini || !ini.on || !ini.text.trim()) { el.textContent = "No initials."; $("iniOpen").textContent = "Add initials"; return; }
   const dm = nearestDmc(ini.color), font = $("iniFont").querySelector(`option[value="${ini.font}"]`);
-  el.textContent = `"${ini.text.trim()}" · ${font ? font.textContent.replace(/ \(.*\)/, "") : ini.font} · ${dmcLabel(dm)} · ${ini.below} in below, ${ini.pos === "br" ? "bottom right" : ini.pos === "bl" ? "bottom left" : "bottom center"}`;
+  const C = S.iniCells, moved = ini.dx || ini.dy;
+  el.textContent = `"${ini.text.trim()}" · ${font ? font.textContent.replace(/ \(.*\)/, "") : ini.font} · ${C ? C.h + " stitches tall" : ""} · ${dmcLabel(dm)} · ` + (moved ? "placed by hand" : `${ini.below} in below, ${ini.pos === "br" ? "bottom right" : ini.pos === "bl" ? "bottom left" : "bottom center"}`);
   $("iniOpen").textContent = "Edit initials";
 }
 
@@ -4711,6 +4802,7 @@ const view = $("view"), vctx = view.getContext("2d");
 const V = { s: 1, tx: 0, ty: 0 };
 function worldSize() {
   if (S.view === "design" || S.view === "orig") return S.design ? [S.design.w, S.design.h] : [60, 60];
+  if (!S.scan && S.view === "prev") return [Math.round(PAGE.w * VPK), Math.round(PAGE.h * VPK)];
   return S.scan ? [S.scan.canvas.width, S.scan.canvas.height] : [2550, 3300];
 }
 function resize() {
@@ -4731,6 +4823,9 @@ function fitView() {
   if (S.view === "design" && S.showArea && S.design) { const m = Math.round(S.canvasBorder * S.mesh) + 2; target = [-m, -m, w + 2 * m, h + 2 * m]; }
   if (S.view === "orig" && S.original) {
     const b = origBounds(); target = [Math.min(0, b[0]), Math.min(0, b[1])]; target.push(Math.max(w, b[2]) - target[0], Math.max(h, b[3]) - target[1]);
+  } else if (!S.scan && S.view === "prev" && S.design) {
+    if (previewStale || !virtCanvas) buildVirtualPreview();
+    if (virtBounds) { const pad = VPK * 0.4, b = virtBounds; target = [b[0] - pad, b[1] - pad, b[2] - b[0] + pad * 2, b[3] - b[1] + pad * 2]; }
   } else if (S.view !== "design" && S.view !== "orig" && S.grid) {
     let minx = 1e9, miny = 1e9, maxx = -1e9, maxy = -1e9; const G = S.grid;
     for (let k = 0; k < G.gx * G.gy; k++) if (G.ST[k]) { minx = Math.min(minx, G.X[k]); maxx = Math.max(maxx, G.X[k]); miny = Math.min(miny, G.Y[k]); maxy = Math.max(maxy, G.Y[k]); }
@@ -4915,6 +5010,12 @@ function drawMain() {
     if (S.original && S.origAlpha > 0) stat.push(`Original on top ${S.origAlpha}%`);
     if (mv[0] || mv[1]) stat.push(`moving ${mv[0] > 0 ? "+" : ""}${mv[0]}, ${mv[1] > 0 ? "+" : ""}${mv[1]}`);
   } else {
+    if (!S.scan && S.view === "prev" && S.design) {
+      const src = previewStale || !virtCanvas ? buildVirtualPreview() : virtCanvas;
+      vctx.save(); vctx.translate(V.tx, V.ty); vctx.scale(V.s, V.s); vctx.imageSmoothingEnabled = true; vctx.drawImage(src, 0, 0); vctx.restore();
+      const m = gridMesh(); stat.push(`No scan: plain ${m.a} × ${m.d} mesh canvas`, `${Math.round(V.s * 100)}%`);
+      $("vstat").innerHTML = stat.map(s => `<span>${String(s).replace(/[<>&]/g, "")}</span>`).join(""); return;
+    }
     if (!S.scan) { vctx.fillStyle = "#BCB2C8"; vctx.font = "600 15px Figtree, sans-serif"; vctx.textAlign = "center"; vctx.fillText("Load a scan on step 2, or try the example scan.", cw / 2, ch / 2); return; }
     // On the Map, the design can be shown on the canvas so points can be moved while seeing where each stitch lands.
     const withDesign = S.view === "prev" || (S.view === "map" && S.mapDesign && S.design && S.grid);
@@ -5081,6 +5182,10 @@ view.addEventListener("pointerdown", e => {
     drag = { type: "paint", v: tool === "erase" ? -1 : S.sel, last: cell };
     paintLine(cell, cell, drag.v); return;
   }
+  if (S.view === "prev" && !panReq && S.initials && S.initials.on && S.iniCells) {
+    const h = iniHit(wx, wy);
+    if (h && h.inside) { drag = { type: "ini", start: [h.i, h.j], d0: [S.initials.dx || 0, S.initials.dy || 0] }; view.style.cursor = "grabbing"; return; }
+  }
   if (S.view === "map" && S.grid && !panReq) {
     if (S.pickCenter) {
       const n = nearestNode(wx, wy); if (n) { S.center = { i: n.i, j: n.j }; S.place = { ox: 0, oy: 0 }; $("ox").value = 0; $("oy").value = 0; }
@@ -5123,6 +5228,11 @@ view.addEventListener("pointermove", e => {
   else if (drag.type === "paint") { const c = [Math.floor(wx), Math.floor(wy)]; paintLine(drag.last, c, drag.v); drag.last = c; }
   else if (drag.type === "node") { if (!drag.moved && Math.hypot(sx - drag.s0[0], sy - drag.s0[1]) < 6) return; const G = S.grid; G.X[drag.k] = wx + drag.off[0]; G.Y[drag.k] = wy + drag.off[1]; G.ST[drag.k] = 4; drag.moved = true; renderView(); }
   else if (drag.type === "mark") { S.marks[drag.k] = [wx, wy]; updateH(); renderView(); }
+  else if (drag.type === "ini") {
+    const h = iniHit(wx, wy); if (!h) return;
+    const nx = drag.d0[0] + h.i - drag.start[0], ny = drag.d0[1] + h.j - drag.start[1];
+    if (nx !== (S.initials.dx || 0) || ny !== (S.initials.dy || 0)) { S.initials.dx = nx; S.initials.dy = ny; previewStale = true; renderView(); }
+  }
 });
 const endPtr = e => {
   ptrs.delete(e.pointerId);
@@ -5131,6 +5241,7 @@ const endPtr = e => {
   if (drag && drag.type === "pan" && drag.tapNode != null && !drag.moved) { S.selNode = drag.tapNode; drag = null; renderView(); return; }
   if (drag && drag.type === "mark") { setStatus("scanStatus", "Corner dot moved by hand.", "ok"); previewDirty(); }
   if (drag && drag.type === "paint") designDirty();
+  if (drag && drag.type === "ini") { view.style.cursor = ""; store.set("ccp-initials", S.initials); iniSummary(); previewDirty(); }
   if (drag && drag.type === "move") { const dl = drag.delta; drag = null; shiftDesign(dl[0], dl[1]); return; }
   if (drag && drag.type === "crop") { const a = drag.a, b = drag.b; drag = null; cropDesign(a, b); return; }
   if (drag && drag.type === "textmove" && !drag.moved && drag.jump && S.stamp) { S.stampPos = drag.jump; drag = null; renderView(); return; }
@@ -5207,7 +5318,7 @@ window.addEventListener("keyup", e => { if (e.code === "Space") spaceDown = fals
 /* ---------------- UI wiring ---------------- */
 function setStatus(id, msg, kind) { const el = $(id); el.hidden = false; el.textContent = msg; el.className = "status" + (kind ? " " + kind : ""); }
 function setView(v) {
-  if (v !== "design" && v !== "orig" && !S.scan && v !== "snap") v = "snap";
+  if (v !== "design" && v !== "orig" && !S.scan && v !== "snap" && !(v === "prev" && S.design)) v = "snap";
   // Design/Original share one picture space, Snapshot/Map/Preview another: moving within a pair keeps your zoom.
   const fam = x => (x === "design" || x === "orig") ? "d" : "s", keep = V.user && S.view && fam(S.view) === fam(v);
   S.view = v;
@@ -5220,7 +5331,7 @@ function setTab(n) {
   [1, 2, 3].forEach(k => { $("tab" + k).setAttribute("aria-selected", k === n); $("pane" + k).hidden = k !== n; });
   if (n === 1) setView("design");
   if (n === 2) { if (!S.scan) runExample(); else setView(S.grid ? "map" : "snap"); }
-  if (n === 3) { photoStatus(); if (S.scan) setView("prev"); else { setView("design"); toast("Your design is shown. Load your scan on step 2 to see it on your canvas."); } updateFit(); }
+  if (n === 3) { photoStatus(); if (S.scan) setView("prev"); else if (S.design) { setView("prev"); toast("No scan yet, so Preview shows your design on a plain canvas (the grid sheet's mesh)."); } else setView("design"); updateFit(); }
 }
 function updateCounts() {
   const G = S.grid; if (!G) return; const c = [0, 0, 0, 0, 0];
@@ -5245,7 +5356,7 @@ function checkList(all) {
 }
 function updateUI() {
   const has = !!S.scan;
-  ["vSnap", "vMap", "vPrev"].forEach(id => $(id).disabled = !has);
+  ["vSnap", "vMap", "vPrev"].forEach(id => $(id).disabled = !has && !(id === "vPrev" && S.design));
   $("mapGroup").hidden = !S.grid;
   $("printNeed").hidden = !!S.grid;
   $("vNext").hidden = !(S.view === "map" && S.grid); $("vDesignOn").hidden = !(S.view === "map" && S.grid);
@@ -5612,6 +5723,9 @@ $("addDmc").onclick = () => S.design && openDmc(null, dm => { pushUndo(); S.edit
 $("snapDmc").onclick = snapAllToDmc;
 $("saveKey").onclick = colorKeyPdf; $("saveKey2").onclick = colorKeyPdf;
 $("iniOpen").onclick = openInitials;
+$("iniSmaller").onclick = () => iniResize(-1); $("iniBigger").onclick = () => iniResize(1);
+$("iniDel").onclick = async () => { await applyInitials(null); toast("Initials removed."); };
+[["iniU", 0, -1], ["iniD", 0, 1], ["iniL", -1, 0], ["iniR", 1, 0]].forEach(([id, dx, dy]) => $(id).onclick = () => iniMove(dx, dy));
 ["iniText", "iniFont", "iniH", "iniPos", "iniBelow"].forEach(id => $(id).addEventListener("input", drawIniPreview));
 $("iniColor").oninput = e => { iniDraft.color = unhex(e.target.value); renderIniSwatches(); drawIniPreview(); };
 $("iniDmc").onclick = () => { const back = iniDraft.color; $("iniDlg").close(); openDmc(back, dm => { iniDraft.color = unhex("#" + dm[2]); $("iniColor").value = "#" + dm[2]; showDialog($("iniDlg")); renderIniSwatches(); drawIniPreview(); }); $("dmcCancel").onclick = () => { $("dmcDlg").close(); showDialog($("iniDlg")); $("dmcCancel").onclick = () => $("dmcDlg").close(); }; };
