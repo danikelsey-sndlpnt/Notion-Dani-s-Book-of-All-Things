@@ -971,7 +971,7 @@ function adjustColor(c) {
 }
 
 /* ---------------- files ---------------- */
-const APP_VERSION = "2026.11.18-f";
+const APP_VERSION = "2026.11.18-g";
 { const v = document.getElementById("appVer2"); if (v) v.textContent = "v" + APP_VERSION; }
 let downloadsCap = null;
 (window.claude && window.claude.use ? window.claude.use("downloads") : Promise.resolve(null)).then(d => { downloadsCap = d; }).catch(() => {});
@@ -2472,16 +2472,16 @@ function stitchShape(q, i, j, f, painted, landed) {
   const ov = S.edgeFor ? S.edgeFor(i, j) : null, half = 0.5 * f;
   // 100% stops just past the thread crossing (threads are a bit over half a stitch wide), 0% reaches halfway like a color edge.
   const t0 = ov != null ? 0.5 - ov / 100 * (0.5 - 0.31) : null, reach = side => t0 != null ? t0 : edgeReach(side, landed);
-  // Same color next door: reach halfway (plus ink reach) so the area is solid. Bare canvas, or a different color: stop
-  // short so the ink's spread ends on the thread between, not on the neighbor's crossing (where a stitcher would see
-  // two colors). On the Map and Preview, different colors meet halfway, which is how it should end up.
+  // Same color next door: reach halfway (plus ink reach) so the area is solid. A different color: meet it halfway,
+  // no gap. Bare canvas: stop short so the ink's spread ends on the thread, not on the next crossing.
   const me = painted.color ? painted.color(i, j) : 0;
   const side = (di, dj, name) => {
     if (!painted.color) return painted(i + di, j + dj) ? half : reach(name);
     const nb = painted.color(i + di, j + dj);
     if (nb < 0) return reach(name);
     if (painted.same(me, nb)) return half;
-    return landed ? 0.5 : Math.min(half, reach(name) + 0.06);
+    // A different color next door: the two meet exactly halfway, with no gap left between them.
+    return 0.5;
   };
   const L = -side(-1, 0, "left"), R = side(1, 0, "right"), T = -side(0, -1, "up"), B = side(0, 1, "down");
   // Bilinear over the quad (corners at u,v = -0.5 / +0.5), extended past it where needed.

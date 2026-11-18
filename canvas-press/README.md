@@ -73,3 +73,6 @@ Print step → **Print without a scan: line up on a grid sheet**.
    "My design on the grid sheet": Outline only (default, a pink line around the stitched area along the hole rows/columns), In color (design under the hole squares), or Nothing.
 3. Line the canvas up so every hole looks solid black, tape it down.
 4. **Design for the grid sheet (PDF):** the design printed onto that exact lattice (no scan). Nudge, edge and ink-spread settings still apply; Photo mode falls back to solid stitches.
+
+## Colors meet with no gap (2026.11.18-g)
+Where two different colors touch, the print now meets exactly halfway (the white color-to-color pull-in is gone). Edges next to bare canvas still stop just past the crossing.
