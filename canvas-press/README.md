@@ -65,3 +65,10 @@ DMC color data: [craft-color-codes](https://www.npmjs.com/package/craft-color-co
 - **Hide ⟩** at the top of the panel tucks it away so the picture gets the full width; **⟨ Tools** (next to Full screen) brings it back. Remembered between visits.
 - Tap any section heading in the panel to fold or unfold it (remembered too).
 - **Search tools** box: type a word (circle, dots, nudge, ink spread, shapes…) and tap a result, or press Enter for the first one. The app jumps to that step, opens the section and flashes the tool. Press **/** anywhere to jump to the search box.
+
+## Print without a scan: grid sheet (2026.11.18-c)
+Print step → **Print without a scan: line up on a grid sheet**.
+1. **Mesh gauge (PDF):** strips of hole squares at 0.1 holes-per-inch steps. Lay the canvas on them to find its real count across, then turn it to find down.
+2. **Grid sheet (PDF):** a Carrier (same four dots) with a black square under every hole position, anchored on the window center, red arrows on the middle row/column, ticks every 10 holes.
+3. Line the canvas up so every hole looks solid black, tape it down.
+4. **Design for the grid sheet (PDF):** the design printed onto that exact lattice (no scan). Nudge, edge and ink-spread settings still apply; Photo mode falls back to solid stitches.
