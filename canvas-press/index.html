@@ -793,7 +793,8 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
           <button class="btn small" id="gmFromScan" hidden>Use what my scan measured</button>
           <p class="hint"><b>1. Measure your canvas (once per canvas brand).</b> Canvas sold as 13 mesh is often 13.2 to 13.5. Print the gauge on plain paper at 100% / Actual Size. Lay the canvas on a strip so the first hole sits on the red mark. The strip where every hole stays black all the way to the end is your number. Then turn the canvas a quarter turn and do it again for "down".</p>
           <button class="btn small" id="gmGauge">Mesh gauge (PDF)</button>
-          <p class="hint"><b>2. Print the grid sheet</b> on plain paper at 100% / Actual Size. It's also a Carrier (it has the four dots), so it feeds the same way.</p>
+          <p class="hint"><b>2. Print the grid sheet</b> on plain paper at 100% / Actual Size. It's also a Carrier (it has the four dots), so it feeds the same way. With "Show my design" on, your design is printed in color right where it will go, with the hole squares on top, so you can see exactly where the canvas has to cover. Once the canvas is lined up, the color only sits under the threads.</p>
+          <label class="tog"><input type="checkbox" id="gmShowDesign" checked> Show my design on the grid sheet</label>
           <button class="btn small" id="gmSheet">Grid sheet (PDF)</button>
           <p class="hint"><b>3. Line up the canvas.</b> Lay it over the grid, centered on the red arrows. The numbers around the edge count holes out from the arrows in 5s, so you can check the same hole number lines up on both sides. Slide and turn it until every hole looks solid black, with no white slivers along the thread edges, near the arrows and out at the corners. Tape all four sides flat.</p>
           <p class="hint"><b>4. Print the design</b> onto the sheet with the canvas on it, loaded exactly like you loaded the sheet in step 2. Your nudge and edge settings still apply.</p>
@@ -964,7 +965,7 @@ function adjustColor(c) {
 }
 
 /* ---------------- files ---------------- */
-const APP_VERSION = "2026.11.18-d";
+const APP_VERSION = "2026.11.18-e";
 { const v = document.getElementById("appVer2"); if (v) v.textContent = "v" + APP_VERSION; }
 let downloadsCap = null;
 (window.claude && window.claude.use ? window.claude.use("downloads") : Promise.resolve(null)).then(d => { downloadsCap = d; }).catch(() => {});
@@ -3636,10 +3637,20 @@ function meshGaugePdf() {
   });
   saveFile(`mesh-gauge-${base}-v${APP_VERSION}.pdf`, buildPdf(c));
 }
-function gridSheetPdf() {
+async function gridSheetPdf() {
+  let under = "", off = 0;
+  // The design in its colors, one stitch square each, right where it will print. The black hole squares go on top,
+  // so under a lined-up canvas the color only sits beneath the threads.
+  if ($("gmShowDesign").checked && S.design) await withGridLattice(L => {
+    const pal = printPalette(), byColor = new Map(), pw = 1 / L.m.a, ph = 1 / L.m.d;
+    const r = forEachStitch((q, v, i, j) => { const x = L.sx(i), y = L.sy(j); if (!byColor.has(v)) byColor.set(v, ""); byColor.set(v, byColor.get(v) + `${pt(x - pw / 2)} ${ptY(y + ph / 2)} ${pt(pw)} ${pt(ph)} re\n`); });
+    off = r.off;
+    for (const [v, rects] of byColor) { const h = pal[v], c3 = [1, 3, 5].map(k => (parseInt(h.slice(k, k + 2), 16) / 255).toFixed(3)); under += `${c3.join(" ")} rg\n${rects}f\n`; }
+  });
+  if (off) toast(`${off} stitches fall outside the grid sheet. Make the design smaller or move it toward the middle.`, 6000);
   const L = gridLattice(), p = 1 / L.m.a, q = 1 / L.m.d, w = p * 0.5, h = q * 0.5;
   const inWin = (x, y) => x - w / 2 >= WINDOW.x && y - h / 2 >= WINDOW.y && x + w / 2 <= WINDOW.x + WINDOW.w && y + h / 2 <= WINDOW.y + WINDOW.h;
-  let c = "0 g\n";
+  let c = under + "0 g\n";
   for (let b = -1; b < L.gy; b++) for (let a = -1; a < L.gx; a++) { const x = L.sx(a + 0.5), y = L.sy(b + 0.5); if (inWin(x, y)) c += `${pt(x - w / 2)} ${ptY(y + h / 2)} ${pt(w)} ${pt(h)} re\n`; }
   c += "f\n";
   for (const [x, y] of MARKS) c += pdfCircle(x, y, MARK_R);
@@ -3668,15 +3679,19 @@ function gridSheetPdf() {
   c += "0.45 G 0.5 w\n" + lines + "S\n0.3 g\n" + nums;
   c += "0.35 g\n" + pdfText(2.2, 0.22, 7, `Sookie's Canvas Press grid sheet: ${L.m.a} x ${L.m.d} holes per inch  -  print at 100% / Actual Size`);
   c += pdfText(2.2, 0.34, 7, "Line the canvas holes up on the black squares, centered on the red arrows. This edge goes in first.");
-  saveFile(`grid-sheet-${L.m.a}x${L.m.d}-v${APP_VERSION}.pdf`, buildPdf(c));
+  saveFile(`grid-sheet-${L.m.a}x${L.m.d}${under ? "-with-design" : ""}-v${APP_VERSION}.pdf`, buildPdf(c));
   store.set("ccp-gridmesh", L.m);
+}
+// Runs fn with the grid sheet's lattice standing in for a scan (page inches in place of scan pixels).
+async function withGridLattice(fn) {
+  const L = gridLattice(), keep = { grid: S.grid, center: S.center, H: S.H, scan: S.scan, printAll: S.printAll, printMode: S.printMode };
+  try { S.grid = gridSyntheticGrid(L); S.center = { i: L.ci, j: L.cj }; S.H = null; S.scan = { dpi: 1 }; S.printAll = false; return await fn(L); }
+  finally { Object.assign(S, keep); }
 }
 async function makeGridPrintPdf() {
   if (!S.design) { toast("Make a design first."); return; }
-  const L = gridLattice(), keep = { grid: S.grid, center: S.center, H: S.H, scan: S.scan, printAll: S.printAll, printMode: S.printMode };
   busy(true, "Building the print for the grid sheet…", 0.2); await tick();
-  try {
-    S.grid = gridSyntheticGrid(L); S.center = { i: L.ci, j: L.cj }; S.H = null; S.scan = { dpi: 1 }; S.printAll = false;
+  try { await withGridLattice(async L => {
     const photo = S.printMode === "photo"; if (photo) S.printMode = "stitch";
     const chk = forEachStitch(() => {});
     if (chk.off) throw new Error(`${chk.off} of ${chk.total} stitches fall outside the grid sheet. Make the design smaller or move it back toward the middle (Move the design on the canvas).`);
@@ -3690,8 +3705,8 @@ async function makeGridPrintPdf() {
     const blob = buildPdf(content, imgs); busy(false);
     setStatus("gmStatus", `${chk.total} stitches placed on the ${L.m.a} × ${L.m.d} grid, centered on the red arrows` + (S.place.ox || S.place.oy ? ` (moved ${S.place.ox} right, ${S.place.oy} down)` : "") + "." + (photo ? " Photo mode doesn't work on the grid sheet, so this prints solid stitches." : "") + " Print at 100% / Actual Size.", "ok");
     await saveFile(fileBase() + `-grid-${L.m.a}x${L.m.d}-print-v` + APP_VERSION + ".pdf", blob);
-  } catch (e) { busy(false); setStatus("gmStatus", "The print file could not be made: " + e.message, "err"); }
-  finally { Object.assign(S, keep); previewDirty(); }
+  }); } catch (e) { busy(false); setStatus("gmStatus", "The print file could not be made: " + e.message, "err"); }
+  finally { previewDirty(); }
 }
 
 /* ---- Circle guide ---- */
