@@ -713,6 +713,16 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
           <p class="hint" id="pmodeNote">Photo prints the original picture across the design's stitches (only where the design has stitches), lined up to your threads, with smooth shading instead of one color per stitch. The stitcher picks thread colors from the color key and chart. Best for photos, pets and portraits.</p>
           <label class="tog" id="pmatchRow"><input type="checkbox" id="pmatch" checked> Match the photo's colors to my pattern (recommended: the canvas then agrees with the color key)</label>
           <div class="status" id="pmodeStatus" hidden></div>
+          <div class="row" style="align-items:center">
+            <label class="f">Color legend on the canvas
+              <select id="legendPos">
+                <option value="off">None</option>
+                <option value="right">Beside the design (right)</option>
+                <option value="below">Under the design</option>
+              </select>
+            </label>
+            <p class="hint" style="flex:1 1 200px">Prints a little block of each color with its DMC number in the canvas margin, like designers do, so the stitcher knows which floss goes where. Leave about an inch of canvas beside the design for it.</p>
+          </div>
           <button class="btn primary wide" id="makePdf">Save print file (PDF)</button>
           <button class="btn small" id="saveKey2">Save the color key to print (PDF)</button>
           <div class="status" id="fitStatus"></div>
@@ -971,7 +981,7 @@ function adjustColor(c) {
 }
 
 /* ---------------- files ---------------- */
-const APP_VERSION = "2026.11.18-g";
+const APP_VERSION = "2026.11.18-h";
 { const v = document.getElementById("appVer2"); if (v) v.textContent = "v" + APP_VERSION; }
 let downloadsCap = null;
 (window.claude && window.claude.use ? window.claude.use("downloads") : Promise.resolve(null)).then(d => { downloadsCap = d; }).catch(() => {});
@@ -2431,6 +2441,12 @@ function forEachStitch(fn, all = false) {
       place(stitchQuad(i, j), onCanvas, d.pal.length, i, j);
     }
   }
+  const leg = legendCells();
+  if (leg) for (const [k, v] of leg.cells) {
+    const [c, r] = k.split(",").map(Number), i = pl.i0 + c, j = pl.j0 + r, G = S.grid; total++;
+    const onCanvas = i >= 0 && j >= 0 && i < G.gx && j < G.gy && G.ST[j * G.gx + i];
+    place(stitchQuad(i, j), onCanvas, v, i, j);
+  }
   for (let r = 0; r < d.h; r++) for (let c = 0; c < d.w; c++) {
     const v = d.px[r * d.w + c]; if (v < 0) continue; total++;
     const i = pl.i0 + c, j = pl.j0 + r, G = S.grid;
@@ -2439,10 +2455,41 @@ function forEachStitch(fn, all = false) {
   }
   return { off, total, extended };
 }
+// Color legend in the canvas margin: a 3 x 3 stitch block of each used color, 4 stitches from the design, with its
+// DMC number printed beside it. Positions are in design cells (c, r), so it moves with the design.
+const LEG_SW = 3, LEG_GAP = 4;
+function legendCells() {
+  const d = S.design, pos = S.legendPos; if (!d || !pos || pos === "off") return null;
+  const used = new Uint8Array(d.pal.length); for (const v of d.px) if (v >= 0) used[v] = 1;
+  const items = []; d.pal.forEach((c, v) => { const a = adjustColor(c); if (used[v] && !(a[0] >= 240 && a[1] >= 240 && a[2] >= 240)) items.push(v); });
+  if (!items.length) return null;
+  const cells = new Map(), labels = [], step = LEG_SW + 1;
+  let iniBelow = 0; if (S.initials && S.initials.on && S.iniCells) iniBelow = initialsOrigin(S.iniCells).y + S.iniCells.h - d.h;
+  // Up to 12 per column (or row); more wrap into another one.
+  items.forEach((v, k) => {
+    const lane = Math.floor(k / 12), n = k % 12;
+    const c0 = pos === "right" ? d.w + LEG_GAP + lane * (LEG_SW + 9) : n * (LEG_SW + 8);
+    const r0 = pos === "right" ? n * step : d.h + Math.max(LEG_GAP, iniBelow + LEG_GAP) + lane * step;
+    for (let y = 0; y < LEG_SW; y++) for (let x = 0; x < LEG_SW; x++) cells.set((c0 + x) + "," + (r0 + y), v);
+    labels.push({ c: c0 + LEG_SW + 1, r: r0, v, text: "DMC " + nearestDmc(d.pal[v])[0] });
+  });
+  return { cells, labels };
+}
+// Draws the legend's DMC numbers. toPx maps a design cell corner (c, r) to drawing coordinates.
+function drawLegendText(x, leg, toPx, color = "#333") {
+  if (!leg) return;
+  x.save(); x.fillStyle = color; x.textBaseline = "middle";
+  for (const L of leg.labels) {
+    const a = toPx(L.c, L.r), b = toPx(L.c, L.r + LEG_SW); if (!a || !b) continue;
+    const h = Math.hypot(b[0] - a[0], b[1] - a[1]); x.font = `600 ${Math.max(6, h * 0.62)}px Helvetica, Arial, sans-serif`;
+    x.fillText(L.text, a[0], (a[1] + b[1]) / 2);
+  }
+  x.restore();
+}
 // Which crossings get ink (design and initials), in canvas grid coordinates.
 function paintedAt() {
   const d = S.design, pl = placement(); if (!d || !pl) return () => false;
-  const ini = S.initials && S.initials.on && S.iniCells ? { C: S.iniCells, o: initialsOrigin(S.iniCells) } : null;
+  const ini = S.initials && S.initials.on && S.iniCells ? { C: S.iniCells, o: initialsOrigin(S.iniCells) } : null, leg = legendCells();
   // White (or nearly white) stitches put no real ink down, so a background of white stitches counts as bare canvas.
   const inked = d.pal.map(c => { const a = adjustColor(c); return !(a[0] >= 240 && a[1] >= 240 && a[2] >= 240); });
   // Palette index of the ink at a crossing (the initials use one past the palette), or -1 for bare canvas.
@@ -2450,6 +2497,7 @@ function paintedAt() {
     const c = i - pl.i0, r = j - pl.j0;
     if (c >= 0 && r >= 0 && c < d.w && r < d.h) { const v = d.px[r * d.w + c]; if (v >= 0 && inked[v]) return v; }
     if (ini) { const x = c - ini.o.x, y = r - ini.o.y; if (x >= 0 && y >= 0 && x < ini.C.w && y < ini.C.h && ini.C.cells[y * ini.C.w + x]) return d.pal.length; }
+    if (leg) { const v = leg.cells.get(c + "," + r); if (v != null) return v; }
     return -1;
   };
   // Colors close enough that a stitcher wouldn't tell them apart count as the same (no gap pulled between them).
@@ -2525,6 +2573,7 @@ async function restoreScanState() {
 }
 // Photo canvas: the original picture, carried onto the canvas stitch block by stitch block through the mapped
 // grid, kept only inside the design's stitches. map(x, y) takes a scan point to the target canvas's pixels.
+S.legendPos = ["right", "below"].includes(store.get("ccp-legend")) ? store.get("ccp-legend") : "off";
 S.printMode = ["photo", "dots"].includes(store.get("ccp-pmode")) ? store.get("ccp-pmode") : "stitch";
 S.dotSize = store.get("ccp-dot") || 24;
 // Color dots: a round dot of the stitch's color centered on its crossing; r = fraction of a stitch.
@@ -2644,6 +2693,8 @@ function buildPreview() {
     const dots = S.printMode === "dots";
     forEachStitch((q, v, i, j) => { if (photo && v < S.design.pal.length) return; if (dots) { x.fillStyle = pal[v]; dotPath(x, q, (a, b) => [a, b], S.dotSize / 100); return; } const g = stitchShape(q, i, j, f, painted, true); x.fillStyle = pal[v]; x.beginPath(); x.moveTo(g[0][0], g[0][1]); for (let k = 1; k < 4; k++) x.lineTo(g[k][0], g[k][1]); x.closePath(); x.fill(); }, S.printAll);
     x.globalCompositeOperation = "source-over";
+    const pl = placement();
+    if (pl) drawLegendText(x, legendCells(), (cc, rr) => corner(pl.i0 + cc - 1, pl.j0 + rr - 1));
   }
   previewStale = false;
   return previewCanvas;
@@ -2721,6 +2772,8 @@ async function renderPrint(dpi, y0 = 0, hStrip = null) {
     const g = stitchShape(q, i, j, f, painted).map(p => { const pg = scanToPage(p[0], p[1]); return [(pg[0] + nx) * dpi, (pg[1] + ny) * dpi]; });
     x.fillStyle = pal[v]; x.beginPath(); x.moveTo(g[0][0], g[0][1]); for (let k = 1; k < 4; k++) x.lineTo(g[k][0], g[k][1]); x.closePath(); x.fill();
   }, S.printAll);
+  const pl = placement();
+  if (pl) drawLegendText(x, legendCells(), (cc, rr) => { const q = corner(pl.i0 + cc - 1, pl.j0 + rr - 1); if (!q) return null; const pg = scanToPage(q[0], q[1]); return [(pg[0] + nx) * dpi, (pg[1] + ny) * dpi]; });
   return { canvas: c, ...r };
 }
 // Three test blocks with different edge settings, printed where the design goes.
@@ -3667,13 +3720,15 @@ async function gridSheetPdf() {
       if (!on.has(key(i, j + 1))) segs += `${pt(xl)} ${ptY(yb)} m ${pt(xr)} ${ptY(yb)} l\n`;
     }
     over = `0.85 0.1 0.45 RG 1.3 w 1 J\n${segs}S\n`;
+    const leg = legendCells(), pl = placement();
+    if (leg && pl) for (const lb of leg.labels) over += "0.85 0.1 0.45 rg\n" + pdfText(L.sx(pl.i0 + lb.c - 0.5) + 0.02, L.sy(pl.j0 + lb.r + 1.9), 6.5, lb.text);
   });
   if (off) toast(`${off} stitches fall outside the grid sheet. Make the design smaller or move it toward the middle.`, 6000);
   const L = gridLattice(), p = 1 / L.m.a, q = 1 / L.m.d, w = p * 0.5, h = q * 0.5;
   const inWin = (x, y) => x - w / 2 >= WINDOW.x && y - h / 2 >= WINDOW.y && x + w / 2 <= WINDOW.x + WINDOW.w && y + h / 2 <= WINDOW.y + WINDOW.h;
   let c = under + "0 g\n";
   for (let b = -1; b < L.gy; b++) for (let a = -1; a < L.gx; a++) { const x = L.sx(a + 0.5), y = L.sy(b + 0.5); if (inWin(x, y)) c += `${pt(x - w / 2)} ${ptY(y + h / 2)} ${pt(w)} ${pt(h)} re\n`; }
-  c += "f\n" + over;
+  c += "f\n" + over + "0 g\n";
   for (const [x, y] of MARKS) c += pdfCircle(x, y, MARK_R);
   c += pdfCircle(ORIENT[0], ORIENT[1], ORIENT_R);
   // Red arrows on the middle hole row and column; gray ticks every 10 holes, so the canvas can be centered and counted.
@@ -5418,6 +5473,8 @@ $("testPage").onclick = testPagePdf;
 $("paperCopy").onclick = makePaperCopy;
 { const gm = store.get("ccp-gridmesh"); if (gm && gm.a) { $("gmA").value = gm.a; $("gmD").value = gm.d; } }
 $("gmA").oninput = $("gmD").oninput = gridMeshChanged;
+$("legendPos").value = S.legendPos;
+$("legendPos").onchange = () => { S.legendPos = $("legendPos").value; store.set("ccp-legend", S.legendPos); previewDirty(); updateFit(); };
 { const gs = store.get("ccp-gridshow"); if (gs && [...$("gmShowDesign").options].some(o => o.value === gs)) $("gmShowDesign").value = gs; }
 $("gmFromScan").onclick = () => { const rm = realMesh(); if (!rm) return; $("gmA").value = rm.across.toFixed(2); $("gmD").value = rm.down.toFixed(2); gridMeshChanged(); };
 $("gmGauge").onclick = meshGaugePdf; $("gmSheet").onclick = gridSheetPdf; $("gmPrint").onclick = makeGridPrintPdf;

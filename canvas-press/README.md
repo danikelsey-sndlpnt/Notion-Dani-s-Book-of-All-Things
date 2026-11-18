@@ -76,3 +76,6 @@ Print step → **Print without a scan: line up on a grid sheet**.
 
 ## Colors meet with no gap (2026.11.18-g)
 Where two different colors touch, the print now meets exactly halfway (the white color-to-color pull-in is gone). Edges next to bare canvas still stop just past the crossing.
+
+## Color legend on the canvas (2026.11.18-h)
+Print step → "Color legend on the canvas": None / Beside the design (right) / Under the design. Prints a 3 x 3 stitch block of each used color, 4 stitches from the design, with its DMC number beside it (up to 12 per column, then wraps). Works for the scanned print, the grid-sheet print, Preview, and the grid sheet outline.
