@@ -201,6 +201,7 @@ input:focus-visible, select:focus-visible, button:focus-visible { outline: 2px s
 .pal { display: grid; grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); gap: 6px; }
 .sw { border: 1px solid var(--line); border-radius: 10px; padding: 5px; background: var(--surface); cursor: pointer; display: grid; gap: 3px; text-align: left; font: 500 11px var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
 .sw i { display: block; height: 22px; border-radius: 6px; border: 1px solid rgba(0,0,0,.12); }
+.guidebox { margin: 4px 0 8px; }
 .shapes { margin: 6px 0 8px; }
 .shapeGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(74px, 1fr)); gap: 6px; }
 .shapeGrid button { border: 1px solid var(--line); border-radius: 10px; background: var(--surface); padding: 6px 4px 4px; cursor: pointer; display: grid; justify-items: center; gap: 2px; font: 600 11px var(--body); color: var(--ink-2); }
@@ -537,6 +538,26 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
           <p class="hint"><b>Text</b>: pick the words, font, size and color, then click on the design where the text goes. It becomes regular stitches you can edit. Press Esc to stop placing.</p>
           <p class="hint"><b>Crop</b>: drag a box over the part you want to keep. <b>Remove background</b> clears every color that runs along the outside edge, plus the blurry fringe and loose specks, so those stitches print as bare canvas. Raise <b>Background strength</b> to clear more shades, lower it to protect colors close to the background. <b>Magic erase</b>: tap any leftover patch to clear it and everything touching it in a similar color. Undo brings any of these back.</p>
           <p class="hint"><b>Move stitches</b>: drag the design to shift it. The original picture moves with it, so you can see what you moved. The frame grows if stitches go past the edge.</p>
+          <div class="guidebox">
+            <label class="tog"><input type="checkbox" id="guideOn"> <b>Circle guide</b>: an outline to check your ornament is round (on screen only, never prints)</label>
+            <div id="guideCtl" hidden>
+              <div class="row">
+                <label class="f">Size<select id="guideSize">
+                  <option value="3">3 in</option><option value="3.5">3.5 in</option><option value="4" selected>4 in (your 13-4 circle on 13 mesh)</option><option value="4.5">4.5 in</option><option value="5">5 in</option><option value="custom">Other…</option>
+                </select></label>
+                <label class="f" id="guideCustomWrap" hidden>Diameter (in)<input type="number" id="guideCustom" min="0.5" max="30" step="0.125" value="4" inputmode="decimal"></label>
+              </div>
+              <div class="row">
+                <button class="btn small" id="guideCenter">Center on design</button>
+                <button class="btn small" data-gmove="-1,0" aria-label="Move guide left">◀</button>
+                <button class="btn small" data-gmove="1,0" aria-label="Move guide right">▶</button>
+                <button class="btn small" data-gmove="0,-1" aria-label="Move guide up">▲</button>
+                <button class="btn small" data-gmove="0,1" aria-label="Move guide down">▼</button>
+                <button class="btn small" id="guideStitch">Stitch it in</button>
+              </div>
+              <p class="hint" id="guideInfo"></p>
+            </div>
+          </div>
           <div class="shapes" id="shapeBox" hidden>
             <div class="shapeGrid" id="shapeGrid"></div>
             <p class="hint">Pick a shape: it appears at its real size for your canvas, in the color you have selected. Make it <b>Bigger</b> or <b>Smaller</b>, turn or flip it, drag it into place, tap another color to recolor it, then <b>Done</b>.</p>
@@ -902,7 +923,7 @@ function adjustColor(c) {
 }
 
 /* ---------------- files ---------------- */
-const APP_VERSION = "2026.11.17-z";
+const APP_VERSION = "2026.11.18-a";
 { const v = document.getElementById("appVer2"); if (v) v.textContent = "v" + APP_VERSION; }
 let downloadsCap = null;
 (window.claude && window.claude.use ? window.claude.use("downloads") : Promise.resolve(null)).then(d => { downloadsCap = d; }).catch(() => {});
@@ -1340,6 +1361,7 @@ function designDirty() {
   for (let i = 0; i < d.px.length; i++) { const v = d.px[i]; if (v < 0) continue; const c = colHidden(v) ? ghost(d.pal[v]) : d.pal[v]; id.data[i * 4] = c[0]; id.data[i * 4 + 1] = c[1]; id.data[i * 4 + 2] = c[2]; id.data[i * 4 + 3] = 255; }
   x.putImageData(id, 0, 0);
   renderPalette(); previewDirty(); if (typeof updateMeshWarn === "function") updateMeshWarn();
+  if (S.guide && S.guide.on) { S.guide.cache = null; guideInfo(); }
   clearTimeout(designDirty.t);
   designDirty.t = setTimeout(saveCurrent, 400);
 }
@@ -3466,6 +3488,55 @@ function transformClip(kind) {
   if (st.motif && !transformClip.replaying) st.motif.ops.push(kind);
   textBarInfo(); renderView();
 }
+/* ---- Circle guide ---- */
+// Same rule as Dani's 13-4 Circle Stitchly chart: every stitch whose center lies inside the circle and that touches
+// the outside on a side is part of the outline (52 stitches across gives that exact chart, stitch for stitch).
+const savedGuide = store.get("ccp-guide") || {};
+S.guide = { on: false, inches: savedGuide.inches || 4, dx: 0, dy: 0 };
+function guideCells() {
+  const g = S.guide, d = S.design; if (!d) return null;
+  const N = Math.max(3, Math.round(g.inches * S.mesh)), key = N + "|" + d.w + "|" + d.h + "|" + g.dx + "|" + g.dy;
+  if (g.cache && g.cache.key === key) return g.cache;
+  const c = N / 2, inside = (x, y) => x >= 0 && y >= 0 && x < N && y < N && Math.hypot(x + 0.5 - c, y + 0.5 - c) <= c;
+  const cells = [];
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) if (inside(x, y) && (!inside(x + 1, y) || !inside(x - 1, y) || !inside(x, y + 1) || !inside(x, y - 1))) cells.push([x, y]);
+  const x0 = Math.round((d.w - N) / 2) + g.dx, y0 = Math.round((d.h - N) / 2) + g.dy;
+  // Design stitches outside the circle (for the round check).
+  let outside = 0, total = 0; for (let y = 0; y < d.h; y++) for (let x = 0; x < d.w; x++) { if (d.px[y * d.w + x] < 0) continue; total++; if (!inside(x - x0, y - y0)) outside++; }
+  g.cache = { key, N, x0, y0, cells, outside, total, inside: (x, y) => inside(x - x0, y - y0) };
+  return g.cache;
+}
+function guideInfo() {
+  const g = guideCells(); if (!g) return;
+  $("guideInfo").textContent = `${g.N} stitches across (${(g.N / S.mesh).toFixed(2)} in on ${S.mesh} mesh), ${g.cells.length} stitches around.` + (g.outside ? ` ${g.outside} of your ${g.total} design stitches poke outside the circle (marked with a pink ×).` : g.total ? " Everything in your design fits inside the circle." : "");
+}
+function drawGuide() {
+  const g = guideCells(); if (!g) return;
+  const d = S.design;
+  vctx.save();
+  // Design stitches outside the circle get a red tint.
+  if (g.outside) {
+    vctx.fillStyle = "rgba(255,255,255,.55)"; vctx.strokeStyle = "#E0007A"; vctx.lineWidth = Math.max(1, V.s * 0.12); vctx.beginPath();
+    for (let y = 0; y < d.h; y++) for (let x = 0; x < d.w; x++) if (d.px[y * d.w + x] >= 0 && !g.inside(x, y)) {
+      const X = V.tx + x * V.s, Y = V.ty + y * V.s; vctx.fillRect(X, Y, V.s, V.s);
+      if (V.s >= 5) { const m = V.s * 0.25; vctx.moveTo(X + m, Y + m); vctx.lineTo(X + V.s - m, Y + V.s - m); vctx.moveTo(X + V.s - m, Y + m); vctx.lineTo(X + m, Y + V.s - m); }
+    }
+    vctx.stroke();
+  }
+  vctx.fillStyle = "rgba(0,170,255,.38)"; vctx.strokeStyle = "rgba(0,120,220,.95)"; vctx.lineWidth = Math.max(1, Math.min(2, V.s * 0.08));
+  for (const [x, y] of g.cells) { const X = V.tx + (g.x0 + x) * V.s, Y = V.ty + (g.y0 + y) * V.s; vctx.fillRect(X, Y, V.s, V.s); if (V.s >= 6) vctx.strokeRect(X + 0.5, Y + 0.5, V.s - 1, V.s - 1); }
+  vctx.restore();
+}
+function guideChanged() { S.guide.cache = null; store.set("ccp-guide", { inches: S.guide.inches }); guideInfo(); renderView(); }
+function guideStitch() {
+  const g = guideCells(), d = S.design; if (!g) return;
+  const col = d.pal[S.sel] || unhex("#" + dmcByCode("310")[2]);
+  pushUndo(); S.edited = true; let v = d.pal.findIndex(c => hex(c) === hex(col)); if (v < 0) { d.pal.push(col.slice()); v = d.pal.length - 1; }
+  let n = 0, off = 0; for (const [x, y] of g.cells) { const X = g.x0 + x, Y = g.y0 + y; if (X < 0 || Y < 0 || X >= d.w || Y >= d.h) { off++; continue; } d.px[Y * d.w + X] = v; n++; }
+  designDirty(); S.guide.cache = null; guideInfo(); renderView();
+  toast(`Stitched the circle in: ${n} stitches in ${dmcLabel(nearestDmc(col))}.` + (off ? ` ${off} fell outside the design frame; make the design ${g.N} × ${g.N} or larger to fit it all.` : " Undo takes it back."), 6000);
+}
+
 /* ---- Shapes: ready-made motifs at real size ---- */
 // Each shape is drawn in a 100-unit box; parts are filled (or stroked, "w" = line width) in order, later parts on top.
 // color: "main" = the color you have selected, "dark" = a darker shade of it, or a fixed DMC color.
@@ -4489,6 +4560,7 @@ function drawMain() {
       }
       vctx.restore();
     }
+    if (S.guide && S.guide.on) drawGuide();
     if (S.tool === "text" && S.stamp && (S.stampPos || hover.cell)) {
       const at = S.stampPos || hover.cell, st = S.stamp, gx0 = at[0] - Math.floor(st.cells.w / 2), gy0 = at[1] - Math.floor(st.cells.h / 2);
       vctx.save(); vctx.globalAlpha = 0.85; vctx.fillStyle = hex(st.color);
@@ -5102,6 +5174,14 @@ $("makePdf").onclick = makePrintPdf; $("makePng").onclick = makePrintPng;
 $("savePrev").onclick = async () => { if (!S.scan) return; const c = buildPreview(); await saveFile("canvas-preview.png", await canvasBlob(c)); };
 $("testPage").onclick = testPagePdf;
 $("paperCopy").onclick = makePaperCopy;
+{ const sel = $("guideSize"), std = ["3", "3.5", "4", "4.5", "5"], v = String(S.guide.inches);
+  if (std.includes(v)) sel.value = v; else { sel.value = "custom"; $("guideCustom").value = v; $("guideCustomWrap").hidden = false; } }
+$("guideOn").onchange = e => { S.guide.on = e.target.checked; $("guideCtl").hidden = !S.guide.on; if (S.guide.on && S.view !== "design") setView("design"); guideChanged(); };
+$("guideSize").onchange = e => { const v = e.target.value; $("guideCustomWrap").hidden = v !== "custom"; S.guide.inches = v === "custom" ? (+$("guideCustom").value || 4) : +v; guideChanged(); };
+$("guideCustom").oninput = e => { const v = +e.target.value; if (v > 0) { S.guide.inches = v; guideChanged(); } };
+$("guideCenter").onclick = () => { S.guide.dx = 0; S.guide.dy = 0; guideChanged(); };
+document.querySelectorAll("[data-gmove]").forEach(b => b.onclick = () => { const [a, c] = b.dataset.gmove.split(",").map(Number); S.guide.dx += a; S.guide.dy += c; guideChanged(); });
+$("guideStitch").onclick = guideStitch;
 $("fitExact").onclick = fitExact;
 document.querySelectorAll("[data-shapes]").forEach(b => b.onclick = () => {
   renderShapeGrid(); const box = $("shapeBox"); box.hidden = !box.hidden;
