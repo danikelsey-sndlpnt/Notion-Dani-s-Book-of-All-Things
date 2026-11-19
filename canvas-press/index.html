@@ -417,6 +417,11 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
           <label class="tog"><input type="checkbox" id="bareEmpty" checked> Leave bare canvas unprinted</label>
           <div class="status" id="importStatus" hidden></div>
           <p class="hint">PNG, JPG, PSD or PDF. Each file becomes a layer, and the layers are flattened into one picture. <b>Open stitch file</b> takes a Stitchly file (.stitchly, with its DMC colors), a stitch image (one pixel per stitch, or an export where each stitch is a block, grid lines are fine), a cross stitch chart PDF (it finds the chart grid, reads each square, and names the colors from the chart's DMC legend; color-block charts read best), or an OXS chart, and keeps its colors.</p>
+          <div class="status" id="chartInfo" hidden></div>
+          <div class="row" id="chartSizeRow" hidden>
+            <button class="btn small" id="chartKeep">Keep every stitch (size follows my mesh)</button>
+            <button class="btn small" id="chartFit">Make it the chart's size in inches</button>
+          </div>
           <div class="layers" id="layers"></div>
           <div class="row">
             <label class="f">Behind the artwork
@@ -816,6 +821,7 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
           <button class="btn small" id="gmFromScan" hidden>Use what my scan measured</button>
           <p class="hint"><b>1. Measure your canvas (once per canvas brand).</b> Canvas sold as 13 mesh is often 13.2 to 13.5. Print the gauge on plain paper at 100% / Actual Size. Lay the canvas on a strip so the first hole sits on the red mark. The strip where every hole stays black all the way to the end is your number. Then turn the canvas a quarter turn and do it again for "down".</p>
           <button class="btn small" id="gmGauge">Mesh gauge (PDF)</button>
+          <p class="hint"><b>Check the size:</b> the gauge and grid sheet have a 5 inch ruler along the bottom. Measure it with a real ruler. If it's shorter than 5 inches, your printer shrank the page ("Fit to page" or "Scale to fit" is on), and every hole will drift off. Print again at 100% / Actual Size.</p>
           <p class="hint"><b>2. Print the grid sheet</b> on plain paper at 100% / Actual Size. It's also a Carrier (it has the four dots), so it feeds the same way. Pick what to show of your design: just its outline (a pink line around the stitched area, along the holes), the design in color, or only the holes.</p>
           <label class="f">My design on the grid sheet
             <select id="gmShowDesign">
@@ -995,7 +1001,7 @@ function adjustColor(c) {
 }
 
 /* ---------------- files ---------------- */
-const APP_VERSION = "2026.11.19-a";
+const APP_VERSION = "2026.11.19-b";
 { const v = document.getElementById("appVer2"); if (v) v.textContent = "v" + APP_VERSION; }
 let downloadsCap = null;
 (window.claude && window.claude.use ? window.claude.use("downloads") : Promise.resolve(null)).then(d => { downloadsCap = d; }).catch(() => {});
@@ -1733,6 +1739,22 @@ function chartCanvasToDesign(c, legendCodes) {
   out.dmcNamed = !!legend.length; out.grid = [W, H];
   return out;
 }
+let chartImport = null;
+function chartSizeInfo(ch) {
+  const d = S.design, st = ch.stated || {}, el = $("chartInfo"), m = S.mesh; chartImport = { ch, w: d.w, h: d.h };
+  let t = `Read ${d.w} × ${d.h} stitches from the chart.`, kind = "ok";
+  if (st.w && st.h) {
+    if (st.w === d.w && st.h === d.h) t += ` The chart says ${st.w} × ${st.h} too, so every stitch was read.`;
+    else { kind = "err"; t += ` But the chart says ${st.w} × ${st.h}. Something was misread (often a cut-off edge or backstitch). Check it against the chart before printing, and send me the PDF if it's wrong.`; }
+  }
+  const wIn = st.wIn || (st.count ? d.w / st.count : null), hIn = st.hIn || (st.count ? d.h / st.count : null);
+  if (wIn && hIn) t += ` On the chart's ${st.count ? st.count + " count fabric" : "fabric"} it's ${wIn.toFixed(2)} × ${hIn.toFixed(2)} in.`;
+  t += ` On your ${m} mesh canvas, stitch for stitch, it's ${(d.w / m).toFixed(2)} × ${(d.h / m).toFixed(2)} in` + (wIn && Math.abs(d.w / m - wIn) > 0.1 ? (d.w / m > wIn ? ` (bigger, because ${m} mesh has bigger holes than ${st.count || "the chart's"} count).` : " (smaller).") : ".");
+  el.textContent = t; el.className = "status " + kind; el.hidden = false;
+  $("chartSizeRow").hidden = !(wIn && hIn && Math.abs(d.w / m - wIn) > 0.1);
+  if (wIn) $("chartFit").textContent = `Make it ${wIn.toFixed(2)} × ${hIn.toFixed(2)} in (${Math.round(wIn * m)} × ${Math.round(hIn * m)} stitches)`;
+  chartImport.wIn = wIn; chartImport.hIn = hIn;
+}
 function trimEmpty(r) {
   const { w: W, h: H, px } = r; let x0 = W, y0 = H, x1 = -1, y1 = -1;
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (px[y * W + x] >= 0) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
@@ -1764,13 +1786,25 @@ function symbolChart(d, w, xs, ys, legendCodes) {
   const out = trimEmpty({ w: W, h: H, pal, px }); out.symbols = sigs.length; out.legendCount = legend.length; out.grid = [W, H];
   return out;
 }
+// What the chart's own text says about its size: stitches, inches and fabric count (any it gives).
+function chartStatedSize(t) {
+  t = t.replace(/[\u201c\u201d\u2033]/g, '"').replace(/\s+/g, " ");
+  const r = {};
+  let m = t.match(/\(?\s*(\d{1,3})\s*[wW]?\s*[x×]\s*(\d{1,3})\s*[hH]?\s*stitch/i) || t.match(/stitch(?:es| count)?\s*:?\s*(\d{1,3})\s*[wW]?\s*[x×]\s*(\d{1,3})/i);
+  if (m) { r.w = +m[1]; r.h = +m[2]; }
+  m = t.match(/(\d{1,2}(?:\.\d+)?)\s*(?:"|in(?:ches)?\b)\s*[wW]?\s*[x×]\s*(\d{1,2}(?:\.\d+)?)\s*(?:"|in(?:ches)?\b)/i);
+  if (m) { r.wIn = +m[1]; r.hIn = +m[2]; }
+  m = t.match(/(\d{2})\s*(?:-|\s)?(?:ct|count)\b/i); if (m && +m[1] >= 10 && +m[1] <= 40) r.count = +m[1];
+  if (!r.count && r.w && r.wIn) r.count = Math.round(r.w / r.wIn);
+  return Object.keys(r).length ? r : null;
+}
 // A cross stitch chart PDF: finds the page with the chart grid, reads it, and names the colors from the legend text.
 async function readChartPdf(buf) {
   const lib = await loadPdfjs();
   const doc = await lib.getDocument({ data: new Uint8Array(buf.slice(0)) }).promise;
-  const codes = [], seen = new Set();
+  const codes = [], seen = new Set(); let all = "";
   for (let n = 1; n <= Math.min(doc.numPages, 12); n++) {
-    const tc = await (await doc.getPage(n)).getTextContent(), text = tc.items.map(t => t.str).join(" ");
+    const tc = await (await doc.getPage(n)).getTextContent(), text = tc.items.map(t => t.str).join(" "); all += " " + text;
     for (const m of text.matchAll(/\bDMC\b[\s\-:#]*(B5200|BLANC|ECRU|\d{1,4})\b/gi)) { const k = m[1].toUpperCase(); if (!seen.has(k) && dmcByCode(k)) { seen.add(k); codes.push(k); } }
   }
   let best = null;
@@ -1785,7 +1819,7 @@ async function readChartPdf(buf) {
     // Prefer a page in color over a symbols-only page, then the biggest chart.
     if (r) { r.page = n; const score = (r.symbols ? 0 : 1e6) + r.w * r.h; if (!best || score > best.score) { best = r; best.score = score; } }
   }
-  if (best) { best.pages = doc.numPages; best.codes = codes; }
+  if (best) { best.pages = doc.numPages; best.codes = codes; best.stated = chartStatedSize(all); }
   return best;
 }
 // Screenshots and exports often have a plain white (or near-white) margin around the chart. Rows and columns along the
@@ -2294,7 +2328,22 @@ function estimatePitch(g, w, h, minP = 3, maxP = 90) {
     const pick = scores.find(([, s]) => s >= best * 0.85);
     return pick ? pick[0] : null;
   };
-  const px = one(true), py = one(false);
+  // Edges come two per stitch (both sides of each thread). When threads and holes are about equally wide, those
+  // edges are evenly spaced, and half a stitch looks like the repeat. The brightness itself (thread bright, hole dark)
+  // only repeats once per stitch: half a stitch later it's opposite. So if brightness disagrees at p but agrees at 2p,
+  // the stitch is 2p.
+  const realPeriod = (horiz, p) => {
+    if (!p) return p;
+    const n = horiz ? w : h, M = new Float64Array(n);
+    if (horiz) { for (let y = 0; y < h; y += 2) { const o = y * w; for (let x = 0; x < w; x++) M[x] += g[o + x]; } }
+    else { for (let y = 0; y < h; y++) { const o = y * w; let s2 = 0; for (let x = 0; x < w; x += 2) s2 += g[o + x]; M[y] = s2; } }
+    const R = Math.max(30, Math.round(p * 3)), D = new Float64Array(n);
+    for (let i = 0; i < n; i++) { let s2 = 0, c2 = 0; for (let k = Math.max(0, i - R); k <= Math.min(n - 1, i + R); k++) { s2 += M[k]; c2++; } D[i] = M[i] - s2 / c2; }
+    const acAt = L => { const i = Math.floor(L), f = L - i; let a1 = 0, a2 = 0; for (let q = 0; q + i + 1 < n; q++) { a1 += D[q] * D[q + i]; a2 += D[q] * D[q + i + 1]; } return (a1 * (1 - f) + a2 * f) / (n - L); };
+    const a1 = acAt(p), a2 = acAt(2 * p);
+    return a2 > 0 && a1 < a2 * 0.35 ? 2 * p : p;
+  };
+  const px = realPeriod(true, one(true)), py = realPeriod(false, one(false));
   if (!px && !py) return null;
   if (px && py && Math.abs(px - py) / Math.min(px, py) < 0.15) return (px + py) / 2;
   return Math.min(px || py, py || px);
@@ -3838,6 +3887,13 @@ function gridNote() {
   $("gmFromScan").hidden = !rm; if (rm) $("gmFromScan").textContent = `Use what my scan measured (${rm.across.toFixed(2)} across, ${rm.down.toFixed(2)} down)`;
 }
 function gridMeshChanged() { store.set("ccp-gridmesh", gridMesh()); gridNote(); }
+// A 5 inch ruler with inch and quarter-inch ticks: measured with a real ruler, it shows whether the page printed at 100%.
+function pdfRuler(x0, y, label) {
+  let c = "0 G 0.8 w\n" + `${pt(x0)} ${ptY(y)} m ${pt(x0 + 5)} ${ptY(y)} l S\n0.5 w\n`;
+  for (let q = 0; q <= 20; q++) { const x = x0 + q / 4, t = q % 4 === 0 ? 0.12 : q % 2 === 0 ? 0.08 : 0.05; c += `${pt(x)} ${ptY(y)} m ${pt(x)} ${ptY(y - t)} l S\n`; }
+  c += "0 g\n"; for (let i = 0; i <= 5; i++) c += pdfText(x0 + i - 0.02, y - 0.15, 6, String(i));
+  return c + "0.3 g\n" + pdfText(x0 + 5.15, y - 0.01, 6, label);
+}
 function meshGaugePdf() {
   const base = Math.round(+$("gmA").value || S.canvasMesh || S.mesh || 13), steps = [];
   for (let k = -3; k <= 6; k++) steps.push(Math.round((base + k * 0.1) * 100) / 100);
@@ -3849,6 +3905,7 @@ function meshGaugePdf() {
     c += "f\n1 0 0 RG 1.2 w\n" + `${pt(x0)} ${ptY(y - 0.16)} m ${pt(x0)} ${ptY(y - 0.04)} l S\n`;
     c += "0.6 g\n" + pdfText(x0 + len - 0.3, y - 0.07, 6, "end");
   });
+  c += pdfRuler(1.15, 10.45, "= 5 in at 100%");
   saveFile(`mesh-gauge-${base}-v${APP_VERSION}.pdf`, buildPdf(c));
 }
 async function gridSheetPdf() {
@@ -3908,6 +3965,7 @@ async function gridSheetPdf() {
     nums += pdfText(x0 - 0.2 - tw(lab, 5.5), y + 0.025, 5.5, lab) + pdfText(x1 + 0.2, y + 0.025, 5.5, lab);
   }
   c += "0.45 G 0.5 w\n" + lines + "S\n0.3 g\n" + nums;
+  c += pdfRuler(1.5, 10.78, "= 5 in at 100%");
   c += "0.35 g\n" + pdfText(2.2, 0.22, 7, `Sookie's Canvas Press grid sheet: ${L.m.a} x ${L.m.d} holes per inch  -  print at 100% / Actual Size`);
   c += pdfText(2.2, 0.34, 7, "Line the canvas holes up on the black squares, centered on the red arrows. This edge goes in first.");
   saveFile(`grid-sheet-${L.m.a}x${L.m.d}${over ? "-outline" : under ? "-with-design" : ""}-v${APP_VERSION}.pdf`, buildPdf(c));
@@ -5620,7 +5678,7 @@ $("openStitch").onchange = async e => {
     if (extra && extra.mesh && MESHES.includes(extra.mesh)) setMesh(extra.mesh);
     setDesign(d.pal, d.px, d.w, d.h); setTab(1); fitView(); renderAll();
     if (extra && extra.chart) {
-      const ch = extra.chart;
+      const ch = extra.chart; chartSizeInfo(ch);
       toast(`Read the chart${ch.pages > 1 ? ` on page ${ch.page} of ${ch.pages}` : ""}: ${d.w} × ${d.h} stitches, ${d.pal.length} colors.` +
         (ch.symbols ? ` This page uses black-and-white symbols, so each symbol got its own color. Set each one's DMC color from the chart's legend (tap a color, then Pick a DMC color). If the PDF also has a color page, it would read better.` : ch.dmcNamed ? ` Colors matched to the DMC numbers in its legend (${ch.codes.join(", ")}).` : " Colors matched to the closest DMC.") +
         " Backstitch lines aren't stitches, so they're left out.", 9000);
@@ -5859,6 +5917,8 @@ $("addDmc").onclick = () => S.design && openDmc(null, dm => { pushUndo(); S.edit
 $("snapDmc").onclick = snapAllToDmc;
 $("saveKey").onclick = colorKeyPdf; $("saveKey2").onclick = colorKeyPdf;
 $("iniOpen").onclick = openInitials;
+$("chartKeep").onclick = () => { if (chartImport && S.design && (S.design.w !== chartImport.w || S.design.h !== chartImport.h)) { restore(S.undo, S.redo); } $("chartSizeRow").hidden = true; toast("Kept every stitch of the chart."); };
+$("chartFit").onclick = () => { const ci = chartImport; if (!ci || !ci.wIn) return; resizeDesign(clamp(Math.round(ci.wIn * S.mesh), 4, 400), clamp(Math.round(ci.hIn * S.mesh), 4, 400)); syncSizeInputs(); toast(`Now ${S.design.w} × ${S.design.h} stitches = ${(S.design.w / S.mesh).toFixed(2)} × ${(S.design.h / S.mesh).toFixed(2)} in. Some stitches were merged to fit; Undo puts it back.`, 6000); };
 $("iniSmaller").onclick = () => iniResize(-1); $("iniBigger").onclick = () => iniResize(1);
 $("iniDel").onclick = async () => { await applyInitials(null); toast("Initials removed."); };
 [["iniU", 0, -1], ["iniD", 0, 1], ["iniL", -1, 0], ["iniR", 1, 0]].forEach(([id, dx, dy]) => $(id).onclick = () => iniMove(dx, dy));

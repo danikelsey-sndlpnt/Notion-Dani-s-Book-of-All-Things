@@ -87,3 +87,8 @@ Print step → "Color legend on the canvas": None / Beside the design (right) / 
 
 ## Cross stitch chart PDFs (2026.11.19-a)
 **Open stitch file** with a chart PDF: every page is rendered, the chart grid is found from its long grid lines, each square is read by its most common color, and colors are named from the DMC numbers in the legend text. The empty grid border is trimmed. Black-and-white symbol pages are grouped by symbol shape with placeholder colors. Backstitches are ignored. Tested on a PCStitch color-block chart (80 x 80 grid read as the stated 69 x 72 design, 6 legend colors).
+
+## Size fixes (2026.11.19-b)
+- Read a painted canvas: the mesh measurer could lock onto half a stitch when threads and holes are about equally wide (each thread has two edges), doubling the stitch count (a 2 in ornament read as about 4 in). It now checks the thread/hole brightness, which only repeats once per stitch, and doubles the period when needed.
+- Chart PDFs: the app reads the size the chart states (stitches, inches, fabric count), confirms the stitch count, and offers "Keep every stitch" or "Make it the chart's size in inches".
+- Mesh gauge and grid sheet have a 5 inch ruler to check the page printed at 100%.
