@@ -84,3 +84,6 @@ Print step → "Color legend on the canvas": None / Beside the design (right) / 
 - Print step, under Edit initials: **Smaller / Bigger** (block letters step down to new *Tiny block letters*, 5 stitches tall), **Remove initials**, and arrow buttons that move them 1 stitch. Or drag the initials on the Preview. The hand placement (dx, dy) is saved with the initials.
 - With no scan loaded, **Preview** shows the design, initials and color legend on a plain canvas at the grid sheet mesh.
 - 2026.11.18-j: the initials box takes a whole name (up to 32 characters).
+
+## Cross stitch chart PDFs (2026.11.19-a)
+**Open stitch file** with a chart PDF: every page is rendered, the chart grid is found from its long grid lines, each square is read by its most common color, and colors are named from the DMC numbers in the legend text. The empty grid border is trimmed. Black-and-white symbol pages are grouped by symbol shape with placeholder colors. Backstitches are ignored. Tested on a PCStitch color-block chart (80 x 80 grid read as the stated 69 x 72 design, 6 legend colors).

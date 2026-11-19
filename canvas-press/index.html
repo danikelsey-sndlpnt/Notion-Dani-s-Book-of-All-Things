@@ -416,7 +416,7 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
           <p class="hint"><b>Read a painted canvas</b> takes a photo, scan or listing picture of a canvas that's already painted. It finds every intersection and turns its color into a stitch you can edit and print on a new canvas.</p>
           <label class="tog"><input type="checkbox" id="bareEmpty" checked> Leave bare canvas unprinted</label>
           <div class="status" id="importStatus" hidden></div>
-          <p class="hint">PNG, JPG, PSD or PDF. Each file becomes a layer, and the layers are flattened into one picture. <b>Open stitch file</b> takes a Stitchly file (.stitchly, with its DMC colors), a stitch image (one pixel per stitch, or an export where each stitch is a block, grid lines are fine), a chart PDF, or an OXS chart, and keeps its colors.</p>
+          <p class="hint">PNG, JPG, PSD or PDF. Each file becomes a layer, and the layers are flattened into one picture. <b>Open stitch file</b> takes a Stitchly file (.stitchly, with its DMC colors), a stitch image (one pixel per stitch, or an export where each stitch is a block, grid lines are fine), a cross stitch chart PDF (it finds the chart grid, reads each square, and names the colors from the chart's DMC legend; color-block charts read best), or an OXS chart, and keeps its colors.</p>
           <div class="layers" id="layers"></div>
           <div class="row">
             <label class="f">Behind the artwork
@@ -995,7 +995,7 @@ function adjustColor(c) {
 }
 
 /* ---------------- files ---------------- */
-const APP_VERSION = "2026.11.18-j";
+const APP_VERSION = "2026.11.19-a";
 { const v = document.getElementById("appVer2"); if (v) v.textContent = "v" + APP_VERSION; }
 let downloadsCap = null;
 (window.claude && window.claude.use ? window.claude.use("downloads") : Promise.resolve(null)).then(d => { downloadsCap = d; }).catch(() => {});
@@ -1661,6 +1661,132 @@ function stitchImageToDesign(c) {
   }
   let out = pal.length > 64 ? { w: W, h: H, ...quantize(cells, W, H, 48, false) } : { w: W, h: H, ...compactPalette({ pal, px }) };
   return trimPlainBorder(out);
+}
+/* ---------------- cross stitch chart PDFs ---------------- */
+// Grid lines of a chart: columns (or rows) of dark pixels that run nearly the whole height (or width) of the chart.
+function chartLines(prof, minLen) {
+  const raw = [];
+  for (let i = 0; i < prof.length; i++) if (prof[i] >= minLen) { if (raw.length && i - raw[raw.length - 1][1] <= 1) raw[raw.length - 1][1] = i; else raw.push([i, i]); }
+  let L = raw.map(r => (r[0] + r[1]) / 2); if (L.length < 4) return null;
+  const diffs = L.slice(1).map((v, i) => v - L[i]).sort((a, b) => a - b), p = diffs[diffs.length >> 1];
+  if (p < 4) return null;
+  // Keep the longest run of lines spaced about one stitch apart (filling a missed line), dropping strays outside it.
+  const runs = []; let cur = [L[0]];
+  for (let i = 1; i < L.length; i++) {
+    const g = L[i] - cur[cur.length - 1], k = Math.round(g / p);
+    if (g < p * 0.5) continue;
+    if (k >= 1 && k <= 3 && Math.abs(g - k * p) < p * 0.25) { for (let m = 1; m < k; m++) cur.push(cur[cur.length - 1] + g / k); cur.push(L[i]); }
+    else { runs.push(cur); cur = [L[i]]; }
+  }
+  runs.push(cur); runs.sort((a, b) => b.length - a.length);
+  return runs[0].length >= 5 ? runs[0] : null;
+}
+// Reads a chart drawn as colored squares (or colored symbols) on a grid. Returns null if no chart grid is on the page.
+function chartCanvasToDesign(c, legendCodes) {
+  const w = c.width, h = c.height, d = c.getContext("2d", { willReadFrequently: true }).getImageData(0, 0, w, h).data;
+  const dark = i => d[i * 4] + d[i * 4 + 1] + d[i * 4 + 2] < 330;
+  // Longest dark run per column / row (grid lines are long and unbroken; text and filled squares are not as long).
+  const runCol = new Float32Array(w), runRow = new Float32Array(h);
+  for (let x = 0; x < w; x++) { let r = 0, best = 0; for (let y = 0; y < h; y++) { if (dark(y * w + x)) { r++; if (r > best) best = r; } else r = 0; } runCol[x] = best; }
+  for (let y = 0; y < h; y++) { let r = 0, best = 0; for (let x = 0; x < w; x++) { if (dark(y * w + x)) { r++; if (r > best) best = r; } else r = 0; } runRow[y] = best; }
+  const mc = Math.max(...runCol), mr = Math.max(...runRow);
+  if (mc < h * 0.15 || mr < w * 0.15) return null;
+  const xs = chartLines(runCol, mc * 0.8), ys = chartLines(runRow, mr * 0.8);
+  if (!xs || !ys) return null;
+  const W = xs.length - 1, H = ys.length - 1;
+  if (W > 400 || H > 400) throw new Error(`That chart reads as ${W} × ${H} stitches, more than the 400 limit.`);
+  // Each square: its most common color, away from the grid lines.
+  const cell = new Array(W * H).fill(null), dk = new Float32Array(W * H);
+  for (let cy = 0; cy < H; cy++) for (let cx = 0; cx < W; cx++) {
+    const x0 = xs[cx], x1 = xs[cx + 1], y0 = ys[cy], y1 = ys[cy + 1], ix = (x1 - x0) * 0.22, iy = (y1 - y0) * 0.22, bins = new Map(); let n = 0, nd = 0;
+    for (let y = Math.round(y0 + iy); y <= Math.round(y1 - iy); y++) for (let x = Math.round(x0 + ix); x <= Math.round(x1 - ix); x++) {
+      const i = (y * w + x) * 4, k = ((d[i] >> 3) << 10) | ((d[i + 1] >> 3) << 5) | (d[i + 2] >> 3);
+      const b = bins.get(k) || [0, 0, 0, 0]; b[0] += d[i]; b[1] += d[i + 1]; b[2] += d[i + 2]; b[3]++; bins.set(k, b); n++; if (dark(i / 4)) nd++;
+    }
+    let best = null; for (const b of bins.values()) if (!best || b[3] > best[3]) best = b;
+    if (best) cell[cy * W + cx] = [best[0] / best[3], best[1] / best[3], best[2] / best[3]];
+    dk[cy * W + cx] = n ? nd / n : 0;
+  }
+  const isEmpty = c3 => c3[0] > 246 && c3[1] > 246 && c3[2] > 246;
+  // Group the colors (a chart uses each color exactly, so near-identical ones are the same thread).
+  const groups = [], px = new Int16Array(W * H).fill(-1);
+  for (let i = 0; i < W * H; i++) {
+    const c3 = cell[i]; if (!c3 || isEmpty(c3)) continue;
+    const L = rgb2lab(Math.round(c3[0]), Math.round(c3[1]), Math.round(c3[2]));
+    let k = groups.findIndex(g => dE(g.L, L) < 5);
+    if (k < 0) { k = groups.length; groups.push({ L, c: c3.map(Math.round), n: 0 }); }
+    groups[k].n++; px[i] = k;
+  }
+  const filled = groups.reduce((a, g) => a + g.n, 0), symbolish = [...dk].filter(v => v > 0.06 && v < 0.7).length;
+  // Black-and-white symbol charts: every square is white with a black symbol. Group the squares by symbol shape.
+  if (filled < W * H * 0.02 && symbolish > W * H * 0.02) return symbolChart(d, w, xs, ys, legendCodes);
+  if (!groups.length) return null;
+  // Name each color by the chart's own legend: the closest of the DMC numbers it lists.
+  const legend = (legendCodes || []).map(dmcByCode).filter(Boolean), used = new Set();
+  const pal = groups.map(g => {
+    let best = null;
+    for (const m of legend) { const e = dE(g.L, rgb2lab(...unhex("#" + m[2]))); if (!best || e < best[1]) best = [m, e]; }
+    const m = best && best[1] < 30 ? best[0] : nearestDmc(g.c);
+    used.add(m[0]); return unhex("#" + m[2]);
+  });
+  const out = trimEmpty({ w: W, h: H, pal, px });
+  out.dmcNamed = !!legend.length; out.grid = [W, H];
+  return out;
+}
+function trimEmpty(r) {
+  const { w: W, h: H, px } = r; let x0 = W, y0 = H, x1 = -1, y1 = -1;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (px[y * W + x] >= 0) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+  if (x1 < 0) return r;
+  const w = x1 - x0 + 1, h = y1 - y0 + 1, p2 = new Int16Array(w * h);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) p2[y * w + x] = px[(y + y0) * W + x + x0];
+  return { ...r, w, h, ...compactPalette({ pal: r.pal, px: p2 }) };
+}
+function symbolChart(d, w, xs, ys, legendCodes) {
+  const W = xs.length - 1, H = ys.length - 1, S8 = 8, sigs = [], px = new Int16Array(W * H).fill(-1);
+  const dark = i => d[i * 4] + d[i * 4 + 1] + d[i * 4 + 2] < 330;
+  for (let cy = 0; cy < H; cy++) for (let cx = 0; cx < W; cx++) {
+    const x0 = xs[cx], x1 = xs[cx + 1], y0 = ys[cy], y1 = ys[cy + 1], bx = (x1 - x0) * 0.12, by = (y1 - y0) * 0.12, bits = new Uint8Array(S8 * S8); let on = 0;
+    for (let a = 0; a < S8; a++) for (let b = 0; b < S8; b++) {
+      const x = Math.round(x0 + bx + (b + 0.5) * (x1 - x0 - 2 * bx) / S8), y = Math.round(y0 + by + (a + 0.5) * (y1 - y0 - 2 * by) / S8);
+      if (dark(y * w + x)) { bits[a * S8 + b] = 1; on++; }
+    }
+    if (on < 3) continue;
+    let k = -1, bd = 1e9;
+    sigs.forEach((s2, j) => { let dd = 0; for (let q = 0; q < 64; q++) dd += s2.bits[q] !== bits[q]; if (dd < bd) { bd = dd; k = j; } });
+    if (k < 0 || bd > 9) { k = sigs.length; sigs.push({ bits, n: 0 }); }
+    sigs[k].n++; px[cy * W + cx] = k;
+  }
+  if (!sigs.length) return null;
+  // Symbols don't say their color; give each its own clear color (the legend's threads, in order, when the counts match).
+  const legend = (legendCodes || []).map(dmcByCode).filter(Boolean);
+  const SPREAD = [[214, 40, 57], [33, 102, 172], [46, 139, 87], [240, 165, 0], [106, 61, 154], [0, 151, 167], [233, 102, 160], [120, 72, 40], [60, 60, 60], [152, 200, 70], [255, 120, 60], [140, 140, 200]];
+  const pal = sigs.map((s2, k) => SPREAD[k % SPREAD.length].map(v => Math.max(0, v - 40 * Math.floor(k / SPREAD.length))));
+  const out = trimEmpty({ w: W, h: H, pal, px }); out.symbols = sigs.length; out.legendCount = legend.length; out.grid = [W, H];
+  return out;
+}
+// A cross stitch chart PDF: finds the page with the chart grid, reads it, and names the colors from the legend text.
+async function readChartPdf(buf) {
+  const lib = await loadPdfjs();
+  const doc = await lib.getDocument({ data: new Uint8Array(buf.slice(0)) }).promise;
+  const codes = [], seen = new Set();
+  for (let n = 1; n <= Math.min(doc.numPages, 12); n++) {
+    const tc = await (await doc.getPage(n)).getTextContent(), text = tc.items.map(t => t.str).join(" ");
+    for (const m of text.matchAll(/\bDMC\b[\s\-:#]*(B5200|BLANC|ECRU|\d{1,4})\b/gi)) { const k = m[1].toUpperCase(); if (!seen.has(k) && dmcByCode(k)) { seen.add(k); codes.push(k); } }
+  }
+  let best = null;
+  for (let n = 1; n <= Math.min(doc.numPages, 12); n++) {
+    busy(true, `Reading chart page ${n} of ${doc.numPages}…`, 0.2 + 0.6 * n / Math.min(doc.numPages, 12)); await tick();
+    const page = await doc.getPage(n), vp = page.getViewport({ scale: 200 / 72 });
+    const c = document.createElement("canvas"); c.width = Math.round(vp.width); c.height = Math.round(vp.height);
+    const x = c.getContext("2d"); x.fillStyle = "#fff"; x.fillRect(0, 0, c.width, c.height);
+    await page.render({ canvasContext: x, viewport: vp }).promise;
+    let r = null; try { r = chartCanvasToDesign(c, codes); } catch (e) { r = null; }
+    c.width = 1;
+    // Prefer a page in color over a symbols-only page, then the biggest chart.
+    if (r) { r.page = n; const score = (r.symbols ? 0 : 1e6) + r.w * r.h; if (!best || score > best.score) { best = r; best.score = score; } }
+  }
+  if (best) { best.pages = doc.numPages; best.codes = codes; }
+  return best;
 }
 // Screenshots and exports often have a plain white (or near-white) margin around the chart. Rows and columns along the
 // outside that are entirely that color aren't part of the pattern, so they're cut away.
@@ -3649,7 +3775,7 @@ function toolIndex() {
   }
   return out;
 }
-const SYNONYMS = { round: "circle", ornament: "circle", oval: "circle", dot: "dots", guide: "guide", ink: "ink", align: "nudge", offset: "nudge", shift: "nudge", save: "save", backup: "backup", background: "background", erase: "erase", ai: "claude", help: "claude", copy: "copy", paste: "paste", size: "size", inch: "size", mesh: "mesh", photo: "photo", key: "key", chart: "chart", initials: "initials", text: "text", shape: "shapes", heart: "shapes", star: "shapes", bow: "shapes" };
+const SYNONYMS = { cross: "chart", pattern: "chart", round: "circle", ornament: "circle", oval: "circle", dot: "dots", guide: "guide", ink: "ink", align: "nudge", offset: "nudge", shift: "nudge", save: "save", backup: "backup", background: "background", erase: "erase", ai: "claude", help: "claude", copy: "copy", paste: "paste", size: "size", inch: "size", mesh: "mesh", photo: "photo", key: "key", chart: "chart", initials: "initials", text: "text", shape: "shapes", heart: "shapes", star: "shapes", bow: "shapes" };
 function runToolSearch() {
   const q = $("toolSearch").value.trim().toLowerCase(), box = $("searchRes");
   if (!q) { box.hidden = true; return; }
@@ -5484,12 +5610,22 @@ $("openStitch").onchange = async e => {
     if (/\.(json|sookie)$/i.test(f.name) || f.type === "application/json") { await restoreLibrary(f); return; }
     if (/\.stitchly$/i.test(f.name)) { d = await parseStitchly(f); extra = d; }
     else if (/\.(oxs|xml)$/i.test(f.name)) d = parseOXS(await f.text());
-    else if (/\.pdf$/i.test(f.name) || f.type === "application/pdf") { busy(true, "Reading the chart…", 0.3); try { d = stitchImageToDesign((await pdfToCanvas(await f.arrayBuffer(), 200)).canvas); } finally { busy(false); } }
+    else if (/\.pdf$/i.test(f.name) || f.type === "application/pdf") {
+      busy(true, "Reading the chart…", 0.1);
+      try { const buf = await f.arrayBuffer(); d = await readChartPdf(buf).catch(() => null); if (d) extra = { chart: d }; else d = stitchImageToDesign((await pdfToCanvas(buf, 200)).canvas); } finally { busy(false); }
+    }
     else d = stitchImageToDesign(await loadImageFile(f));
     if (!d) throw new Error("No stitches were found in this file.");
     pushUndo(); S.importFile = null; S.original = extra && extra.original || null; S.designName = f.name; S.layers = []; S.exampleDesign = false;
     if (extra && extra.mesh && MESHES.includes(extra.mesh)) setMesh(extra.mesh);
     setDesign(d.pal, d.px, d.w, d.h); setTab(1); fitView(); renderAll();
+    if (extra && extra.chart) {
+      const ch = extra.chart;
+      toast(`Read the chart${ch.pages > 1 ? ` on page ${ch.page} of ${ch.pages}` : ""}: ${d.w} × ${d.h} stitches, ${d.pal.length} colors.` +
+        (ch.symbols ? ` This page uses black-and-white symbols, so each symbol got its own color. Set each one's DMC color from the chart's legend (tap a color, then Pick a DMC color). If the PDF also has a color page, it would read better.` : ch.dmcNamed ? ` Colors matched to the DMC numbers in its legend (${ch.codes.join(", ")}).` : " Colors matched to the closest DMC.") +
+        " Backstitch lines aren't stitches, so they're left out.", 9000);
+      return;
+    }
     toast(`Opened ${d.w} × ${d.h} stitches, ${d.pal.length} colors${extra ? " in their DMC colors" : ""}.` + (d.trimmed ? ` The plain white margin around it was cut off (the picture was ${d.trimmed[0]} × ${d.trimmed[1]}).` : "") + (extra && extra.board ? ` The empty board around the pattern was left out (the whole board was ${extra.board[0]} × ${extra.board[1]}).` : "") + (extra && extra.unknown.length ? ` These thread codes aren't DMC and show as gray: ${extra.unknown.join(", ")}.` : ""), 6000);
   } catch (err) { toast(err.message, 5000); }
 };
