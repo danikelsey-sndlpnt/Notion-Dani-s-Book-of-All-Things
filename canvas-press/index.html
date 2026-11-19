@@ -1008,7 +1008,7 @@ function adjustColor(c) {
 }
 
 /* ---------------- files ---------------- */
-const APP_VERSION = "2026.11.19-d";
+const APP_VERSION = "2026.11.19-e";
 { const v = document.getElementById("appVer2"); if (v) v.textContent = "v" + APP_VERSION; }
 let downloadsCap = null;
 (window.claude && window.claude.use ? window.claude.use("downloads") : Promise.resolve(null)).then(d => { downloadsCap = d; }).catch(() => {});
@@ -1705,15 +1705,52 @@ function chartCanvasToDesign(c, legendCodes) {
   for (let y = 0; y < h; y++) { let r = 0, best = 0; for (let x = 0; x < w; x++) { if (dark(y * w + x)) { r++; if (r > best) best = r; } else r = 0; } runRow[y] = best; }
   const mc = Math.max(...runCol), mr = Math.max(...runRow);
   if (mc < h * 0.15 || mr < w * 0.15) return null;
-  const xs = chartLines(runCol, mc * 0.8), ys = chartLines(runRow, mr * 0.8);
+  // The long dark lines: every stitch on some charts, only every 10th (plus the border) on others, whose thin lines are gray.
+  const centers = (prof, minLen) => { const out = []; let a = -1; for (let i = 0; i <= prof.length; i++) { const on = i < prof.length && prof[i] >= minLen; if (on && a < 0) a = i; if (!on && a >= 0) { out.push((a + i - 1) / 2); a = -1; } } return out; };
+  const dX = centers(runCol, mc * 0.8), dY = centers(runRow, mr * 0.8);
+  if (dX.length < 2 || dY.length < 2) return null;
+  const lum = i => d[i * 4] * 0.3 + d[i * 4 + 1] * 0.59 + d[i * 4 + 2] * 0.11;
+  // Thin lines: pixels a bit darker than the pixels 3 to each side, counted along the chart's span.
+  const valley = (horiz, a0, a1) => {
+    const n = horiz ? w : h, P = new Float32Array(n), lo = Math.max(0, Math.round(a0)), hi = Math.min(horiz ? h : w, Math.round(a1)), step = 2; let rows = 0;
+    for (let t = lo; t < hi; t += step) { rows++; for (let u = 3; u < n - 3; u++) { const i = horiz ? t * w + u : u * w + t, j = horiz ? 3 : 3 * w, v = lum(i); if (v < lum(i - j) - 10 && v < lum(i + j) - 10) P[u]++; } }
+    for (let u = 0; u < n; u++) P[u] /= Math.max(1, rows);
+    return P;
+  };
+  const axis = (dc, V) => {
+    const gaps = dc.slice(1).map((v, i) => v - dc[i]).filter(g => g > 3), G = gaps.slice().sort((a, b) => a - b)[gaps.length >> 1];
+    if (!G) return null;
+    const vAt = x => Math.max(V[Math.round(x) - 1] || 0, V[Math.round(x)] || 0, V[Math.round(x) + 1] || 0);
+    // How many stitches between bold lines: the largest count whose split points all land on thin lines.
+    const sc = []; for (let n = 2; n <= 15 && G / n >= 4; n++) { let sum = 0, c = 0; for (let k = 1; k < dc.length; k++) { const g = dc[k] - dc[k - 1]; if (Math.abs(g - G) > G * 0.1) continue; for (let m = 1; m < n; m++) { sum += vAt(dc[k - 1] + m * g / n); c++; } } sc.push([n, c ? sum / c : 0]); }
+    const best = Math.max(0, ...sc.map(x => x[1])); let n = 1;
+    if (best >= 0.3) for (const [nn, v] of sc) if (v >= best * 0.85) n = nn;
+    const q = G / n;
+    // The chart: the longest run of bold lines spaced a whole number of stitches apart.
+    const chains = []; let cur = [dc[0]];
+    for (let k = 1; k < dc.length; k++) { const g = dc[k] - cur[cur.length - 1], m = g / q; if (g < q * 0.5) continue; if (Math.abs(m - Math.round(m)) < 0.2 && Math.round(m) <= n * 1.5 + 1) cur.push(dc[k]); else { chains.push(cur); cur = [dc[k]]; } }
+    chains.push(cur); chains.sort((a, b) => (b[b.length - 1] - b[0]) - (a[a.length - 1] - a[0]));
+    const ch = chains[0]; if (ch.length < 2) return null;
+    const out = [ch[0]];
+    for (let k = 1; k < ch.length; k++) { const g = ch[k] - ch[k - 1], m = Math.max(1, Math.round(g / q)); for (let j = 1; j <= m; j++) out.push(ch[k - 1] + j * g / m); }
+    // Past the outermost bold lines the chart can go on with thin lines (and a thin border): follow them out.
+    const near = x => { let b = 0, bx = x; for (let u = Math.round(x - q * 0.15); u <= Math.round(x + q * 0.15); u++) if ((V[u] || 0) > b) { b = V[u]; bx = u; } return [b, bx]; };
+    for (let guard = 0; guard < 400; guard++) { const [v, x] = near(out[0] - q); if (v < 0.3 || x < 2) break; out.unshift(x); }
+    for (let guard = 0; guard < 400; guard++) { const [v, x] = near(out[out.length - 1] + q); if (v < 0.3 || x > V.length - 3) break; out.push(x); }
+    return out.length >= 5 ? out : null;
+  };
+  const xs = axis(dX, valley(true, dY[0], dY[dY.length - 1])), ys = axis(dY, valley(false, dX[0], dX[dX.length - 1]));
   if (!xs || !ys) return null;
   const W = xs.length - 1, H = ys.length - 1;
   if (W > 400 || H > 400) throw new Error(`That chart reads as ${W} × ${H} stitches, more than the 400 limit.`);
   // Each square: its most common color, away from the grid lines.
   const cell = new Array(W * H).fill(null), dk = new Float32Array(W * H);
   for (let cy = 0; cy < H; cy++) for (let cx = 0; cx < W; cx++) {
-    const x0 = xs[cx], x1 = xs[cx + 1], y0 = ys[cy], y1 = ys[cy + 1], ix = (x1 - x0) * 0.22, iy = (y1 - y0) * 0.22, bins = new Map(); let n = 0, nd = 0;
+    const x0 = xs[cx], x1 = xs[cx + 1], y0 = ys[cy], y1 = ys[cy + 1], ix = (x1 - x0) * 0.14, iy = (y1 - y0) * 0.14, bins = new Map(); let n = 0, nd = 0;
+    // A band just inside the square's edges: symbols, center marks and backstitches mostly sit in the middle.
+    const inMid = (x, y) => x > x0 + (x1 - x0) * 0.3 && x < x1 - (x1 - x0) * 0.3 && y > y0 + (y1 - y0) * 0.3 && y < y1 - (y1 - y0) * 0.3;
     for (let y = Math.round(y0 + iy); y <= Math.round(y1 - iy); y++) for (let x = Math.round(x0 + ix); x <= Math.round(x1 - ix); x++) {
+      if (inMid(x, y)) continue;
       const i = (y * w + x) * 4, k = ((d[i] >> 3) << 10) | ((d[i + 1] >> 3) << 5) | (d[i + 2] >> 3);
       const b = bins.get(k) || [0, 0, 0, 0]; b[0] += d[i]; b[1] += d[i + 1]; b[2] += d[i + 2]; b[3]++; bins.set(k, b); n++; if (dark(i / 4)) nd++;
     }
@@ -1740,7 +1777,8 @@ function chartCanvasToDesign(c, legendCodes) {
   const pal = groups.map(g => {
     let best = null;
     for (const m of legend) { const e = dE(g.L, rgb2lab(...unhex("#" + m[2]))); if (!best || e < best[1]) best = [m, e]; }
-    const m = best && best[1] < 30 ? best[0] : nearestDmc(g.c);
+    // A color used for only a stitch or two is a misread square (a marker or symbol): it takes the closest legend color.
+    const m = best && (best[1] < 30 || g.n <= Math.max(2, filled * 0.002)) ? best[0] : nearestDmc(g.c);
     used.add(m[0]); return unhex("#" + m[2]);
   });
   const out = trimEmpty({ w: W, h: H, pal, px });
@@ -1751,11 +1789,13 @@ let chartImport = null;
 function chartSizeInfo(ch) {
   const d = S.design, st = ch.stated || {}, el = $("chartInfo"), m = S.mesh; chartImport = { ch, w: d.w, h: d.h };
   let t = `Read ${d.w} × ${d.h} stitches from the chart.`, kind = "ok";
+  const gw = ch.grid ? ch.grid[0] : 0, gh = ch.grid ? ch.grid[1] : 0;
   if (st.w && st.h) {
     if (st.w === d.w && st.h === d.h) t += ` The chart says ${st.w} × ${st.h} too, so every stitch was read.`;
+    else if ((st.w === gw && st.h === gh) || (st.w >= d.w && st.h >= d.h && st.w <= gw && st.h <= gh)) t += ` The chart's whole grid is ${st.w} × ${st.h}, as it says; the empty squares around the stitches were left out.`;
     else { kind = "err"; t += ` But the chart says ${st.w} × ${st.h}. Something was misread (often a cut-off edge or backstitch). Check it against the chart before printing, and send me the PDF if it's wrong.`; }
   }
-  const wIn = st.wIn || (st.count ? d.w / st.count : null), hIn = st.hIn || (st.count ? d.h / st.count : null);
+  const wIn = st.count ? d.w / st.count : st.wIn && st.w ? st.wIn * d.w / st.w : null, hIn = st.count ? d.h / st.count : st.hIn && st.h ? st.hIn * d.h / st.h : null;
   if (wIn && hIn) t += ` On the chart's ${st.count ? st.count + " count fabric" : "fabric"} it's ${wIn.toFixed(2)} × ${hIn.toFixed(2)} in.`;
   t += ` On your ${m} mesh canvas, stitch for stitch, it's ${(d.w / m).toFixed(2)} × ${(d.h / m).toFixed(2)} in` + (wIn && Math.abs(d.w / m - wIn) > 0.1 ? (d.w / m > wIn ? ` (bigger, because ${m} mesh has bigger holes than ${st.count || "the chart's"} count).` : " (smaller).") : ".");
   el.textContent = t; el.className = "status " + kind; el.hidden = false;
@@ -1802,7 +1842,8 @@ function chartStatedSize(t) {
   if (m) { r.w = +m[1]; r.h = +m[2]; }
   m = t.match(/(\d{1,2}(?:\.\d+)?)\s*(?:"|in(?:ches)?\b)\s*[wW]?\s*[x×]\s*(\d{1,2}(?:\.\d+)?)\s*(?:"|in(?:ches)?\b)/i);
   if (m) { r.wIn = +m[1]; r.hIn = +m[2]; }
-  m = t.match(/(\d{2})\s*(?:-|\s)?(?:ct|count)\b/i); if (m && +m[1] >= 10 && +m[1] <= 40) r.count = +m[1];
+  m = t.match(/(\d{2})\s*(?:-|\s)?(?:ct|count)\b/i) || t.match(/(?:fabric|aida|canvas|mesh)\s*(?:count)?\s*:?\s*(\d{2})\b/i); if (m && +m[1] >= 10 && +m[1] <= 40) r.count = +m[1];
+  if (!r.w) { m = t.match(/(?:pattern|design|chart)\s*size\s*:?\s*(\d{1,3})\s*[x×]\s*(\d{1,3})\b(?!\s*(?:"|in))/i); if (m) { r.w = +m[1]; r.h = +m[2]; } }
   if (!r.count && r.w && r.wIn) r.count = Math.round(r.w / r.wIn);
   return Object.keys(r).length ? r : null;
 }
@@ -1813,7 +1854,10 @@ async function readChartPdf(buf) {
   const codes = [], seen = new Set(); let all = "";
   for (let n = 1; n <= Math.min(doc.numPages, 12); n++) {
     const tc = await (await doc.getPage(n)).getTextContent(), text = tc.items.map(t => t.str).join(" "); all += " " + text;
-    for (const m of text.matchAll(/\bDMC\b[\s\-:#]*(B5200|BLANC|ECRU|\d{1,4})\b/gi)) { const k = m[1].toUpperCase(); if (!seen.has(k) && dmcByCode(k)) { seen.add(k); codes.push(k); } }
+    const add = k => { k = k.toUpperCase(); if (!seen.has(k) && dmcByCode(k)) { seen.add(k); codes.push(k); } };
+    for (const m of text.matchAll(/\bDMC\b[\s\-:#]*(B5200|BLANC|ECRU|\d{1,4})\b/gi)) add(m[1]);
+    // Pattern Keeper style lists (D500, DB5200, D02) once the file says it's DMC.
+    if (/DMC/i.test(text)) for (const m of text.matchAll(/\bD(B5200|BLANC|ECRU|\d{2,4})\b/g)) add(m[1]);
   }
   let best = null;
   for (let n = 1; n <= Math.min(doc.numPages, 12); n++) {
