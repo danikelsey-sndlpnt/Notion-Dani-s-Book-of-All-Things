@@ -92,3 +92,7 @@ Print step → "Color legend on the canvas": None / Beside the design (right) / 
 - Read a painted canvas: the mesh measurer could lock onto half a stitch when threads and holes are about equally wide (each thread has two edges), doubling the stitch count (a 2 in ornament read as about 4 in). It now checks the thread/hole brightness, which only repeats once per stitch, and doubles the period when needed.
 - Chart PDFs: the app reads the size the chart states (stitches, inches, fabric count), confirms the stitch count, and offers "Keep every stitch" or "Make it the chart's size in inches".
 - Mesh gauge and grid sheet have a 5 inch ruler to check the page printed at 100%.
+
+## Mesh and room (2026.11.19-c)
+- Changing the mesh now keeps the size in inches by default (finer mesh = more stitches; the picture is re-read, a stitch-only design is stretched with Undo). Untick "keep the size in inches" to keep the stitch count instead.
+- **More room / Less room** add or remove 2 stitches of space on every side without changing the design. Less room never cuts the design or picture; with a background color the room is filled with it.

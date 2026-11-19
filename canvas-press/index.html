@@ -440,6 +440,13 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
             <label class="f">Width <small>stitches</small><input type="number" id="wSt" min="4" max="400" value="60"></label>
             <label class="f">Height <small>stitches</small><input type="number" id="hSt" min="4" max="400" value="60"></label>
           </div>
+          <label class="tog"><input type="checkbox" id="meshKeepIn" checked> When I change the mesh, keep the size in inches (the stitch count changes)</label>
+          <div class="row" style="align-items:center">
+            <span class="hint" style="flex:0 0 auto"><b>Room around the design</b></span>
+            <button class="btn small" id="roomMore" title="Add 2 empty stitches on every side; the design stays the same size">More room ＋</button>
+            <button class="btn small" id="roomLess" title="Take away 2 empty stitches on every side; never cuts into the design">Less room −</button>
+            <span class="hint" id="roomNote" style="flex:1 1 160px"></span>
+          </div>
           <div class="row">
             <label class="f">Width <small>inches</small><input type="number" id="wInch" min="0.5" max="30" step="0.25" value="4.62"></label>
             <label class="f">Height <small>inches</small><input type="number" id="hInch" min="0.5" max="30" step="0.25" value="4.62"></label>
@@ -1001,7 +1008,7 @@ function adjustColor(c) {
 }
 
 /* ---------------- files ---------------- */
-const APP_VERSION = "2026.11.19-b";
+const APP_VERSION = "2026.11.19-c";
 { const v = document.getElementById("appVer2"); if (v) v.textContent = "v" + APP_VERSION; }
 let downloadsCap = null;
 (window.claude && window.claude.use ? window.claude.use("downloads") : Promise.resolve(null)).then(d => { downloadsCap = d; }).catch(() => {});
@@ -1550,6 +1557,7 @@ function syncSizeInputs() {
   $("sizeNote").textContent = `Design: ${S.wSt} × ${S.hSt} stitches = ${(S.wSt / S.mesh).toFixed(2)} × ${(S.hSt / S.mesh).toFixed(2)} in on ${S.mesh} mesh.` + (S.finish ? ` Sized for: ${S.finish.name} (${S.finish.w} × ${S.finish.h} in inside).` : "") +
     ` Canvas with a ${bIn} in border: ${(S.wSt / S.mesh + 2 * bIn).toFixed(2)} × ${(S.hSt / S.mesh + 2 * bIn).toFixed(2)} in.`;
   const cn = $("copyNote"); if (cn) cn.textContent = copyPlan();
+  if (typeof roomNote === "function") roomNote();
 }
 function setTool(t) { if (t !== "select" && t !== "pan" && S.selection) { S.selection = null; } if (t !== "text" && t !== "pan" && S.stamp) { S.stamp = null; S.stampPos = null; if ($("textBar")) { $("textBar").hidden = true; $("qbar").hidden = S.view !== "design"; } } S.tool = t; document.querySelectorAll("[data-tool]").forEach(b => b.setAttribute("aria-pressed", b.dataset.tool === t)); const bm = $("bigMove"); if (bm) bm.setAttribute("aria-pressed", t === "pan"); if ($("qsizeRow")) syncBrushUI(); if ($("qselRow")) syncSelUI(); if ($("nudgePad")) syncNudge(); if (S.design) renderPalette(); }
 
@@ -5570,9 +5578,68 @@ $("bgMode").onchange = e => { S.bgMode = e.target.value; $("bgColor").hidden = S
 $("bgColor").onchange = e => { S.bg = e.target.value; redoFromSource(); };
 $("convert").onclick = () => { S.edited = false; $("redoBar").hidden = true; convert(); };
 function setMesh(m) { S.mesh = m; $("mesh").value = m; syncSizeInputs(); renderView(); updateMeshWarn(); }
-$("mesh").onchange = e => setMesh(+e.target.value);
+$("mesh").onchange = e => {
+  const old = S.mesh, m = +e.target.value; if (m === old) return;
+  if (!S.design || !$("meshKeepIn").checked) { setMesh(m); if (S.design) toast(`Same ${S.design.w} × ${S.design.h} stitches, now ${(S.design.w / m).toFixed(2)} × ${(S.design.h / m).toFixed(2)} in on ${m} mesh.`, 5000); return; }
+  // Keep the inches: the same picture gets more stitches on a finer mesh, fewer on a coarser one.
+  const wi = S.wSt / old, hi = S.hSt / old, W = clamp(Math.round(wi * m), 4, 400), H = clamp(Math.round(hi * m), 4, 400);
+  setMesh(m); resizeDesign(W, H); syncSizeInputs();
+  toast(`Still ${(W / m).toFixed(2)} × ${(H / m).toFixed(2)} in: now ${W} × ${H} stitches on ${m} mesh.` + (S.layers.length ? "" : " (No picture to re-read, so stitches were stretched to fit. Undo puts it back.)"), 6000);
+};
 $("mesh2").onchange = () => { if (S.scan) findGrid(); };
 const aspect = () => { const L = S.layers.find(l => l.visible); return L ? L.img.height / L.img.width : (S.design ? S.design.h / S.design.w : 1); };
+// Room around the design: grow or shrink the stitch area on every side without changing the design's size.
+// Shrinking only removes empty stitches; it never cuts into the design.
+function contentBox(d) {
+  let x0 = d.w, y0 = d.h, x1 = -1, y1 = -1;
+  for (let y = 0; y < d.h; y++) for (let x = 0; x < d.w; x++) if (d.px[y * d.w + x] >= 0) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+  return x1 < 0 ? null : { x0, y0, x1, y1 };
+}
+// From a picture: where the artwork itself sits in the stitch area (the background color fills the rest).
+function artBox() {
+  if (!S.layers.length || S.edited) return null;
+  const W = S.wSt, H = S.hSt; let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+  for (const L of S.layers) {
+    if (!L.visible) continue;
+    const f = L.fit === "cover" ? Math.max : Math.min, sc = f(W / L.img.width, H / L.img.height) * L.scale / 100, dw = L.img.width * sc, dh = L.img.height * sc;
+    const lx = (W - dw) / 2 + L.ox / 100 * W, ly = (H - dh) / 2 + L.oy / 100 * H;
+    x0 = Math.min(x0, lx); y0 = Math.min(y0, ly); x1 = Math.max(x1, lx + dw); y1 = Math.max(y1, ly + dh);
+  }
+  if (x1 < 0) return null;
+  return { x0: Math.max(0, Math.ceil(x0 - 0.01)), y0: Math.max(0, Math.ceil(y0 - 0.01)), x1: Math.min(W - 1, Math.floor(x1 + 0.01) - 1), y1: Math.min(H - 1, Math.floor(y1 + 0.01) - 1) };
+}
+function roomNote() {
+  const d = S.design, el = $("roomNote"); if (!el) return; if (!d) { el.textContent = ""; return; }
+  const b = artBox() || contentBox(d); if (!b) { el.textContent = "The design is empty."; return; }
+  const m = S.mesh, l = b.x0, r = d.w - 1 - b.x1, t = b.y0, bo = d.h - 1 - b.y1;
+  el.textContent = (artBox() && S.bgMode !== "none" ? "Room around the picture (filled with the background color)" : "Empty room") + `: ${t} top, ${bo} bottom, ${l} left, ${r} right (stitches). The ${artBox() ? "picture" : "design"} itself is ${b.x1 - b.x0 + 1} × ${b.y1 - b.y0 + 1} stitches = ${((b.x1 - b.x0 + 1) / m).toFixed(2)} × ${((b.y1 - b.y0 + 1) / m).toFixed(2)} in.`;
+}
+function changeRoom(n) {
+  const d = S.design; if (!d) return;
+  const b = artBox() || contentBox(d) || { x0: 0, y0: 0, x1: d.w - 1, y1: d.h - 1 };
+  const free = [b.x0, d.w - 1 - b.x1, b.y0, d.h - 1 - b.y1];
+  const ch = n > 0 ? [n, n, n, n] : free.map(f => -Math.min(f, -n));
+  if (ch.every(v => v === 0)) { toast("There's no empty room left to take away. Making it smaller would cut the design, so nothing changed. Use the size boxes to shrink the design itself."); return; }
+  const W = d.w + ch[0] + ch[1], H = d.h + ch[2] + ch[3];
+  if (W > 400 || H > 400) { toast("That would be more than 400 stitches."); return; }
+  if (S.layers.length && !S.edited) {
+    // From a picture: widen the stitch area and shrink the picture's share of it, so the art keeps its stitch size.
+    const Wo = S.wSt, Ho = S.hSt;
+    for (const L of S.layers) {
+      const f = (L.fit === "cover" ? Math.max : Math.min), bo = f(Wo / L.img.width, Ho / L.img.height), bn = f(W / L.img.width, H / L.img.height);
+      L.scale = L.scale * bo / bn;
+      // Keep the art's middle where it was (the area grew unevenly when only empty sides were trimmed).
+      L.ox = (L.ox / 100 * Wo + (ch[0] - ch[1]) / 2) / W * 100; L.oy = (L.oy / 100 * Ho + (ch[2] - ch[3]) / 2) / H * 100;
+    }
+    S.wSt = W; S.hSt = H; convert(); renderLayers();
+  } else {
+    pushUndo(); const px = new Int16Array(W * H).fill(-1);
+    for (let y = 0; y < d.h; y++) for (let x = 0; x < d.w; x++) { const nx = x + ch[0], ny = y + ch[2]; if (nx >= 0 && ny >= 0 && nx < W && ny < H) px[ny * W + nx] = d.px[y * d.w + x]; }
+    setDesign(d.pal, px, W, H, true, (d.sx || 0) + ch[0], (d.sy || 0) + ch[2]); S.edited = true; fitView();
+  }
+  syncSizeInputs(); roomNote();
+  toast(`Stitch area now ${W} × ${H} (${(W / S.mesh).toFixed(2)} × ${(H / S.mesh).toFixed(2)} in). The design kept its size.`);
+}
 function resizeDesign(w, h) {
   if (S.layers.length) { S.wSt = w; S.hSt = h; convert(); return; }
   if (!S.design) return;
@@ -5917,6 +5984,7 @@ $("addDmc").onclick = () => S.design && openDmc(null, dm => { pushUndo(); S.edit
 $("snapDmc").onclick = snapAllToDmc;
 $("saveKey").onclick = colorKeyPdf; $("saveKey2").onclick = colorKeyPdf;
 $("iniOpen").onclick = openInitials;
+$("roomMore").onclick = () => changeRoom(2); $("roomLess").onclick = () => changeRoom(-2);
 $("chartKeep").onclick = () => { if (chartImport && S.design && (S.design.w !== chartImport.w || S.design.h !== chartImport.h)) { restore(S.undo, S.redo); } $("chartSizeRow").hidden = true; toast("Kept every stitch of the chart."); };
 $("chartFit").onclick = () => { const ci = chartImport; if (!ci || !ci.wIn) return; resizeDesign(clamp(Math.round(ci.wIn * S.mesh), 4, 400), clamp(Math.round(ci.hIn * S.mesh), 4, 400)); syncSizeInputs(); toast(`Now ${S.design.w} × ${S.design.h} stitches = ${(S.design.w / S.mesh).toFixed(2)} × ${(S.design.h / S.mesh).toFixed(2)} in. Some stitches were merged to fit; Undo puts it back.`, 6000); };
 $("iniSmaller").onclick = () => iniResize(-1); $("iniBigger").onclick = () => iniResize(1);
