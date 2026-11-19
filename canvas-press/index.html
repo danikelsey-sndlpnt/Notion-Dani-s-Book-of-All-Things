@@ -1008,7 +1008,7 @@ function adjustColor(c) {
 }
 
 /* ---------------- files ---------------- */
-const APP_VERSION = "2026.11.19-c";
+const APP_VERSION = "2026.11.19-d";
 { const v = document.getElementById("appVer2"); if (v) v.textContent = "v" + APP_VERSION; }
 let downloadsCap = null;
 (window.claude && window.claude.use ? window.claude.use("downloads") : Promise.resolve(null)).then(d => { downloadsCap = d; }).catch(() => {});
@@ -5587,7 +5587,8 @@ $("mesh").onchange = e => {
   toast(`Still ${(W / m).toFixed(2)} × ${(H / m).toFixed(2)} in: now ${W} × ${H} stitches on ${m} mesh.` + (S.layers.length ? "" : " (No picture to re-read, so stitches were stretched to fit. Undo puts it back.)"), 6000);
 };
 $("mesh2").onchange = () => { if (S.scan) findGrid(); };
-const aspect = () => { const L = S.layers.find(l => l.visible); return L ? L.img.height / L.img.width : (S.design ? S.design.h / S.design.w : 1); };
+// Height ÷ width to keep when resizing: the picture's, until you've cropped or edited; then the design's own shape.
+const aspect = () => { const L = !S.edited && S.layers.find(l => l.visible); return L ? L.img.height / L.img.width : (S.design ? S.design.h / S.design.w : 1); };
 // Room around the design: grow or shrink the stitch area on every side without changing the design's size.
 // Shrinking only removes empty stitches; it never cuts into the design.
 function contentBox(d) {
@@ -5640,12 +5641,29 @@ function changeRoom(n) {
   syncSizeInputs(); roomNote();
   toast(`Stitch area now ${W} × ${H} (${(W / S.mesh).toFixed(2)} × ${(H / S.mesh).toFixed(2)} in). The design kept its size.`);
 }
+// Resize. Straight from a picture (nothing edited yet): read the picture again at the new size. Once you've cropped,
+// erased or painted, the edited stitches themselves are scaled, so nothing you removed comes back. Shrinking takes the
+// most common stitch in each area (bare canvas counts too, so erased parts stay erased).
 function resizeDesign(w, h) {
-  if (S.layers.length) { S.wSt = w; S.hSt = h; convert(); return; }
+  if (S.layers.length && !S.edited) { S.wSt = w; S.hSt = h; convert(); return; }
   if (!S.design) return;
-  pushUndo(); const d = S.design, px = new Int16Array(w * h);
-  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) px[y * w + x] = d.px[Math.min(d.h - 1, Math.floor(y * d.h / h)) * d.w + Math.min(d.w - 1, Math.floor(x * d.w / w))];
-  setDesign(d.pal, px, w, h, true); fitView();
+  pushUndo(); const d = S.design, px = new Int16Array(w * h), fx = w / d.w, fy = h / d.h;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const sx0 = Math.floor(x / fx), sx1 = Math.max(sx0 + 1, Math.ceil((x + 1) / fx)), sy0 = Math.floor(y / fy), sy1 = Math.max(sy0 + 1, Math.ceil((y + 1) / fy));
+    const mid = d.px[Math.min(d.h - 1, Math.floor((y + 0.5) / fy)) * d.w + Math.min(d.w - 1, Math.floor((x + 0.5) / fx))];
+    if (sx1 - sx0 <= 1 && sy1 - sy0 <= 1) { px[y * w + x] = mid; continue; }
+    const votes = new Map(); let best = mid, bn = 0;
+    for (let yy = sy0; yy < Math.min(d.h, sy1); yy++) for (let xx = sx0; xx < Math.min(d.w, sx1); xx++) {
+      const v = d.px[yy * d.w + xx], n = (votes.get(v) || 0) + 1; votes.set(v, n);
+      if (n > bn || (n === bn && v === mid)) { bn = n; best = v; }
+    }
+    px[y * w + x] = best;
+  }
+  if (S.original && S.original.m) { const m = S.original.m; S.original.m = [m[0] * fx, m[1] * fy, m[2] * fx, m[3] * fy, m[4] * fx, m[5] * fy]; }
+  setDesign(d.pal, px, w, h, true, (d.sx || 0) * fx, (d.sy || 0) * fy);
+  if (S.layers.length) S.edited = true;
+  const cp = compactPalette(S.design); S.design.pal = cp.pal; S.design.px = cp.px; if (S.sel >= cp.pal.length) S.sel = 0;
+  designDirty(); fitView();
 }
 $("wSt").onchange = e => { const w = clamp(+e.target.value | 0, 4, 400); const h = S.lock ? clamp(Math.round(w * aspect()), 4, 400) : S.hSt; resizeDesign(w, h); };
 function copyPlan() {

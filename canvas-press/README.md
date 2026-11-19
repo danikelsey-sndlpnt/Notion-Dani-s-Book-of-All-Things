@@ -96,3 +96,4 @@ Print step → "Color legend on the canvas": None / Beside the design (right) / 
 ## Mesh and room (2026.11.19-c)
 - Changing the mesh now keeps the size in inches by default (finer mesh = more stitches; the picture is re-read, a stitch-only design is stretched with Undo). Untick "keep the size in inches" to keep the stitch count instead.
 - **More room / Less room** add or remove 2 stitches of space on every side without changing the design. Less room never cuts the design or picture; with a background color the room is filled with it.
+- 2026.11.19-d: resizing after a crop, erase or paint scales the edited stitches (most common stitch per area when shrinking, bare canvas included) instead of re-reading the whole picture, and keeps the cropped shape when proportions are locked. Before any edits it still re-reads the picture for the sharpest result.
