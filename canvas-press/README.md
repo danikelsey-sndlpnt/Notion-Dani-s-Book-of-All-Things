@@ -68,7 +68,7 @@ DMC color data: [craft-color-codes](https://www.npmjs.com/package/craft-color-co
 
 ## Print without a scan: grid sheet (2026.11.18-c)
 Print step → **Print without a scan: line up on a grid sheet**.
-1. **Mesh gauge (PDF):** strips of hole squares at 0.1 holes-per-inch steps. Lay the canvas on them to find its real count across, then turn it to find down.
+1. **Mesh gauge (PDF):** pick the mesh (10, 12, 13, 14, 16, 18); 21 strips of hole squares from half a hole below to half a hole above it, every 0.05 holes per inch. Lay the canvas on them to find its real count across, then turn it to find down.
 2. **Grid sheet (PDF):** a Carrier (same four dots) with a black square under every hole position, anchored on the window center, red arrows on the middle row/column, numbered ticks every 5 holes (counted out from the arrows) on all four sides.
    "My design on the grid sheet": Outline only (default, a pink line around the stitched area along the hole rows/columns), In color (design under the hole squares), or Nothing.
 3. Line the canvas up so every hole looks solid black, tape it down.
