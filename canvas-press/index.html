@@ -846,6 +846,10 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
           <p class="hint"><b>4. Print the design</b> onto the sheet with the canvas on it, loaded exactly like you loaded the sheet in step 2. Your nudge and edge settings still apply.</p>
           <button class="btn thread wide" id="gmPrint">Design for the grid sheet (PDF)</button>
           <div class="status" id="gmStatus" hidden></div>
+          <p class="hint"><b>5. Still off? Let the app measure it.</b> Scan the printed canvas the same way, still taped to the grid sheet, and pick the scan here. The app finds the holes and your paint, measures how far the paint sits from the thread crossings, and sets the nudge for you.</p>
+          <label class="btn small" style="cursor:pointer">Check a grid sheet print (scan)<input type="file" id="gmCheck" accept="image/*,application/pdf" hidden></label>
+          <div class="status" id="gmCheckStatus" hidden></div>
+          <button class="btn small thread" id="gmApply" hidden>Use this nudge</button>
           <p class="hint"><b>Practice first:</b> print the design onto a grid sheet with no canvas on it. Each stitch's paint should land centered between four black squares. If it's shifted, set the nudge (calibration sheet) before using canvas.</p>
         </details>
         <details class="more">
@@ -1012,7 +1016,7 @@ function adjustColor(c) {
 }
 
 /* ---------------- files ---------------- */
-const APP_VERSION = "2026.11.20-c";
+const APP_VERSION = "2026.11.20-d";
 { const v = document.getElementById("appVer2"); if (v) v.textContent = "v" + APP_VERSION; }
 let downloadsCap = null;
 (window.claude && window.claude.use ? window.claude.use("downloads") : Promise.resolve(null)).then(d => { downloadsCap = d; }).catch(() => {});
@@ -4101,6 +4105,79 @@ function iniHit(wx, wy) {
   };
   return S.scan && S.grid ? find() : withGridLatticeSync(find);
 }
+// Measures a scan of a printed canvas (no map needed): where the paint sits against the hole pattern around it.
+// Hole centers and paint are each averaged around the stitch repeat (as an angle), so every hole and every painted
+// pixel counts and a few odd ones can't pull it. Paint centered on the crossings sits half a stitch from the holes.
+function measurePaintOffset(c, dpi) {
+  const w = c.width, h = c.height, d = c.getContext("2d", { willReadFrequently: true }).getImageData(0, 0, w, h).data;
+  const lumA = new Float32Array(w * h), isPaint = new Uint8Array(w * h);
+  for (let i = 0; i < w * h; i++) {
+    const r = d[i * 4], g = d[i * 4 + 1], b = d[i * 4 + 2], L = 0.3 * r + 0.59 * g + 0.11 * b; lumA[i] = L;
+    const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+    // Colored paint (not white thread, black holes, or blue painter's tape).
+    if (mx - mn > 45 && L > 40 && L < 230 && !(b > r + 30 && b > g + 10)) isPaint[i] = 1;
+  }
+  // Group the paint in blocks and keep the group nearest the middle of the page (not sticky notes or marks at the edges).
+  const K = Math.max(4, Math.round(dpi / 40)), bw = Math.ceil(w / K), bh = Math.ceil(h / K), blk = new Int32Array(bw * bh);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (isPaint[y * w + x]) blk[((y / K) | 0) * bw + ((x / K) | 0)]++;
+  const lab = new Int32Array(bw * bh).fill(-1), comps = [];
+  for (let s0 = 0; s0 < bw * bh; s0++) {
+    if (blk[s0] < 2 || lab[s0] >= 0) continue;
+    const st = [s0], cmp = { x0: 1e9, y0: 1e9, x1: -1, y1: -1, n: 0, id: comps.length }; lab[s0] = cmp.id;
+    while (st.length) { const k = st.pop(), bx = k % bw, by = (k / bw) | 0; cmp.n += blk[k]; cmp.x0 = Math.min(cmp.x0, bx); cmp.x1 = Math.max(cmp.x1, bx); cmp.y0 = Math.min(cmp.y0, by); cmp.y1 = Math.max(cmp.y1, by);
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]]) { const a = bx + dx, b = by + dy; if (a < 0 || b < 0 || a >= bw || b >= bh) continue; const q = b * bw + a; if (blk[q] >= 2 && lab[q] < 0) { lab[q] = cmp.id; st.push(q); } } }
+    comps.push(cmp);
+  }
+  if (!comps.length) return { error: "No paint was found on this scan." };
+  const cx = bw / 2, cy = bh / 2, dist = m => Math.hypot((m.x0 + m.x1) / 2 - cx, (m.y0 + m.y1) / 2 - cy);
+  // Edge strips (sticky notes, tape) don't count; then the design is everything close to the most central group.
+  const inner = comps.filter(m => m.x0 * K > dpi * 0.9 && m.x1 * K < w - dpi * 0.9 && m.n > 30);
+  if (!inner.length) return { error: "No paint was found inside the page." };
+  inner.sort((a, b) => dist(a) - dist(b));
+  const box = { x0: inner[0].x0, y0: inner[0].y0, x1: inner[0].x1, y1: inner[0].y1 }, keep = new Set([inner[0].id]), near = Math.round(dpi * 0.8 / K);
+  for (let grew = true; grew;) { grew = false; for (const m of inner) if (!keep.has(m.id) && m.x0 <= box.x1 + near && m.x1 >= box.x0 - near && m.y0 <= box.y1 + near && m.y1 >= box.y0 - near) { keep.add(m.id); box.x0 = Math.min(box.x0, m.x0); box.y0 = Math.min(box.y0, m.y0); box.x1 = Math.max(box.x1, m.x1); box.y1 = Math.max(box.y1, m.y1); grew = true; } }
+  const pad = Math.round(dpi * 0.2), X0 = Math.max(0, box.x0 * K - pad), Y0 = Math.max(0, box.y0 * K - pad), X1 = Math.min(w, (box.x1 + 1) * K + pad), Y1 = Math.min(h, (box.y1 + 1) * K + pad);
+  // Hole spacing in each direction from the hole pattern in that area.
+  const colP = new Float64Array(X1 - X0), rowP = new Float64Array(Y1 - Y0);
+  for (let y = Y0; y < Y1; y++) for (let x = X0; x < X1; x++) if (lumA[y * w + x] < 80) { colP[x - X0]++; rowP[y - Y0]++; }
+  const pitch = prof => { const n = prof.length; let mean = 0; for (const v of prof) mean += v; mean /= n; let best = null;
+    for (let P = dpi / 20; P <= dpi / 9; P += 0.02) { let re = 0, im = 0; for (let i = 0; i < n; i++) { const a = 2 * Math.PI * i / P, v = prof[i] - mean; re += v * Math.cos(a); im += v * Math.sin(a); } const m = re * re + im * im; if (!best || m > best[1]) best = [P, m]; }
+    return best[0]; };
+  const px = pitch(colP), py = pitch(rowP);
+  const phase = (acc) => Math.atan2(acc[1], acc[0]) / (2 * Math.PI);
+  const hx = [0, 0], hy = [0, 0], pxA = [0, 0], pyA = [0, 0], halves = [[0, 0, 0], [0, 0, 0]], midX = (X0 + X1) / 2;
+  for (let y = Y0; y < Y1; y++) for (let x = X0; x < X1; x++) {
+    const i = y * w + x, ax = 2 * Math.PI * x / px, ay = 2 * Math.PI * y / py;
+    if (lumA[i] < 80) { hx[0] += Math.cos(ax); hx[1] += Math.sin(ax); hy[0] += Math.cos(ay); hy[1] += Math.sin(ay); }
+    else if (isPaint[i] && keep.has(lab[((y / K) | 0) * bw + ((x / K) | 0)])) { pxA[0] += Math.cos(ax); pxA[1] += Math.sin(ax); pyA[0] += Math.cos(ay); pyA[1] += Math.sin(ay); const hh = halves[x < midX ? 0 : 1]; hh[0] += Math.cos(ax); hh[1] += Math.sin(ax); hh[2]++; }
+  }
+  const wrap = f => ((f + 0.5) % 1 + 1) % 1 - 0.5;
+  const dx = wrap(phase(pxA) - phase(hx) - 0.5), dy = wrap(phase(pyA) - phase(hy) - 0.5);
+  const side = halves.map(hh => hh[2] > 200 ? wrap(phase(hh) - phase(hx) - 0.5) : null);
+  return { dx, dy, inX: dx * px / dpi, inY: dy * py / dpi, meshX: dpi / px, meshY: dpi / py, side, widthIn: (X1 - X0) / dpi };
+}
+async function checkGridPrint(f) {
+  busy(true, "Reading the scan…", 0.2); await tick();
+  try {
+    const { canvas, dpi } = await fileToScanCanvas(f);
+    busy(true, "Measuring the paint against the threads…", 0.5); await tick();
+    const r = measurePaintOffset(canvas, dpi); busy(false);
+    if (r.error) { setStatus("gmCheckStatus", r.error + " Scan the printed canvas on the grid sheet, the same way as the grid sheet.", "err"); return; }
+    const words = (v, a, b) => `${Math.abs(v).toFixed(2)} stitch ${v > 0 ? a : b}`;
+    const sx = Math.round(-r.inX * NUDGE), sy = Math.round(-r.inY * NUDGE), sug = { x: S.nudge.x + sx, y: S.nudge.y + sy };
+    let msg = `The paint sits ${words(r.dx, "right", "left")} and ${words(r.dy, "low", "high")} of the thread crossings.`;
+    if (Math.abs(r.dx) < 0.06 && Math.abs(r.dy) < 0.06) msg += " That's centered: no change needed.";
+    else msg += ` Suggested nudge: ${sug.x}, ${sug.y} (now ${S.nudge.x}, ${S.nudge.y}).`;
+    if (r.side[0] != null && r.side[1] != null && Math.abs(r.side[0] - r.side[1]) > 0.1) {
+      const drift = r.side[1] - r.side[0], m = gridMesh().a, better = m * (1 - drift / Math.max(1, r.widthIn * m / 2));
+      msg += ` The left and right parts differ (${r.side[0].toFixed(2)} vs ${r.side[1].toFixed(2)} stitch), so the paint drifts across the design: the holes-per-inch across is probably closer to ${better.toFixed(2)} than ${m}. Check it with the mesh gauge.`;
+    }
+    msg += ` (Holes measured on this scan: ${r.meshX.toFixed(2)} across, ${r.meshY.toFixed(2)} down.)`;
+    setStatus("gmCheckStatus", msg, Math.abs(r.dx) < 0.06 && Math.abs(r.dy) < 0.06 ? "ok" : "");
+    $("gmApply").hidden = sx === 0 && sy === 0;
+    $("gmApply").onclick = () => { S.nudge = sug; nudgeOut(); previewDirty(); $("gmApply").hidden = true; toast(`Nudge set to ${sug.x}, ${sug.y}. Make "Design for the grid sheet" again and print it.`, 6000); };
+  } catch (e) { busy(false); setStatus("gmCheckStatus", "That scan couldn't be read: " + e.message, "err"); }
+}
 async function makeGridPrintPdf() {
   if (!S.design) { toast("Make a design first."); return; }
   busy(true, "Building the print for the grid sheet…", 0.2); await tick();
@@ -5938,7 +6015,8 @@ $("legendPos").value = S.legendPos;
 $("legendPos").onchange = () => { S.legendPos = $("legendPos").value; store.set("ccp-legend", S.legendPos); previewDirty(); updateFit(); };
 { const gs = store.get("ccp-gridshow"); if (gs && [...$("gmShowDesign").options].some(o => o.value === gs)) $("gmShowDesign").value = gs; }
 $("gmFromScan").onclick = () => { const rm = realMesh(); if (!rm) return; $("gmA").value = rm.across.toFixed(2); $("gmD").value = rm.down.toFixed(2); gridMeshChanged(); };
-$("gmGauge").onclick = meshGaugePdf; $("gmSheet").onclick = gridSheetPdf; $("gmPrint").onclick = makeGridPrintPdf;
+$("gmGauge").onclick = meshGaugePdf;
+$("gmCheck").onchange = e => { const f = e.target.files[0]; e.target.value = ""; if (f) checkGridPrint(f); }; $("gmSheet").onclick = gridSheetPdf; $("gmPrint").onclick = makeGridPrintPdf;
 $("gridModeBox").addEventListener("toggle", gridNote);
 $("panelHide").onclick = () => setPanel(false); $("panelShow").onclick = () => setPanel(true);
 if (store.get("ccp-panel") === false) setPanel(false);
