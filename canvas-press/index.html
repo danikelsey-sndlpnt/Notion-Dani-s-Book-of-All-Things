@@ -800,6 +800,7 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
           <label class="f">Contrast <small id="conOut"></small><input type="range" id="contrast" min="80" max="140" value="105"></label>
           <label class="f">Ink reach past each stitch <small id="bleedOut"></small><input type="range" id="bleed" min="0" max="30" value="8"></label>
           <label class="f">Clean edges next to bare canvas <small id="edgeOut"></small><input type="range" id="edge" min="0" max="100" value="100"></label>
+          <label class="tog"><input type="checkbox" id="crossArms" checked> Paint crosses: on edge stitches the paint also runs a little way along each thread, so you see it on both sides of the crossing (a "+"), not just a dash</label>
           <p class="hint">Where a stitch sits beside bare canvas, the paint stops just past that stitch's own crossing instead of running halfway down the thread toward the next one, so a stitcher can always tell which crossings to stitch. At 100% the paint covers the whole crossing and stops right there; 0% paints halfway like a color-to-color edge. Not sure? Print the <b>edge test</b> below and pick what looks right on your canvas.</p>
           <button class="btn small" id="edgeTest">Edge test (PDF)</button>
           <p class="hint">Prints three small blocks (a square and a one-stitch line) side by side where your design goes, each with a different edge: <b>left</b> tightest, <b>middle</b> in between, <b>right</b> reaching furthest. Use a scrap of canvas scanned on the Carrier. Then tap the one that reads most clearly as stitches:</p>
@@ -1011,7 +1012,7 @@ function adjustColor(c) {
 }
 
 /* ---------------- files ---------------- */
-const APP_VERSION = "2026.11.20-b";
+const APP_VERSION = "2026.11.20-c";
 { const v = document.getElementById("appVer2"); if (v) v.textContent = "v" + APP_VERSION; }
 let downloadsCap = null;
 (window.claude && window.claude.use ? window.claude.use("downloads") : Promise.resolve(null)).then(d => { downloadsCap = d; }).catch(() => {});
@@ -2781,6 +2782,28 @@ function stitchShape(q, i, j, f, painted, landed) {
   const at = (u, v) => { const s2 = u + 0.5, t = v + 0.5; return [0, 1].map(k => (1 - s2) * (1 - t) * q[0][k] + s2 * (1 - t) * q[1][k] + s2 * t * q[2][k] + (1 - s2) * t * q[3][k]); };
   return [at(L, T), at(R, T), at(R, B), at(L, B)];
 }
+// Cross: where a stitch sits next to bare canvas, the paint also runs a short way out along that thread (a "+"), so a
+// lone stitch or a one-stitch line shows paint on both sides of its crossing, not just a dash on one thread. The arms
+// are about a thread wide and stop before the next crossing; the holes beside them stay clean.
+function stitchArms(q, i, j, painted, landed) {
+  if (S.adj.cross === false || S.edgeFor) return [];
+  const at = (u, v) => { const s2 = u + 0.5, t = v + 0.5; return [0, 1].map(k => (1 - s2) * (1 - t) * q[0][k] + s2 * (1 - t) * q[1][k] + s2 * t * q[2][k] + (1 - s2) * t * q[3][k]); };
+  const bare = (di, dj) => painted.color ? painted.color(i + di, j + dj) < 0 : !painted(i + di, j + dj);
+  const sp = S.adj.spread, W = 0.17, out = [];
+  const len = side => { const base = 0.45, r = edgeReach(side, landed); return Math.max(r, landed || !sp || sp[side] == null ? base : clamp(base - sp[side], 0.38, base)); };
+  if (bare(-1, 0)) { const L = len("left"); out.push([at(-L, -W), at(0, -W), at(0, W), at(-L, W)]); }
+  if (bare(1, 0)) { const L = len("right"); out.push([at(0, -W), at(L, -W), at(L, W), at(0, W)]); }
+  if (bare(0, -1)) { const L = len("up"); out.push([at(-W, -L), at(W, -L), at(W, 0), at(-W, 0)]); }
+  if (bare(0, 1)) { const L = len("down"); out.push([at(-W, 0), at(W, 0), at(W, L), at(-W, L)]); }
+  return out;
+}
+// Fills one stitch: its patch plus any cross arms. mp maps a point to drawing coordinates.
+function fillStitch(x, q, i, j, f, painted, landed, mp) {
+  const polys = [stitchShape(q, i, j, f, painted, landed), ...stitchArms(q, i, j, painted, landed)];
+  x.beginPath();
+  for (const g0 of polys) { const g = g0.map(p => mp(p[0], p[1])); x.moveTo(g[0][0], g[0][1]); for (let k = 1; k < 4; k++) x.lineTo(g[k][0], g[k][1]); x.closePath(); }
+  x.fill("nonzero");
+}
 function grow(q, f) {
   const cx = (q[0][0] + q[1][0] + q[2][0] + q[3][0]) / 4, cy = (q[0][1] + q[1][1] + q[2][1] + q[3][1]) / 4;
   return q.map(p => [cx + (p[0] - cx) * f, cy + (p[1] - cy) * f]);
@@ -2916,8 +2939,7 @@ function drawPhoto(x, map, W, H, yOff = 0) {
   const painted = paintedAt(), inkOnly = (i, j) => painted(i, j), f = 1 + S.adj.bleed / 100, landed = map.landed;
   forEachStitch((q, v, i, j) => {
     if (v >= d.pal.length) return;
-    const g = stitchShape(q, i, j, f, inkOnly, landed).map(p => map(p[0], p[1]));
-    mx.moveTo(g[0][0], g[0][1]); for (let n = 1; n < 4; n++) mx.lineTo(g[n][0], g[n][1]); mx.closePath();
+    for (const g0 of [stitchShape(q, i, j, f, inkOnly, landed), ...stitchArms(q, i, j, inkOnly, landed)]) { const g = g0.map(p => map(p[0], p[1])); mx.moveTo(g[0][0], g[0][1]); for (let n = 1; n < 4; n++) mx.lineTo(g[n][0], g[n][1]); mx.closePath(); }
   }, S.printAll);
   mx.fill();
   lx.globalCompositeOperation = "destination-in"; lx.drawImage(mask, 0, 0); mask.width = 1;
@@ -2936,7 +2958,7 @@ function buildPreview() {
     const painted = paintedAt(), photo = photoReady();
     if (photo) { const mp = (a, b) => [a, b]; mp.landed = true; drawPhoto(x, mp, previewCanvas.width, previewCanvas.height); }
     const dots = S.printMode === "dots";
-    forEachStitch((q, v, i, j) => { if (photo && v < S.design.pal.length) return; if (dots) { x.fillStyle = pal[v]; dotPath(x, q, (a, b) => [a, b], S.dotSize / 100); return; } const g = stitchShape(q, i, j, f, painted, true); x.fillStyle = pal[v]; x.beginPath(); x.moveTo(g[0][0], g[0][1]); for (let k = 1; k < 4; k++) x.lineTo(g[k][0], g[k][1]); x.closePath(); x.fill(); }, S.printAll);
+    forEachStitch((q, v, i, j) => { if (photo && v < S.design.pal.length) return; if (dots) { x.fillStyle = pal[v]; dotPath(x, q, (a, b) => [a, b], S.dotSize / 100); return; } x.fillStyle = pal[v]; fillStitch(x, q, i, j, f, painted, true, (a, b) => [a, b]); }, S.printAll);
     x.globalCompositeOperation = "source-over";
     const pl = placement();
     if (pl) drawLegendText(x, legendCells(), (cc, rr) => corner(pl.i0 + cc - 1, pl.j0 + rr - 1));
@@ -3014,8 +3036,7 @@ async function renderPrint(dpi, y0 = 0, hStrip = null) {
   const r = forEachStitch((q, v, i, j) => {
     if (photo && v < S.design.pal.length) return;
     if (dots) { x.fillStyle = pal[v]; dotPath(x, q, toPg, S.dotSize / 100); return; }
-    const g = stitchShape(q, i, j, f, painted).map(p => { const pg = scanToPage(p[0], p[1]); return [(pg[0] + nx) * dpi, (pg[1] + ny) * dpi]; });
-    x.fillStyle = pal[v]; x.beginPath(); x.moveTo(g[0][0], g[0][1]); for (let k = 1; k < 4; k++) x.lineTo(g[k][0], g[k][1]); x.closePath(); x.fill();
+    x.fillStyle = pal[v]; fillStitch(x, q, i, j, f, painted, false, toPg);
   }, S.printAll);
   const pl = placement();
   if (pl) drawLegendText(x, legendCells(), (cc, rr) => { const q = corner(pl.i0 + cc - 1, pl.j0 + rr - 1); if (!q) return null; const pg = scanToPage(q[0], q[1]); return [(pg[0] + nx) * dpi, (pg[1] + ny) * dpi]; });
@@ -4057,7 +4078,7 @@ function buildVirtualPreview() {
     forEachStitch((q, v, i, j) => {
       x.fillStyle = pal[v];
       if (dots) { dotPath(x, q, (a, b) => [a * VPK, b * VPK], S.dotSize / 100); }
-      else { const g = stitchShape(q, i, j, f, painted, true); x.beginPath(); x.moveTo(g[0][0] * VPK, g[0][1] * VPK); for (let k = 1; k < 4; k++) x.lineTo(g[k][0] * VPK, g[k][1] * VPK); x.closePath(); x.fill(); }
+      else fillStitch(x, q, i, j, f, painted, true, (a, b) => [a * VPK, b * VPK]);
       for (const p of q) { mnx = Math.min(mnx, p[0]); mxx = Math.max(mxx, p[0]); mny = Math.min(mny, p[1]); mxy = Math.max(mxy, p[1]); }
     });
     x.globalCompositeOperation = "source-over";
@@ -5900,6 +5921,7 @@ $("recenter").onclick = () => { if (S.grid) S.center = canvasMiddle(S.grid); $("
 const adjOut = () => { $("satOut").textContent = S.adj.sat + "%"; $("deepOut").textContent = S.adj.deepen; $("conOut").textContent = S.adj.contrast + "%"; $("bleedOut").textContent = S.adj.bleed + "%"; $("edgeOut").textContent = S.adj.edge + "%"; };
 ["sat", "deepen", "contrast", "bleed", "edge"].forEach(k => $(k).oninput = e => { S.adj[k] = +e.target.value; adjOut(); previewDirty(); store.set("ccp-adj", S.adj); });
 $("rawColors").onchange = e => { S.adj.raw = e.target.checked; previewDirty(); store.set("ccp-adj", S.adj); };
+$("crossArms").onchange = e => { S.adj.cross = e.target.checked; previewDirty(); store.set("ccp-adj", S.adj); };
 const nudgeOut = () => { $("nudgeOut").textContent = `${S.nudge.x},${S.nudge.y}`; store.set("ccp-nudge400", S.nudge); };
 $("nU").onclick = () => { S.nudge.y--; nudgeOut(); }; $("nD").onclick = () => { S.nudge.y++; nudgeOut(); };
 $("nL").onclick = () => { S.nudge.x--; nudgeOut(); }; $("nR").onclick = () => { S.nudge.x++; nudgeOut(); };
@@ -6091,7 +6113,7 @@ function startExample() {
   S.exampleDesign = true; setDesign(q.pal, q.px, S.wSt, S.hSt);
 }
 async function start(hot) {
-  const adj = store.get("ccp-adj"); if (adj) Object.assign(S.adj, adj);
+  const adj = store.get("ccp-adj"); if (adj) Object.assign(S.adj, adj); $("crossArms").checked = S.adj.cross !== false;
   // Nudge steps are 1/400 inch; older saved nudges were in 1/200 inch steps.
   const nd = store.get("ccp-nudge400"), old = store.get("ccp-nudge");
   if (nd) S.nudge = nd; else if (old && (old.x || old.y)) S.nudge = { x: old.x * 2, y: old.y * 2 };
