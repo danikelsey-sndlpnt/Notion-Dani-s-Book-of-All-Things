@@ -829,7 +829,7 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
           <p class="hint"><b>1. Measure your canvas (once per canvas brand).</b> Canvas sold as 13 mesh is often 13.2 to 13.5. Print the gauge on plain paper at 100% / Actual Size. Lay the canvas on a strip so the first hole sits on the red mark. The strip where every hole stays black all the way to the end is your number. Then turn the canvas a quarter turn and do it again for "down".</p>
           <button class="btn small" id="gmGauge">Mesh gauge (PDF)</button>
           <p class="hint"><b>Check the size:</b> the gauge and grid sheet have a 5 inch ruler along the bottom. Measure it with a real ruler. If it's shorter than 5 inches, your printer shrank the page ("Fit to page" or "Scale to fit" is on), and every hole will drift off. Print again at 100% / Actual Size.</p>
-          <p class="hint"><b>2. Print the grid sheet</b> on plain paper at 100% / Actual Size. It's also a Carrier (it has the four dots), so it feeds the same way. Pick what to show of your design: just its outline (a pink line around the stitched area, along the holes), the design in color, or only the holes.</p>
+          <p class="hint"><b>2. Print the grid sheet</b> on plain paper at 100% / Actual Size. It's also a Carrier (it has the four dots), so it feeds the same way. Pick what to show of your design: just its outline (a pink dot on each edge stitch, on its thread crossing between the hole squares), the design in color, or only the holes.</p>
           <label class="f">My design on the grid sheet
             <select id="gmShowDesign">
               <option value="outline" selected>Outline only</option>
@@ -1008,7 +1008,7 @@ function adjustColor(c) {
 }
 
 /* ---------------- files ---------------- */
-const APP_VERSION = "2026.11.19-e";
+const APP_VERSION = "2026.11.20-a";
 { const v = document.getElementById("appVer2"); if (v) v.textContent = "v" + APP_VERSION; }
 let downloadsCap = null;
 (window.claude && window.claude.use ? window.claude.use("downloads") : Promise.resolve(null)).then(d => { downloadsCap = d; }).catch(() => {});
@@ -3975,15 +3975,15 @@ async function gridSheetPdf() {
   if (show === "outline" && S.design) await withGridLattice(L => {
     const on = new Set(), key = (i, j) => i + "," + j;
     off = forEachStitch((q, v, i, j) => on.add(key(i, j))).off;
-    let segs = "";
+    // A pink dot on each edge stitch, right on its thread crossing (between four hole squares): these are the
+    // outermost intersections that get painted.
+    let dots = ""; const pw = 1 / L.m.a, ph = 1 / L.m.d, dw = pw * 0.42, dh = ph * 0.42;
     for (const k of on) {
-      const [i, j] = k.split(",").map(Number), xl = L.sx(i - 0.5), xr = L.sx(i + 0.5), yt = L.sy(j - 0.5), yb = L.sy(j + 0.5);
-      if (!on.has(key(i - 1, j))) segs += `${pt(xl)} ${ptY(yt)} m ${pt(xl)} ${ptY(yb)} l\n`;
-      if (!on.has(key(i + 1, j))) segs += `${pt(xr)} ${ptY(yt)} m ${pt(xr)} ${ptY(yb)} l\n`;
-      if (!on.has(key(i, j - 1))) segs += `${pt(xl)} ${ptY(yt)} m ${pt(xr)} ${ptY(yt)} l\n`;
-      if (!on.has(key(i, j + 1))) segs += `${pt(xl)} ${ptY(yb)} m ${pt(xr)} ${ptY(yb)} l\n`;
+      const [i, j] = k.split(",").map(Number);
+      if (on.has(key(i - 1, j)) && on.has(key(i + 1, j)) && on.has(key(i, j - 1)) && on.has(key(i, j + 1))) continue;
+      dots += `${pt(L.sx(i) - dw / 2)} ${ptY(L.sy(j) + dh / 2)} ${pt(dw)} ${pt(dh)} re\n`;
     }
-    over = `0.85 0.1 0.45 RG 1.3 w 1 J\n${segs}S\n`;
+    over = `0.85 0.1 0.45 rg\n${dots}f\n`;
     const leg = legendCells(), pl = placement();
     if (leg && pl) for (const lb of leg.labels) over += "0.85 0.1 0.45 rg\n" + pdfText(L.sx(pl.i0 + lb.c - 0.5) + 0.02, L.sy(pl.j0 + lb.r + 1.9), 6.5, lb.text);
   });
