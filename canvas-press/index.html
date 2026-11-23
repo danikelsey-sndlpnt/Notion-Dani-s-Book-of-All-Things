@@ -832,6 +832,11 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
             <label class="f">Move down <small>in</small><input type="number" id="picOY" value="0" step="0.05"></label>
           </div>
           <p class="hint" id="picNote">No picture yet.</p>
+          <canvas id="picPrev" style="width:100%;border-radius:10px;border:1px solid var(--line);display:none"></canvas>
+          <label class="f">Lighten for canvas <small id="picLightOut"></small><input type="range" id="picLight" min="0" max="70" value="30"></label>
+          <label class="f">Hole squares on the line-up sheet
+            <select id="picHoles"><option value="0.72">Light gray (picture stays bright)</option><option value="0.45">Medium gray</option><option value="0">Black (easiest to line up, darkens the picture)</option></select>
+          </label>
           <label class="tog"><input type="checkbox" id="picFaint" checked> Show the picture faintly on the line-up sheet</label>
           <div class="row">
             <button class="btn small" id="picSheet">1. Line-up sheet (PDF)</button>
@@ -1037,7 +1042,7 @@ function adjustColor(c) {
 }
 
 /* ---------------- files ---------------- */
-const APP_VERSION = "2026.11.23-a";
+const APP_VERSION = "2026.11.23-b";
 { const v = document.getElementById("appVer2"); if (v) v.textContent = "v" + APP_VERSION; }
 let downloadsCap = null;
 (window.claude && window.claude.use ? window.claude.use("downloads") : Promise.resolve(null)).then(d => { downloadsCap = d; }).catch(() => {});
@@ -4041,7 +4046,7 @@ async function gridSheetPdf(extra) {
   if (off) toast(`${off} stitches fall outside the grid sheet. Make the design smaller or move it toward the middle.`, 6000);
   const L = gridLattice(), p = 1 / L.m.a, q = 1 / L.m.d, w = p * 0.5, h = q * 0.5;
   const inWin = (x, y) => x - w / 2 >= WINDOW.x && y - h / 2 >= WINDOW.y && x + w / 2 <= WINDOW.x + WINDOW.w && y + h / 2 <= WINDOW.y + WINDOW.h;
-  let c = under + "0 g\n";
+  let c = under + (extra && extra.holeGray != null ? extra.holeGray.toFixed(2) : "0") + " g\n";
   for (let b = -1; b < L.gy; b++) for (let a = -1; a < L.gx; a++) { const x = L.sx(a + 0.5), y = L.sy(b + 0.5); if (inWin(x, y)) c += `${pt(x - w / 2)} ${ptY(y + h / 2)} ${pt(w)} ${pt(h)} re\n`; }
   c += "f\n" + over + "0 g\n";
   for (const [x, y] of MARKS) c += pdfCircle(x, y, MARK_R);
@@ -4137,7 +4142,8 @@ function picBox() {
   return { x: cx - w / 2, y: cy - h / 2, w, h };
 }
 function picNote() {
-  const el = $("picNote"); if (!S.pic) { el.textContent = "No picture yet."; return; }
+  const el = $("picNote"); if (!S.pic) { el.textContent = "No picture yet."; drawPicPreview(); return; }
+  clearTimeout(picNote.t); picNote.t = setTimeout(drawPicPreview, 60);
   const b = picBox(), m = gridMesh(), fits = b.x >= WINDOW.x - 0.01 && b.y >= WINDOW.y - 0.01 && b.x + b.w <= WINDOW.x + WINDOW.w + 0.01 && b.y + b.h <= WINDOW.y + WINDOW.h + 0.01;
   el.textContent = `${S.pic.name}: ${b.w.toFixed(2)} × ${b.h.toFixed(2)} in (about ${Math.round(b.w * m.a)} × ${Math.round(b.h * m.d)} holes on your canvas), centered on the red arrows` + (+$("picOX").value || +$("picOY").value ? ", moved as set" : "") + "." + (fits ? "" : " That runs past the printable area; make it smaller or move it back.");
 }
@@ -4151,13 +4157,38 @@ function usePic(img, name) {
   // Start as big as fits nicely in the window, keeping its shape.
   const w = Math.min(5, (WINDOW.h - 1) / a, WINDOW.w - 1); $("picW").value = +w.toFixed(2); setPicSize("w");
 }
-// The picture at the print size, at most 300 pixels per inch (lightened for the line-up sheet).
-async function picImage(b, faint) {
-  const k = Math.min(1, 300 * b.w / S.pic.img.width), c = document.createElement("canvas");
+// The picture at a given size, lightened for canvas: canvas soaks up ink and prints darker than paper, so the
+// midtones and shadows are lifted (a curve, so whites stay white and nothing washes out flat).
+function picCanvas(maxW, faint) {
+  const k = Math.min(1, maxW / S.pic.img.width), c = document.createElement("canvas");
   c.width = Math.max(1, Math.round(S.pic.img.width * k)); c.height = Math.max(1, Math.round(S.pic.img.height * k));
   const x = c.getContext("2d"); x.fillStyle = "#fff"; x.fillRect(0, 0, c.width, c.height); x.imageSmoothingQuality = "high"; x.drawImage(S.pic.img, 0, 0, c.width, c.height);
+  const lt = +$("picLight").value / 100;
+  if (lt > 0) {
+    const g = 1 / (1 + lt * 1.6), lut = new Uint8ClampedArray(256); for (let v = 0; v < 256; v++) lut[v] = 255 * Math.pow(v / 255, g);
+    const id = x.getImageData(0, 0, c.width, c.height), d = id.data; for (let i = 0; i < d.length; i += 4) { d[i] = lut[d[i]]; d[i + 1] = lut[d[i + 1]]; d[i + 2] = lut[d[i + 2]]; } x.putImageData(id, 0, 0);
+  }
   if (faint) { x.fillStyle = "rgba(255,255,255,0.72)"; x.fillRect(0, 0, c.width, c.height); }
-  return canvasToPdfImage(c);
+  return c;
+}
+// The picture at the print size, at most 300 pixels per inch.
+async function picImage(b, faint) { return canvasToPdfImage(picCanvas(300 * b.w, faint)); }
+// On-screen preview: the picture where it lands, on a canvas look (white threads, holes showing the line-up sheet).
+function drawPicPreview() {
+  const cv = $("picPrev"); if (!S.pic) { cv.style.display = "none"; return; }
+  cv.style.display = "block";
+  const b = picBox(), m = gridMesh(), pad = 0.45, Wi = b.w + pad * 2, Hi = b.h + pad * 2, cssW = cv.clientWidth || 360, dpr = window.devicePixelRatio || 1;
+  const k = cssW / Wi; cv.width = Math.round(cssW * dpr); cv.height = Math.round(Hi * k * dpr); cv.style.height = Math.round(Hi * k) + "px";
+  const x = cv.getContext("2d"); x.setTransform(k * dpr, 0, 0, k * dpr, 0, 0);
+  const hg = Math.round(255 * +$("picHoles").value);
+  x.fillStyle = `rgb(${hg},${hg},${hg})`; x.fillRect(0, 0, Wi, Hi);
+  // Threads: white bands between the holes.
+  const pw = 1 / m.a, ph = 1 / m.d, ox = (WINDOW.x + WINDOW.w / 2) - (b.x - pad), oy = (WINDOW.y + WINDOW.h / 2) - (b.y - pad);
+  x.fillStyle = "#f6f4ee";
+  for (let u = ox % pw - pw; u < Wi + pw; u += pw) x.fillRect(u - pw * 0.28, 0, pw * 0.56, Hi);
+  for (let v = oy % ph - ph; v < Hi + ph; v += ph) x.fillRect(0, v - ph * 0.28, Wi, ph * 0.56);
+  x.globalCompositeOperation = "multiply"; x.drawImage(picCanvas(Math.min(1600, cssW * dpr * 1.5), false), pad, pad, b.w, b.h); x.globalCompositeOperation = "source-over";
+  x.strokeStyle = "#d81b72"; x.lineWidth = 1.5 / k; x.setLineDash([6 / k, 4 / k]); x.strokeRect(pad, pad, b.w, b.h); x.setLineDash([]);
 }
 async function picLineupPdf() {
   if (!S.pic) { toast("Choose a picture first."); return; }
@@ -4176,7 +4207,7 @@ async function picLineupPdf() {
   over += pdfText(b.x, b.y - 0.06, 7, `Picture ${b.w.toFixed(2)} x ${b.h.toFixed(2)} in`);
   let under = "", imgs = null;
   if ($("picFaint").checked) { imgs = [await picImage(b, true)]; under = `q ${pt(b.w)} 0 0 ${pt(b.h)} ${pt(b.x)} ${ptY(b.y + b.h)} cm /Im0 Do Q\n`; }
-  await gridSheetPdf({ under, over, imgs, name: `picture-lineup-${b.w.toFixed(2)}x${b.h.toFixed(2)}in-v${APP_VERSION}.pdf` });
+  await gridSheetPdf({ under, over, imgs, holeGray: +$("picHoles").value, name: `picture-lineup-${b.w.toFixed(2)}x${b.h.toFixed(2)}in-v${APP_VERSION}.pdf` });
 }
 async function picPrintPdf() {
   if (!S.pic) { toast("Choose a picture first."); return; }
@@ -6105,6 +6136,11 @@ $("picFile").onchange = async e => { const f = e.target.files[0]; e.target.value
 $("picUseArt").onclick = () => { const L = S.layers.find(l => l.visible); const img = L ? L.img : S.original && S.original.canvas && !S.original.example ? S.original.canvas : null; if (!img) { toast("Add artwork on the Design step first, or choose a picture here."); return; } usePic(img, L ? L.name : "My artwork"); };
 $("picW").oninput = () => setPicSize("w"); $("picH").oninput = () => setPicSize("h"); $("picOX").oninput = $("picOY").oninput = picNote;
 $("picSheet").onclick = picLineupPdf; $("picPrint").onclick = picPrintPdf;
+{ const pl = store.get("ccp-piclight"); if (pl != null) $("picLight").value = pl; const ph = store.get("ccp-picholes"); if (ph != null && [...$("picHoles").options].some(o => o.value === String(ph))) $("picHoles").value = ph; }
+const picLightOut = () => $("picLightOut").textContent = $("picLight").value + "%"; picLightOut();
+$("picLight").oninput = () => { picLightOut(); store.set("ccp-piclight", +$("picLight").value); picNote(); };
+$("picHoles").onchange = () => { store.set("ccp-picholes", $("picHoles").value); picNote(); };
+$("picPrintBox").addEventListener("toggle", () => { if ($("picPrintBox").open) picNote(); });
 $("gmCheck").onchange = e => { const f = e.target.files[0]; e.target.value = ""; if (f) checkGridPrint(f); }; $("gmSheet").onclick = gridSheetPdf; $("gmPrint").onclick = makeGridPrintPdf;
 $("gridModeBox").addEventListener("toggle", gridNote);
 $("panelHide").onclick = () => setPanel(false); $("panelShow").onclick = () => setPanel(true);
