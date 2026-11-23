@@ -834,6 +834,15 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
             <label class="f">Border <small>inches each side</small><input type="number" id="picBorder" value="2" min="0" max="6" step="0.25"></label>
           </div>
           <div class="status" id="picSizes" hidden></div>
+          <div class="row" style="align-items:end">
+            <label class="f">Canvas holes per inch across<input type="number" id="picA" value="13" min="5" max="30" step="0.05"></label>
+            <label class="f">Holes per inch down<input type="number" id="picD" value="13" min="5" max="30" step="0.05"></label>
+          </div>
+          <div class="row" style="align-items:end">
+            <label class="f">Gauge for<select id="picBase"><option value="10">10 mesh</option><option value="12">12 mesh</option><option value="13" selected>13 mesh</option><option value="14">14 mesh</option><option value="16">16 mesh</option><option value="18">18 mesh</option></select></label>
+            <button class="btn small" id="picGauge">Mesh gauge (PDF)</button>
+          </div>
+          <p class="hint">Not sure of your canvas's holes per inch? Print the mesh gauge on plain paper at 100%, lay the canvas on the strips, and the strip whose squares stay black in the holes all the way to the end is your number (turn the canvas a quarter turn for "down"). The line-up sheet's grid uses these numbers.</p>
           <p class="hint" id="picNote">No picture yet.</p>
           <canvas id="picPrev" style="width:100%;border-radius:10px;border:1px solid var(--line);display:none"></canvas>
           <label class="f">Lighten for canvas <small id="picLightOut"></small><input type="range" id="picLight" min="0" max="70" value="30"></label>
@@ -1046,7 +1055,7 @@ function adjustColor(c) {
 }
 
 /* ---------------- files ---------------- */
-const APP_VERSION = "2026.11.23-e";
+const APP_VERSION = "2026.11.23-f";
 { const v = document.getElementById("appVer2"); if (v) v.textContent = "v" + APP_VERSION; }
 let downloadsCap = null;
 (window.claude && window.claude.use ? window.claude.use("downloads") : Promise.resolve(null)).then(d => { downloadsCap = d; }).catch(() => {});
@@ -6209,6 +6218,12 @@ $("gmFromScan").onclick = () => { const rm = realMesh(); if (!rm) return; $("gmA
 $("gmGauge").onclick = meshGaugePdf;
 $("picFile").onchange = async e => { const f = e.target.files[0]; e.target.value = ""; if (!f) return; busy(true, "Opening the picture…", 0.3); try { const c = await fileToCanvas(f, 300); usePic(c.canvas || c, f.name); } catch (err) { toast(err.message, 5000); } finally { busy(false); } };
 $("picUseArt").onclick = () => { const L = S.layers.find(l => l.visible); const img = L ? L.img : S.original && S.original.canvas && !S.original.example ? S.original.canvas : null; if (!img) { toast("Add artwork on the Design step first, or choose a picture here."); return; } usePic(img, L ? L.name : "My artwork"); };
+const picMeshSync = () => { $("picA").value = $("gmA").value; $("picD").value = $("gmD").value; const gb = Math.round(+$("gmA").value || 13); if ([...$("picBase").options].some(o => +o.value === gb)) $("picBase").value = gb; };
+picMeshSync();
+$("picA").oninput = () => { $("gmA").value = $("picA").value; gridMeshChanged(); picPageKey = ""; picNote(); };
+$("picD").oninput = () => { $("gmD").value = $("picD").value; gridMeshChanged(); picPageKey = ""; picNote(); };
+$("gmA").addEventListener("input", picMeshSync); $("gmD").addEventListener("input", picMeshSync);
+$("picGauge").onclick = () => { $("gmBase").value = $("picBase").value; meshGaugePdf(); };
 $("picTrim").onchange = () => { if (S.pic) usePic(S.pic.raw, S.pic.name); };
 $("picBorder").value = store.get("ccp-picborder") ?? 2; $("picBorder").oninput = () => { store.set("ccp-picborder", +$("picBorder").value); picNote(); };
 $("picW").oninput = () => setPicSize("w"); $("picH").oninput = () => setPicSize("h"); $("picOX").oninput = $("picOY").oninput = picNote;
