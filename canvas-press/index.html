@@ -830,7 +830,9 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
             <label class="f">Height <small>inches</small><input type="number" id="picH" value="4" min="0.5" max="9.5" step="0.05"></label>
             <label class="f">Move right <small>in</small><input type="number" id="picOX" value="0" step="0.05"></label>
             <label class="f">Move down <small>in</small><input type="number" id="picOY" value="0" step="0.05"></label>
+            <label class="f">Border <small>inches each side</small><input type="number" id="picBorder" value="2" min="0" max="6" step="0.25"></label>
           </div>
+          <div class="status" id="picSizes" hidden></div>
           <p class="hint" id="picNote">No picture yet.</p>
           <canvas id="picPrev" style="width:100%;border-radius:10px;border:1px solid var(--line);display:none"></canvas>
           <label class="f">Lighten for canvas <small id="picLightOut"></small><input type="range" id="picLight" min="0" max="70" value="30"></label>
@@ -1042,7 +1044,7 @@ function adjustColor(c) {
 }
 
 /* ---------------- files ---------------- */
-const APP_VERSION = "2026.11.23-b";
+const APP_VERSION = "2026.11.23-c";
 { const v = document.getElementById("appVer2"); if (v) v.textContent = "v" + APP_VERSION; }
 let downloadsCap = null;
 (window.claude && window.claude.use ? window.claude.use("downloads") : Promise.resolve(null)).then(d => { downloadsCap = d; }).catch(() => {});
@@ -4142,9 +4144,12 @@ function picBox() {
   return { x: cx - w / 2, y: cy - h / 2, w, h };
 }
 function picNote() {
-  const el = $("picNote"); if (!S.pic) { el.textContent = "No picture yet."; drawPicPreview(); return; }
+  const el = $("picNote"); if (!S.pic) { el.textContent = "No picture yet."; $("picSizes").hidden = true; drawPicPreview(); return; }
   clearTimeout(picNote.t); picNote.t = setTimeout(drawPicPreview, 60);
   const b = picBox(), m = gridMesh(), fits = b.x >= WINDOW.x - 0.01 && b.y >= WINDOW.y - 0.01 && b.x + b.w <= WINDOW.x + WINDOW.w + 0.01 && b.y + b.h <= WINDOW.y + WINDOW.h + 0.01;
+  const bd = Math.max(0, +$("picBorder").value || 0), cw = b.w + 2 * bd, ch = b.h + 2 * bd, ps = $("picSizes");
+  ps.hidden = false; ps.className = "status ok";
+  ps.innerHTML = `<b>Design size:</b> ${b.w.toFixed(2)} × ${b.h.toFixed(2)} in (${Math.round(b.w * m.a)} × ${Math.round(b.h * m.d)} holes)<br><b>Canvas to cut:</b> ${cw.toFixed(2)} × ${ch.toFixed(2)} in, with a ${bd} in border on every side (${Math.round(cw * m.a)} × ${Math.round(ch * m.d)} holes)` + (cw > PAGE.w || ch > PAGE.h ? `<br>That canvas is bigger than the letter page, so its edges hang past the paper. Tape it so the picture area sits on the page.` : "");
   el.textContent = `${S.pic.name}: ${b.w.toFixed(2)} × ${b.h.toFixed(2)} in (about ${Math.round(b.w * m.a)} × ${Math.round(b.h * m.d)} holes on your canvas), centered on the red arrows` + (+$("picOX").value || +$("picOY").value ? ", moved as set" : "") + "." + (fits ? "" : " That runs past the printable area; make it smaller or move it back.");
 }
 function setPicSize(from) {
@@ -4205,6 +4210,18 @@ async function picLineupPdf() {
   for (let i = 1; i <= Math.floor(b.w + 1e-6); i++) over += pdfText(b.x + i - 0.03, b.y + 0.3, 7, String(i));
   for (let i = 1; i <= Math.floor(b.h + 1e-6); i++) over += pdfText(b.x + 0.2, b.y + i + 0.03, 7, String(i));
   over += pdfText(b.x, b.y - 0.06, 7, `Picture ${b.w.toFixed(2)} x ${b.h.toFixed(2)} in`);
+  // Where the canvas edges go with the chosen border (clipped to the page).
+  const bd = Math.max(0, +$("picBorder").value || 0);
+  if (bd > 0) {
+    const ex0 = b.x - bd, ey0 = b.y - bd, ex1 = b.x + b.w + bd, ey1 = b.y + b.h + bd, cl = (v, a, z) => Math.max(a, Math.min(z, v));
+    const X0 = cl(ex0, 0.15, PAGE.w - 0.15), X1 = cl(ex1, 0.15, PAGE.w - 0.15), Y0 = cl(ey0, 0.15, PAGE.h - 0.15), Y1 = cl(ey1, 0.15, PAGE.h - 0.15);
+    over += "0.25 G 0.9 w [8 4] 0 d\n";
+    if (ex0 >= 0.15) over += `${pt(ex0)} ${ptY(Y0)} m ${pt(ex0)} ${ptY(Y1)} l S\n`;
+    if (ex1 <= PAGE.w - 0.15) over += `${pt(ex1)} ${ptY(Y0)} m ${pt(ex1)} ${ptY(Y1)} l S\n`;
+    if (ey0 >= 0.15) over += `${pt(X0)} ${ptY(ey0)} m ${pt(X1)} ${ptY(ey0)} l S\n`;
+    if (ey1 <= PAGE.h - 0.15) over += `${pt(X0)} ${ptY(ey1)} m ${pt(X1)} ${ptY(ey1)} l S\n`;
+    over += "[] 0 d\n0.25 g\n" + pdfText(Math.max(0.3, ex0 + 0.05), Math.max(0.3, ey0 - 0.05) + (ey0 < 0.3 ? 0.2 : 0), 6.5, `Canvas edge: ${(b.w + 2 * bd).toFixed(2)} x ${(b.h + 2 * bd).toFixed(2)} in (${bd} in border)`);
+  }
   let under = "", imgs = null;
   if ($("picFaint").checked) { imgs = [await picImage(b, true)]; under = `q ${pt(b.w)} 0 0 ${pt(b.h)} ${pt(b.x)} ${ptY(b.y + b.h)} cm /Im0 Do Q\n`; }
   await gridSheetPdf({ under, over, imgs, holeGray: +$("picHoles").value, name: `picture-lineup-${b.w.toFixed(2)}x${b.h.toFixed(2)}in-v${APP_VERSION}.pdf` });
@@ -6134,6 +6151,7 @@ $("gmFromScan").onclick = () => { const rm = realMesh(); if (!rm) return; $("gmA
 $("gmGauge").onclick = meshGaugePdf;
 $("picFile").onchange = async e => { const f = e.target.files[0]; e.target.value = ""; if (!f) return; busy(true, "Opening the picture…", 0.3); try { const c = await fileToCanvas(f, 300); usePic(c.canvas || c, f.name); } catch (err) { toast(err.message, 5000); } finally { busy(false); } };
 $("picUseArt").onclick = () => { const L = S.layers.find(l => l.visible); const img = L ? L.img : S.original && S.original.canvas && !S.original.example ? S.original.canvas : null; if (!img) { toast("Add artwork on the Design step first, or choose a picture here."); return; } usePic(img, L ? L.name : "My artwork"); };
+$("picBorder").value = store.get("ccp-picborder") ?? 2; $("picBorder").oninput = () => { store.set("ccp-picborder", +$("picBorder").value); picNote(); };
 $("picW").oninput = () => setPicSize("w"); $("picH").oninput = () => setPicSize("h"); $("picOX").oninput = $("picOY").oninput = picNote;
 $("picSheet").onclick = picLineupPdf; $("picPrint").onclick = picPrintPdf;
 { const pl = store.get("ccp-piclight"); if (pl != null) $("picLight").value = pl; const ph = store.get("ccp-picholes"); if (ph != null && [...$("picHoles").options].some(o => o.value === String(ph))) $("picHoles").value = ph; }
