@@ -840,6 +840,7 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
           <label class="f">Hole squares on the line-up sheet
             <select id="picHoles"><option value="0.72">Light gray (picture stays bright)</option><option value="0.45">Medium gray</option><option value="0">Black (easiest to line up, darkens the picture)</option></select>
           </label>
+          <label class="tog"><input type="checkbox" id="picTrim" checked> Trim white edges off the picture (so the size is just your design, not the blank page around it)</label>
           <label class="tog"><input type="checkbox" id="picFaint" checked> Show the picture faintly on the line-up sheet</label>
           <div class="row">
             <button class="btn small" id="picSheet">1. Line-up sheet (PDF)</button>
@@ -1045,7 +1046,7 @@ function adjustColor(c) {
 }
 
 /* ---------------- files ---------------- */
-const APP_VERSION = "2026.11.23-d";
+const APP_VERSION = "2026.11.23-e";
 { const v = document.getElementById("appVer2"); if (v) v.textContent = "v" + APP_VERSION; }
 let downloadsCap = null;
 (window.claude && window.claude.use ? window.claude.use("downloads") : Promise.resolve(null)).then(d => { downloadsCap = d; }).catch(() => {});
@@ -4151,7 +4152,7 @@ function picNote() {
   const b = picBox(), m = gridMesh(), fits = b.x >= WINDOW.x - 0.01 && b.y >= WINDOW.y - 0.01 && b.x + b.w <= WINDOW.x + WINDOW.w + 0.01 && b.y + b.h <= WINDOW.y + WINDOW.h + 0.01;
   const bd = Math.max(0, +$("picBorder").value || 0), cw = b.w + 2 * bd, ch = b.h + 2 * bd, ps = $("picSizes");
   ps.hidden = false; ps.className = "status ok";
-  ps.innerHTML = `<b>Design size:</b> ${b.w.toFixed(2)} × ${b.h.toFixed(2)} in (${Math.round(b.w * m.a)} × ${Math.round(b.h * m.d)} holes)<br><b>Canvas to cut:</b> ${cw.toFixed(2)} × ${ch.toFixed(2)} in, with a ${bd} in border on every side (${Math.round(cw * m.a)} × ${Math.round(ch * m.d)} holes)` + (cw > PAGE.w || ch > PAGE.h ? `<br>That canvas is bigger than the letter page, so its edges hang past the paper. Tape it so the picture area sits on the page.` : "");
+  ps.innerHTML = `<b>Paper:</b> letter, 8.5 × 11 in<br><b>Design size</b> (what prints${S.pic.trimmed ? ", white edges trimmed off" : ""}): ${b.w.toFixed(2)} × ${b.h.toFixed(2)} in (${Math.round(b.w * m.a)} × ${Math.round(b.h * m.d)} holes)<br><b>Canvas to cut:</b> ${cw.toFixed(2)} × ${ch.toFixed(2)} in, with a ${bd} in border on every side (${Math.round(cw * m.a)} × ${Math.round(ch * m.d)} holes)` + (cw > PAGE.w || ch > PAGE.h ? `<br>That canvas is bigger than the letter page, so its edges hang past the paper. Tape it so the picture area sits on the page.` : "");
   el.textContent = `${S.pic.name}: ${b.w.toFixed(2)} × ${b.h.toFixed(2)} in (about ${Math.round(b.w * m.a)} × ${Math.round(b.h * m.d)} holes on your canvas), centered on the red arrows` + (+$("picOX").value || +$("picOY").value ? ", moved as set" : "") + "." + (fits ? "" : " That runs past the printable area; make it smaller or move it back.");
 }
 function setPicSize(from) {
@@ -4159,8 +4160,22 @@ function setPicSize(from) {
   if (from === "h") $("picW").value = +((+$("picH").value || 1) / a).toFixed(2); else $("picH").value = +((+$("picW").value || 1) * a).toFixed(2);
   picNote();
 }
-function usePic(img, name) {
-  S.pic = { img, name }; picPageKey = ""; const a = img.height / img.width;
+// The picture without the plain white (or see-through) margin around it, as exported pages often have.
+function trimWhite(img) {
+  const w = img.width, h = img.height, c = document.createElement("canvas"); c.width = w; c.height = h;
+  const x = c.getContext("2d", { willReadFrequently: true }); x.drawImage(img, 0, 0); const d = x.getImageData(0, 0, w, h).data;
+  const ink = i => d[i + 3] > 20 && (d[i] < 240 || d[i + 1] < 240 || d[i + 2] < 240);
+  let x0 = w, y0 = h, x1 = -1, y1 = -1;
+  for (let y = 0; y < h; y++) for (let xx = 0; xx < w; xx++) if (ink((y * w + xx) * 4)) { if (xx < x0) x0 = xx; if (xx > x1) x1 = xx; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+  if (x1 < 0 || (x0 === 0 && y0 === 0 && x1 === w - 1 && y1 === h - 1)) return { img, trimmed: false };
+  const o = document.createElement("canvas"); o.width = x1 - x0 + 1; o.height = y1 - y0 + 1; o.getContext("2d").drawImage(img, -x0, -y0);
+  return { img: o, trimmed: true, from: [w, h] };
+}
+function usePic(img, name, keepSize) {
+  const raw = img; let trimmed = false;
+  if ($("picTrim").checked) { const t = trimWhite(img); img = t.img; trimmed = t.trimmed; }
+  S.pic = { img, name, raw, trimmed }; picPageKey = ""; const a = img.height / img.width;
+  if (keepSize) { setPicSize("w"); return; }
   // Start as big as fits nicely in the window, keeping its shape.
   const w = Math.min(5, (WINDOW.h - 1) / a, WINDOW.w - 1); $("picW").value = +w.toFixed(2); setPicSize("w");
 }
@@ -4201,8 +4216,12 @@ function picPageCanvas() {
   x.lineWidth = 1.5 / PICK; x.strokeStyle = "#555"; x.setLineDash([8 / PICK, 4 / PICK]); x.strokeRect(b.x - bd, b.y - bd, b.w + 2 * bd, b.h + 2 * bd);
   x.strokeStyle = "#d81b72"; x.setLineDash([6 / PICK, 4 / PICK]); x.strokeRect(b.x, b.y, b.w, b.h); x.setLineDash([]);
   x.fillStyle = "#111"; for (const [mx, my] of MARKS) { x.beginPath(); x.arc(mx, my, MARK_R, 0, 7); x.fill(); }
-  x.fillStyle = "#d81b72"; x.font = `600 ${11 / PICK * 1.2}px Helvetica, Arial, sans-serif`; x.fillText(`Picture ${b.w.toFixed(2)} × ${b.h.toFixed(2)} in`, b.x, b.y - 0.06);
-  x.fillStyle = "#444"; x.fillText(`Canvas ${(b.w + 2 * bd).toFixed(2)} × ${(b.h + 2 * bd).toFixed(2)} in (${bd} in border)`, Math.max(0.05, b.x - bd), Math.max(0.15, b.y - bd - 0.06));
+  // Labels: design (pink), canvas (gray), paper (blue), and the border width marked on one side.
+  x.font = `600 ${0.12}px Helvetica, Arial, sans-serif`;
+  x.fillStyle = "#d81b72"; x.fillText(`Design ${b.w.toFixed(2)} × ${b.h.toFixed(2)} in`, b.x, b.y - 0.06);
+  x.fillStyle = "#444"; x.fillText(`Canvas ${(b.w + 2 * bd).toFixed(2)} × ${(b.h + 2 * bd).toFixed(2)} in`, Math.max(0.05, b.x - bd), Math.max(0.15, b.y - bd - 0.06));
+  if (bd > 0) { const yy = b.y + b.h / 2; x.strokeStyle = "#444"; x.lineWidth = 1.2 / PICK; x.beginPath(); x.moveTo(b.x - bd, yy); x.lineTo(b.x, yy); x.stroke(); x.fillStyle = "#444"; x.fillText(`${bd} in border`, b.x - bd + 0.05, yy - 0.05); }
+  x.fillStyle = "#2f6fb0"; x.fillText("Paper: letter 8.5 × 11 in", 0.1, PAGE.h - 0.1);
   picPage = c; picPageKey = key; return c;
 }
 // On-screen preview: the picture where it lands, on a canvas look (white threads, holes showing the line-up sheet).
@@ -5516,7 +5535,7 @@ function drawMain() {
       const src = picPageCanvas();
       vctx.save(); vctx.translate(V.tx, V.ty); vctx.scale(V.s, V.s); vctx.imageSmoothingEnabled = true; vctx.drawImage(src, 0, 0); vctx.restore();
       const b = picBox(), bd = Math.max(0, +$("picBorder").value || 0);
-      stat.push(`Picture ${b.w.toFixed(2)} × ${b.h.toFixed(2)} in`, `canvas ${(b.w + 2 * bd).toFixed(2)} × ${(b.h + 2 * bd).toFixed(2)} in`, `${Math.round(V.s * 100)}%`);
+      stat.push(`Design ${b.w.toFixed(2)} × ${b.h.toFixed(2)} in`, `canvas ${(b.w + 2 * bd).toFixed(2)} × ${(b.h + 2 * bd).toFixed(2)} in (${bd} in border)`, "paper 8.5 × 11 in", `${Math.round(V.s * 100)}%`);
       $("vstat").innerHTML = stat.map(s => `<span>${String(s).replace(/[<>&]/g, "")}</span>`).join(""); return;
     }
     if (!S.scan && S.view === "prev" && S.design) {
@@ -6190,6 +6209,7 @@ $("gmFromScan").onclick = () => { const rm = realMesh(); if (!rm) return; $("gmA
 $("gmGauge").onclick = meshGaugePdf;
 $("picFile").onchange = async e => { const f = e.target.files[0]; e.target.value = ""; if (!f) return; busy(true, "Opening the picture…", 0.3); try { const c = await fileToCanvas(f, 300); usePic(c.canvas || c, f.name); } catch (err) { toast(err.message, 5000); } finally { busy(false); } };
 $("picUseArt").onclick = () => { const L = S.layers.find(l => l.visible); const img = L ? L.img : S.original && S.original.canvas && !S.original.example ? S.original.canvas : null; if (!img) { toast("Add artwork on the Design step first, or choose a picture here."); return; } usePic(img, L ? L.name : "My artwork"); };
+$("picTrim").onchange = () => { if (S.pic) usePic(S.pic.raw, S.pic.name); };
 $("picBorder").value = store.get("ccp-picborder") ?? 2; $("picBorder").oninput = () => { store.set("ccp-picborder", +$("picBorder").value); picNote(); };
 $("picW").oninput = () => setPicSize("w"); $("picH").oninput = () => setPicSize("h"); $("picOX").oninput = $("picOY").oninput = picNote;
 $("picSheet").onclick = picLineupPdf; $("picPrint").onclick = picPrintPdf;
