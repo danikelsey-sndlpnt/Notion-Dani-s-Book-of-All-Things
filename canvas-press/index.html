@@ -818,6 +818,27 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
           <button class="btn thread wide" id="practicePdf">Practice print on paper (PDF)</button>
           <div class="status" id="practiceStatus" hidden></div>
         </details>
+        <details class="more" id="picPrintBox">
+          <summary>Print a picture (no stitches) with a line-up grid</summary>
+          <p class="hint">Prints any picture straight onto the canvas, at the exact size you pick, never stretched. First print the <b>line-up sheet</b> on plain paper: the canvas hole grid plus a pink box (with inch rulers) showing exactly where the picture will land. Tape the canvas on it, then print the picture onto that sheet, loaded the same way.</p>
+          <div class="row" style="align-items:end">
+            <label class="btn small" style="cursor:pointer">Choose a picture<input type="file" id="picFile" accept="image/*,application/pdf,.psd" hidden></label>
+            <button class="btn small" id="picUseArt">Use my artwork</button>
+          </div>
+          <div class="row">
+            <label class="f">Width <small>inches</small><input type="number" id="picW" value="4" min="0.5" max="7" step="0.05"></label>
+            <label class="f">Height <small>inches</small><input type="number" id="picH" value="4" min="0.5" max="9.5" step="0.05"></label>
+            <label class="f">Move right <small>in</small><input type="number" id="picOX" value="0" step="0.05"></label>
+            <label class="f">Move down <small>in</small><input type="number" id="picOY" value="0" step="0.05"></label>
+          </div>
+          <p class="hint" id="picNote">No picture yet.</p>
+          <label class="tog"><input type="checkbox" id="picFaint" checked> Show the picture faintly on the line-up sheet</label>
+          <div class="row">
+            <button class="btn small" id="picSheet">1. Line-up sheet (PDF)</button>
+            <button class="btn thread small" id="picPrint">2. Picture print (PDF)</button>
+          </div>
+          <p class="hint">The line-up sheet uses the holes-per-inch from the grid sheet section below, so the canvas threads run straight. Width and height stay locked to the picture's shape. Your nudge applies to the picture print. Print both at 100% / Actual Size.</p>
+        </details>
         <details class="more" id="gridModeBox">
           <summary>Print without a scan: line up on a grid sheet</summary>
           <p class="hint">No scanning. The app prints a sheet with a black square wherever a hole of your canvas should be. You lay the canvas on it and line the holes up, then print the design onto that same sheet. Both prints go through the same printer the same way, so most printer quirks cancel out.</p>
@@ -1016,7 +1037,7 @@ function adjustColor(c) {
 }
 
 /* ---------------- files ---------------- */
-const APP_VERSION = "2026.11.20-d";
+const APP_VERSION = "2026.11.23-a";
 { const v = document.getElementById("appVer2"); if (v) v.textContent = "v" + APP_VERSION; }
 let downloadsCap = null;
 (window.claude && window.claude.use ? window.claude.use("downloads") : Promise.resolve(null)).then(d => { downloadsCap = d; }).catch(() => {});
@@ -3989,8 +4010,9 @@ function meshGaugePdf() {
   c += pdfRuler(1.15, 10.45, "= 5 in at 100%");
   saveFile(`mesh-gauge-${base}-v${APP_VERSION}.pdf`, buildPdf(c));
 }
-async function gridSheetPdf() {
-  let under = "", over = "", off = 0; const show = $("gmShowDesign").value;
+async function gridSheetPdf(extra) {
+  if (!(extra && extra.over != null)) extra = null;
+  let under = extra && extra.under || "", over = extra ? extra.over : "", off = 0; const show = extra ? "none" : $("gmShowDesign").value;
   // The design in its colors, one stitch square each, right where it will print. The black hole squares go on top,
   // so under a lined-up canvas the color only sits beneath the threads.
   if (show === "color" && S.design) await withGridLattice(L => {
@@ -4049,6 +4071,7 @@ async function gridSheetPdf() {
   c += pdfRuler(1.5, 10.78, "= 5 in at 100%");
   c += "0.35 g\n" + pdfText(2.2, 0.22, 7, `Sookie's Canvas Press grid sheet: ${L.m.a} x ${L.m.d} holes per inch  -  print at 100% / Actual Size`);
   c += pdfText(2.2, 0.34, 7, "Line the canvas holes up on the black squares, centered on the red arrows. This edge goes in first.");
+  if (extra) { saveFile(extra.name, buildPdf(c, extra.imgs || null)); return; }
   saveFile(`grid-sheet-${L.m.a}x${L.m.d}${over ? "-outline" : under ? "-with-design" : ""}-v${APP_VERSION}.pdf`, buildPdf(c));
   store.set("ccp-gridmesh", L.m); store.set("ccp-gridshow", show);
 }
@@ -4105,6 +4128,68 @@ function iniHit(wx, wy) {
   };
   return S.scan && S.grid ? find() : withGridLatticeSync(find);
 }
+/* ---- Print a picture (no stitches) ---- */
+S.pic = null;
+function picAspect() { return S.pic ? S.pic.img.height / S.pic.img.width : 1; }
+function picBox() {
+  const w = Math.max(0.3, +$("picW").value || 4), h = w * picAspect(), ox = +$("picOX").value || 0, oy = +$("picOY").value || 0;
+  const cx = WINDOW.x + WINDOW.w / 2 + ox, cy = WINDOW.y + WINDOW.h / 2 + oy;
+  return { x: cx - w / 2, y: cy - h / 2, w, h };
+}
+function picNote() {
+  const el = $("picNote"); if (!S.pic) { el.textContent = "No picture yet."; return; }
+  const b = picBox(), m = gridMesh(), fits = b.x >= WINDOW.x - 0.01 && b.y >= WINDOW.y - 0.01 && b.x + b.w <= WINDOW.x + WINDOW.w + 0.01 && b.y + b.h <= WINDOW.y + WINDOW.h + 0.01;
+  el.textContent = `${S.pic.name}: ${b.w.toFixed(2)} × ${b.h.toFixed(2)} in (about ${Math.round(b.w * m.a)} × ${Math.round(b.h * m.d)} holes on your canvas), centered on the red arrows` + (+$("picOX").value || +$("picOY").value ? ", moved as set" : "") + "." + (fits ? "" : " That runs past the printable area; make it smaller or move it back.");
+}
+function setPicSize(from) {
+  const a = picAspect();
+  if (from === "h") $("picW").value = +((+$("picH").value || 1) / a).toFixed(2); else $("picH").value = +((+$("picW").value || 1) * a).toFixed(2);
+  picNote();
+}
+function usePic(img, name) {
+  S.pic = { img, name }; const a = img.height / img.width;
+  // Start as big as fits nicely in the window, keeping its shape.
+  const w = Math.min(5, (WINDOW.h - 1) / a, WINDOW.w - 1); $("picW").value = +w.toFixed(2); setPicSize("w");
+}
+// The picture at the print size, at most 300 pixels per inch (lightened for the line-up sheet).
+async function picImage(b, faint) {
+  const k = Math.min(1, 300 * b.w / S.pic.img.width), c = document.createElement("canvas");
+  c.width = Math.max(1, Math.round(S.pic.img.width * k)); c.height = Math.max(1, Math.round(S.pic.img.height * k));
+  const x = c.getContext("2d"); x.fillStyle = "#fff"; x.fillRect(0, 0, c.width, c.height); x.imageSmoothingQuality = "high"; x.drawImage(S.pic.img, 0, 0, c.width, c.height);
+  if (faint) { x.fillStyle = "rgba(255,255,255,0.72)"; x.fillRect(0, 0, c.width, c.height); }
+  return canvasToPdfImage(c);
+}
+async function picLineupPdf() {
+  if (!S.pic) { toast("Choose a picture first."); return; }
+  const b = picBox(), P = "0.85 0.1 0.45";
+  let over = `${P} RG 1 w\n${pt(b.x)} ${ptY(b.y + b.h)} ${pt(b.w)} ${pt(b.h)} re S\n`;
+  // Center lines through the picture, carried out past the window so they show beside the canvas.
+  const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+  over += `0.5 w [4 3] 0 d ${pt(cx)} ${ptY(WINDOW.y - 0.05)} m ${pt(cx)} ${ptY(b.y)} l ${pt(cx)} ${ptY(b.y + b.h)} m ${pt(cx)} ${ptY(WINDOW.y + WINDOW.h + 0.05)} l ${pt(WINDOW.x - 0.05)} ${ptY(cy)} m ${pt(b.x)} ${ptY(cy)} l ${pt(b.x + b.w)} ${ptY(cy)} m ${pt(WINDOW.x + WINDOW.w + 0.05)} ${ptY(cy)} l S [] 0 d\n`;
+  // Inch rulers along the top and left edges of the box (eighths, quarters, halves, inches).
+  over += "0.8 w\n";
+  for (let q = 0; q <= Math.floor(b.w * 8 + 1e-6); q++) { const x = b.x + q / 8, t = q % 8 === 0 ? 0.16 : q % 4 === 0 ? 0.11 : q % 2 === 0 ? 0.08 : 0.05; over += `${pt(x)} ${ptY(b.y)} m ${pt(x)} ${ptY(b.y + t)} l\n`; }
+  for (let q = 0; q <= Math.floor(b.h * 8 + 1e-6); q++) { const y = b.y + q / 8, t = q % 8 === 0 ? 0.16 : q % 4 === 0 ? 0.11 : q % 2 === 0 ? 0.08 : 0.05; over += `${pt(b.x)} ${ptY(y)} m ${pt(b.x + t)} ${ptY(y)} l\n`; }
+  over += `S\n${P} rg\n`;
+  for (let i = 1; i <= Math.floor(b.w + 1e-6); i++) over += pdfText(b.x + i - 0.03, b.y + 0.3, 7, String(i));
+  for (let i = 1; i <= Math.floor(b.h + 1e-6); i++) over += pdfText(b.x + 0.2, b.y + i + 0.03, 7, String(i));
+  over += pdfText(b.x, b.y - 0.06, 7, `Picture ${b.w.toFixed(2)} x ${b.h.toFixed(2)} in`);
+  let under = "", imgs = null;
+  if ($("picFaint").checked) { imgs = [await picImage(b, true)]; under = `q ${pt(b.w)} 0 0 ${pt(b.h)} ${pt(b.x)} ${ptY(b.y + b.h)} cm /Im0 Do Q\n`; }
+  await gridSheetPdf({ under, over, imgs, name: `picture-lineup-${b.w.toFixed(2)}x${b.h.toFixed(2)}in-v${APP_VERSION}.pdf` });
+}
+async function picPrintPdf() {
+  if (!S.pic) { toast("Choose a picture first."); return; }
+  const b = picBox(), nx = S.nudge.x / NUDGE, ny = S.nudge.y / NUDGE;
+  busy(true, "Building the picture print…", 0.4); await tick();
+  try {
+    const img = await picImage(b, false);
+    const c = `q ${pt(b.w)} 0 0 ${pt(b.h)} ${pt(b.x + nx)} ${ptY(b.y + ny + b.h)} cm /Im0 Do Q\n`;
+    busy(false);
+    await saveFile(`picture-print-${b.w.toFixed(2)}x${b.h.toFixed(2)}in-v${APP_VERSION}.pdf`, buildPdf(c, [img]));
+  } catch (e) { busy(false); toast("The picture print couldn't be made: " + e.message, 6000); }
+}
+
 // Measures a scan of a printed canvas (no map needed): where the paint sits against the hole pattern around it.
 // Hole centers and paint are each averaged around the stitch repeat (as an angle), so every hole and every painted
 // pixel counts and a few odd ones can't pull it. Paint centered on the crossings sits half a stitch from the holes.
@@ -6016,6 +6101,10 @@ $("legendPos").onchange = () => { S.legendPos = $("legendPos").value; store.set(
 { const gs = store.get("ccp-gridshow"); if (gs && [...$("gmShowDesign").options].some(o => o.value === gs)) $("gmShowDesign").value = gs; }
 $("gmFromScan").onclick = () => { const rm = realMesh(); if (!rm) return; $("gmA").value = rm.across.toFixed(2); $("gmD").value = rm.down.toFixed(2); gridMeshChanged(); };
 $("gmGauge").onclick = meshGaugePdf;
+$("picFile").onchange = async e => { const f = e.target.files[0]; e.target.value = ""; if (!f) return; busy(true, "Opening the picture…", 0.3); try { const c = await fileToCanvas(f, 300); usePic(c.canvas || c, f.name); } catch (err) { toast(err.message, 5000); } finally { busy(false); } };
+$("picUseArt").onclick = () => { const L = S.layers.find(l => l.visible); const img = L ? L.img : S.original && S.original.canvas && !S.original.example ? S.original.canvas : null; if (!img) { toast("Add artwork on the Design step first, or choose a picture here."); return; } usePic(img, L ? L.name : "My artwork"); };
+$("picW").oninput = () => setPicSize("w"); $("picH").oninput = () => setPicSize("h"); $("picOX").oninput = $("picOY").oninput = picNote;
+$("picSheet").onclick = picLineupPdf; $("picPrint").onclick = picPrintPdf;
 $("gmCheck").onchange = e => { const f = e.target.files[0]; e.target.value = ""; if (f) checkGridPrint(f); }; $("gmSheet").onclick = gridSheetPdf; $("gmPrint").onclick = makeGridPrintPdf;
 $("gridModeBox").addEventListener("toggle", gridNote);
 $("panelHide").onclick = () => setPanel(false); $("panelShow").onclick = () => setPanel(true);
