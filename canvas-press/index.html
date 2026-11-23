@@ -286,6 +286,7 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
           <button id="vSnap" aria-pressed="false">Snapshot</button>
           <button id="vMap" aria-pressed="false">Map</button>
           <button id="vPrev" aria-pressed="false">Preview</button>
+          <button id="vPic" aria-pressed="false" hidden>Picture</button>
         </div>
         <span class="spacer"></span>
         <button class="btn small" id="vDesignOn" hidden aria-pressed="false">Show design</button>
@@ -1044,7 +1045,7 @@ function adjustColor(c) {
 }
 
 /* ---------------- files ---------------- */
-const APP_VERSION = "2026.11.23-c";
+const APP_VERSION = "2026.11.23-d";
 { const v = document.getElementById("appVer2"); if (v) v.textContent = "v" + APP_VERSION; }
 let downloadsCap = null;
 (window.claude && window.claude.use ? window.claude.use("downloads") : Promise.resolve(null)).then(d => { downloadsCap = d; }).catch(() => {});
@@ -4145,7 +4146,8 @@ function picBox() {
 }
 function picNote() {
   const el = $("picNote"); if (!S.pic) { el.textContent = "No picture yet."; $("picSizes").hidden = true; drawPicPreview(); return; }
-  clearTimeout(picNote.t); picNote.t = setTimeout(drawPicPreview, 60);
+  clearTimeout(picNote.t); picNote.t = setTimeout(() => { drawPicPreview(); if (S.view === "pic") { if (V.user) renderView(); else fitView(); } }, 60);
+  $("vPic").hidden = false; if (S.view !== "pic" && $("picPrintBox").open) setView("pic");
   const b = picBox(), m = gridMesh(), fits = b.x >= WINDOW.x - 0.01 && b.y >= WINDOW.y - 0.01 && b.x + b.w <= WINDOW.x + WINDOW.w + 0.01 && b.y + b.h <= WINDOW.y + WINDOW.h + 0.01;
   const bd = Math.max(0, +$("picBorder").value || 0), cw = b.w + 2 * bd, ch = b.h + 2 * bd, ps = $("picSizes");
   ps.hidden = false; ps.className = "status ok";
@@ -4158,7 +4160,7 @@ function setPicSize(from) {
   picNote();
 }
 function usePic(img, name) {
-  S.pic = { img, name }; const a = img.height / img.width;
+  S.pic = { img, name }; picPageKey = ""; const a = img.height / img.width;
   // Start as big as fits nicely in the window, keeping its shape.
   const w = Math.min(5, (WINDOW.h - 1) / a, WINDOW.w - 1); $("picW").value = +w.toFixed(2); setPicSize("w");
 }
@@ -4178,6 +4180,31 @@ function picCanvas(maxW, faint) {
 }
 // The picture at the print size, at most 300 pixels per inch.
 async function picImage(b, faint) { return canvasToPdfImage(picCanvas(300 * b.w, faint)); }
+// Big-screen picture view: the whole letter page with the canvas (cut to the border) and the picture on it.
+const PICK = 110; let picPage = null, picPageKey = "";
+function picPageCanvas() {
+  const b = picBox(), bd = Math.max(0, +$("picBorder").value || 0), m = gridMesh(), hv = +$("picHoles").value, lt = $("picLight").value;
+  const key = [S.pic.name, S.pic.img.width, b.x, b.y, b.w, bd, m.a, m.d, hv, lt].join("|");
+  if (picPage && key === picPageKey) return picPage;
+  const W = Math.round(PAGE.w * PICK), H = Math.round(PAGE.h * PICK), c = picPage || document.createElement("canvas"); c.width = W; c.height = H;
+  const x = c.getContext("2d"); x.setTransform(PICK, 0, 0, PICK, 0, 0);
+  x.fillStyle = "#fbfaf7"; x.fillRect(0, 0, PAGE.w, PAGE.h);
+  // Canvas area: holes (the line-up sheet's squares showing through) and white threads.
+  const ex0 = Math.max(0, b.x - bd), ey0 = Math.max(0, b.y - bd), ex1 = Math.min(PAGE.w, b.x + b.w + bd), ey1 = Math.min(PAGE.h, b.y + b.h + bd);
+  const hg = Math.round(255 * hv); x.fillStyle = `rgb(${hg},${hg},${hg})`; x.fillRect(ex0, ey0, ex1 - ex0, ey1 - ey0);
+  const pw = 1 / m.a, ph = 1 / m.d, cx = WINDOW.x + WINDOW.w / 2, cy = WINDOW.y + WINDOW.h / 2;
+  x.save(); x.beginPath(); x.rect(ex0, ey0, ex1 - ex0, ey1 - ey0); x.clip(); x.fillStyle = "#f6f4ee";
+  for (let u = cx - Math.ceil((cx - ex0) / pw) * pw; u <= ex1 + pw; u += pw) x.fillRect(u - pw * 0.28, ey0, pw * 0.56, ey1 - ey0);
+  for (let v = cy - Math.ceil((cy - ey0) / ph) * ph; v <= ey1 + ph; v += ph) x.fillRect(ex0, v - ph * 0.28, ex1 - ex0, ph * 0.56);
+  x.globalCompositeOperation = "multiply"; x.drawImage(picCanvas(Math.min(2400, b.w * PICK * 1.5), false), b.x, b.y, b.w, b.h); x.restore();
+  // Canvas edge, picture box and the four Carrier dots, as on the line-up sheet.
+  x.lineWidth = 1.5 / PICK; x.strokeStyle = "#555"; x.setLineDash([8 / PICK, 4 / PICK]); x.strokeRect(b.x - bd, b.y - bd, b.w + 2 * bd, b.h + 2 * bd);
+  x.strokeStyle = "#d81b72"; x.setLineDash([6 / PICK, 4 / PICK]); x.strokeRect(b.x, b.y, b.w, b.h); x.setLineDash([]);
+  x.fillStyle = "#111"; for (const [mx, my] of MARKS) { x.beginPath(); x.arc(mx, my, MARK_R, 0, 7); x.fill(); }
+  x.fillStyle = "#d81b72"; x.font = `600 ${11 / PICK * 1.2}px Helvetica, Arial, sans-serif`; x.fillText(`Picture ${b.w.toFixed(2)} × ${b.h.toFixed(2)} in`, b.x, b.y - 0.06);
+  x.fillStyle = "#444"; x.fillText(`Canvas ${(b.w + 2 * bd).toFixed(2)} × ${(b.h + 2 * bd).toFixed(2)} in (${bd} in border)`, Math.max(0.05, b.x - bd), Math.max(0.15, b.y - bd - 0.06));
+  picPage = c; picPageKey = key; return c;
+}
 // On-screen preview: the picture where it lands, on a canvas look (white threads, holes showing the line-up sheet).
 function drawPicPreview() {
   const cv = $("picPrev"); if (!S.pic) { cv.style.display = "none"; return; }
@@ -5274,6 +5301,7 @@ const V = { s: 1, tx: 0, ty: 0 };
 function worldSize() {
   if (S.view === "design" || S.view === "orig") return S.design ? [S.design.w, S.design.h] : [60, 60];
   if (!S.scan && S.view === "prev") return [Math.round(PAGE.w * VPK), Math.round(PAGE.h * VPK)];
+  if (S.view === "pic") return [Math.round(PAGE.w * PICK), Math.round(PAGE.h * PICK)];
   return S.scan ? [S.scan.canvas.width, S.scan.canvas.height] : [2550, 3300];
 }
 function resize() {
@@ -5294,6 +5322,9 @@ function fitView() {
   if (S.view === "design" && S.showArea && S.design) { const m = Math.round(S.canvasBorder * S.mesh) + 2; target = [-m, -m, w + 2 * m, h + 2 * m]; }
   if (S.view === "orig" && S.original) {
     const b = origBounds(); target = [Math.min(0, b[0]), Math.min(0, b[1])]; target.push(Math.max(w, b[2]) - target[0], Math.max(h, b[3]) - target[1]);
+  } else if (S.view === "pic" && S.pic) {
+    const b = picBox(), bd = Math.max(0, +$("picBorder").value || 0), x0 = Math.max(0, b.x - bd - 0.2), y0 = Math.max(0, b.y - bd - 0.2), x1 = Math.min(PAGE.w, b.x + b.w + bd + 0.2), y1 = Math.min(PAGE.h, b.y + b.h + bd + 0.2);
+    target = [x0 * PICK, y0 * PICK, (x1 - x0) * PICK, (y1 - y0) * PICK];
   } else if (!S.scan && S.view === "prev" && S.design) {
     if (previewStale || !virtCanvas) buildVirtualPreview();
     if (virtBounds) { const pad = VPK * 0.4, b = virtBounds; target = [b[0] - pad, b[1] - pad, b[2] - b[0] + pad * 2, b[3] - b[1] + pad * 2]; }
@@ -5481,6 +5512,13 @@ function drawMain() {
     if (S.original && S.origAlpha > 0) stat.push(`Original on top ${S.origAlpha}%`);
     if (mv[0] || mv[1]) stat.push(`moving ${mv[0] > 0 ? "+" : ""}${mv[0]}, ${mv[1] > 0 ? "+" : ""}${mv[1]}`);
   } else {
+    if (S.view === "pic" && S.pic) {
+      const src = picPageCanvas();
+      vctx.save(); vctx.translate(V.tx, V.ty); vctx.scale(V.s, V.s); vctx.imageSmoothingEnabled = true; vctx.drawImage(src, 0, 0); vctx.restore();
+      const b = picBox(), bd = Math.max(0, +$("picBorder").value || 0);
+      stat.push(`Picture ${b.w.toFixed(2)} × ${b.h.toFixed(2)} in`, `canvas ${(b.w + 2 * bd).toFixed(2)} × ${(b.h + 2 * bd).toFixed(2)} in`, `${Math.round(V.s * 100)}%`);
+      $("vstat").innerHTML = stat.map(s => `<span>${String(s).replace(/[<>&]/g, "")}</span>`).join(""); return;
+    }
     if (!S.scan && S.view === "prev" && S.design) {
       const src = previewStale || !virtCanvas ? buildVirtualPreview() : virtCanvas;
       vctx.save(); vctx.translate(V.tx, V.ty); vctx.scale(V.s, V.s); vctx.imageSmoothingEnabled = true; vctx.drawImage(src, 0, 0); vctx.restore();
@@ -5789,13 +5827,14 @@ window.addEventListener("keyup", e => { if (e.code === "Space") spaceDown = fals
 /* ---------------- UI wiring ---------------- */
 function setStatus(id, msg, kind) { const el = $(id); el.hidden = false; el.textContent = msg; el.className = "status" + (kind ? " " + kind : ""); }
 function setView(v) {
-  if (v !== "design" && v !== "orig" && !S.scan && v !== "snap" && !(v === "prev" && S.design)) v = "snap";
+  if (v === "pic" && !S.pic) v = S.design ? "design" : "snap";
+  if (v !== "design" && v !== "orig" && !S.scan && v !== "snap" && v !== "pic" && !(v === "prev" && S.design)) v = "snap";
   // Design/Original share one picture space, Snapshot/Map/Preview another: moving within a pair keeps your zoom.
   const fam = x => (x === "design" || x === "orig") ? "d" : "s", keep = V.user && S.view && fam(S.view) === fam(v);
   S.view = v;
   $("qbar").hidden = v !== "design"; $("bigMove").hidden = v !== "design";
   $("vNext").hidden = !(v === "map" && S.grid); $("vDesignOn").hidden = !(v === "map" && S.grid);
-  [["vDesign", "design"], ["vOrig", "orig"], ["vSnap", "snap"], ["vMap", "map"], ["vPrev", "prev"]].forEach(([id, k]) => $(id).setAttribute("aria-pressed", k === v));
+  [["vDesign", "design"], ["vOrig", "orig"], ["vSnap", "snap"], ["vMap", "map"], ["vPrev", "prev"], ["vPic", "pic"]].forEach(([id, k]) => $(id).setAttribute("aria-pressed", k === v));
   if (keep) softFit(); else fitView();
 }
 function setTab(n) {
@@ -6158,7 +6197,8 @@ $("picSheet").onclick = picLineupPdf; $("picPrint").onclick = picPrintPdf;
 const picLightOut = () => $("picLightOut").textContent = $("picLight").value + "%"; picLightOut();
 $("picLight").oninput = () => { picLightOut(); store.set("ccp-piclight", +$("picLight").value); picNote(); };
 $("picHoles").onchange = () => { store.set("ccp-picholes", $("picHoles").value); picNote(); };
-$("picPrintBox").addEventListener("toggle", () => { if ($("picPrintBox").open) picNote(); });
+$("picPrintBox").addEventListener("toggle", () => { if ($("picPrintBox").open) picNote(); else if (S.view === "pic") setView(S.scan || S.design ? "prev" : "design"); });
+$("vPic").onclick = () => setView("pic");
 $("gmCheck").onchange = e => { const f = e.target.files[0]; e.target.value = ""; if (f) checkGridPrint(f); }; $("gmSheet").onclick = gridSheetPdf; $("gmPrint").onclick = makeGridPrintPdf;
 $("gridModeBox").addEventListener("toggle", gridNote);
 $("panelHide").onclick = () => setPanel(false); $("panelShow").onclick = () => setPanel(true);
