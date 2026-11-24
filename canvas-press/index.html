@@ -297,6 +297,11 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
           <button id="zIn" aria-label="Zoom in">+</button>
         </div>
         <button class="btn small" id="fullBtn" aria-pressed="false">Full screen</button>
+        <label class="btn small" title="A color behind your design while you edit, so white stitches and white in pictures stand out. Only on screen: it never prints." style="gap:6px;display:inline-flex;align-items:center">Background
+          <select id="editBg" aria-label="Editing background" style="font:inherit;border:0;background:transparent;color:inherit">
+            <option value="">Canvas</option><option value="#b9d6f2">Blue</option><option value="#f5bfd5">Pink</option><option value="#a9a9b0">Gray</option><option value="#2b2733">Dark</option>
+          </select>
+        </label>
         <button class="btn small" id="panelShow" hidden title="Show the tools panel">⟨ Tools</button>
       </div>
       <div class="screen" id="screen">
@@ -1072,7 +1077,7 @@ function adjustColor(c) {
 }
 
 /* ---------------- files ---------------- */
-const APP_VERSION = "2026.11.24-d";
+const APP_VERSION = "2026.11.24-e";
 { const v = document.getElementById("appVer2"); if (v) v.textContent = "v" + APP_VERSION; }
 let downloadsCap = null;
 (window.claude && window.claude.use ? window.claude.use("downloads") : Promise.resolve(null)).then(d => { downloadsCap = d; }).catch(() => {});
@@ -1489,12 +1494,19 @@ const colHidden = v => v >= 0 && S.hiddenCols.size > 0 && S.design && S.design.p
 const ghost = c => [0, 1, 2].map(k => Math.round(BARE[k] * 0.82 + c[k] * 0.18));
 function drawMeshCell(x, y) {
   const d = S.design, k = meshCanvas.k, cx = meshCanvas.getContext("2d"), v = d.px[y * d.w + x];
-  const c = v >= 0 ? (colHidden(v) ? ghost(d.pal[v]) : d.pal[v]) : BARE, X = x * k, Y = y * k, t = k * 0.62, o = (k - t) / 2;
+  const c = v >= 0 ? (colHidden(v) ? ghost(d.pal[v]) : d.pal[v]) : (S.editBg ? unhex(S.editBg) : BARE), X = x * k, Y = y * k, t = k * 0.62, o = (k - t) / 2;
   cx.fillStyle = HOLE; cx.fillRect(X, Y, k, k);
   const over = (x + y) % 2 === 0;
   const hBar = () => { cx.fillStyle = shade(c, over ? 1 : 0.9); cx.fillRect(X, Y + o, k, t); cx.fillStyle = shade(c, 0.8); cx.fillRect(X, Y + o + t - k * 0.07, k, k * 0.07); };
   const vBar = () => { cx.fillStyle = shade(c, over ? 0.9 : 1); cx.fillRect(X + o, Y, t, k); cx.fillStyle = shade(c, 0.8); cx.fillRect(X + o + t - k * 0.07, Y, k * 0.07, k); };
   if (over) { vBar(); hBar(); } else { hBar(); vBar(); }
+}
+// The stitch picture for printouts: always plain canvas behind the design (the editing background is screen-only).
+function printMesh() {
+  if (!S.editBg) return meshCanvas;
+  const keep = S.editBg; S.editBg = null; meshDirty();
+  const c = document.createElement("canvas"); c.width = meshCanvas.width; c.height = meshCanvas.height; c.getContext("2d").drawImage(meshCanvas, 0, 0);
+  S.editBg = keep; meshDirty(); return c;
 }
 function meshDirty() {
   const d = S.design; if (!d) return;
@@ -4306,7 +4318,7 @@ async function picImage(b, faint) { return canvasToPdfImage(picCanvas(300 * b.w,
 const PICK = 110; let picPage = null, picPageKey = "";
 function picPageCanvas() {
   const b = picBox(), bd = Math.max(0, +$("picBorder").value || 0), m = gridMesh(), hv = +$("picHoles").value, lt = $("picLight").value;
-  const key = [S.pic.name, S.pic.img.width, S.pic.ver || 0, b.x, b.y, b.w, b.h, bd, m.a, m.d, hv, lt, $("picNoLine").checked].join("|");
+  const key = [S.pic.name, S.pic.img.width, S.pic.ver || 0, S.editBg, b.x, b.y, b.w, b.h, bd, m.a, m.d, hv, lt, $("picNoLine").checked].join("|");
   if (picPage && key === picPageKey) return picPage;
   const W = Math.round(PAGE.w * PICK), H = Math.round(PAGE.h * PICK), c = picPage || document.createElement("canvas"); c.width = W; c.height = H;
   const x = c.getContext("2d"); x.setTransform(PICK, 0, 0, PICK, 0, 0);
@@ -4315,7 +4327,7 @@ function picPageCanvas() {
   const ex0 = Math.max(0, b.x - bd), ey0 = Math.max(0, b.y - bd), ex1 = Math.min(PAGE.w, b.x + b.w + bd), ey1 = Math.min(PAGE.h, b.y + b.h + bd);
   const hg = Math.round(255 * hv); x.fillStyle = `rgb(${hg},${hg},${hg})`; x.fillRect(ex0, ey0, ex1 - ex0, ey1 - ey0);
   const pw = 1 / m.a, ph = 1 / m.d, cx = WINDOW.x + WINDOW.w / 2, cy = WINDOW.y + WINDOW.h / 2;
-  x.save(); x.beginPath(); x.rect(ex0, ey0, ex1 - ex0, ey1 - ey0); x.clip(); x.fillStyle = "#f6f4ee";
+  x.save(); x.beginPath(); x.rect(ex0, ey0, ex1 - ex0, ey1 - ey0); x.clip(); x.fillStyle = S.editBg || "#f6f4ee";
   for (let u = cx - Math.ceil((cx - ex0) / pw) * pw; u <= ex1 + pw; u += pw) x.fillRect(u - pw * 0.28, ey0, pw * 0.56, ey1 - ey0);
   for (let v = cy - Math.ceil((cy - ey0) / ph) * ph; v <= ey1 + ph; v += ph) x.fillRect(ex0, v - ph * 0.28, ex1 - ex0, ph * 0.56);
   x.globalCompositeOperation = "multiply"; x.drawImage(picCanvas(Math.min(2400, b.w * PICK * 1.5), false), b.x, b.y, b.w, b.h); x.restore();
@@ -4342,7 +4354,7 @@ function drawPicPreview() {
   x.fillStyle = `rgb(${hg},${hg},${hg})`; x.fillRect(0, 0, Wi, Hi);
   // Threads: white bands between the holes.
   const pw = 1 / m.a, ph = 1 / m.d, ox = (WINDOW.x + WINDOW.w / 2) - (b.x - pad), oy = (WINDOW.y + WINDOW.h / 2) - (b.y - pad);
-  x.fillStyle = "#f6f4ee";
+  x.fillStyle = S.editBg || "#f6f4ee";
   for (let u = ox % pw - pw; u < Wi + pw; u += pw) x.fillRect(u - pw * 0.28, 0, pw * 0.56, Hi);
   for (let v = oy % ph - ph; v < Hi + ph; v += ph) x.fillRect(0, v - ph * 0.28, Wi, ph * 0.56);
   x.globalCompositeOperation = "multiply"; x.drawImage(picCanvas(Math.min(1600, cssW * dpr * 1.5), false), pad, pad, b.w, b.h); x.globalCompositeOperation = "source-over";
@@ -4674,7 +4686,7 @@ async function colorKeyPdf() {
   }
   // Design picture at the top, drawn in the canvas mesh look.
   const k = Math.max(4, Math.floor(1400 / Math.max(d.w, d.h))), pic = document.createElement("canvas");
-  pic.width = d.w * k; pic.height = d.h * k; pic.getContext("2d").drawImage(meshCanvas, 0, 0, pic.width, pic.height);
+  pic.width = d.w * k; pic.height = d.h * k; pic.getContext("2d").drawImage(printMesh(), 0, 0, pic.width, pic.height);
   const img = await canvasToPdfImage(pic);
   const maxW = 7, maxH = 3.6, sc = Math.min(maxW / d.w, maxH / d.h), iw = d.w * sc, ih = d.h * sc, ix = (PAGE.w - iw) / 2, iy = 1.25;
   const mesh = S.mesh;
@@ -4749,7 +4761,7 @@ async function patternPdf() {
     // ---- Cover page
     {
       const k = Math.max(4, Math.floor(1400 / Math.max(d.w, d.h))), pic = document.createElement("canvas"); pic.width = d.w * k; pic.height = d.h * k;
-      pic.getContext("2d").drawImage(meshCanvas, 0, 0, pic.width, pic.height);
+      pic.getContext("2d").drawImage(printMesh(), 0, 0, pic.width, pic.height);
       const img = await canvasToPdfImage(pic);
       const maxW = 4.2, maxH = 3.6, sc = Math.min(maxW / d.w, maxH / d.h), iw = d.w * sc, ih = d.h * sc, ix = 0.75, iy = 1.35;
       let c = `q ${pt(iw)} 0 0 ${pt(ih)} ${pt(ix)} ${ptY(iy + ih)} cm /Im0 Do Q\n0.6 G 0.5 w ${pt(ix)} ${ptY(iy + ih)} ${pt(iw)} ${pt(ih)} re S\n`;
@@ -6462,6 +6474,8 @@ $("picA").oninput = () => { $("gmA").value = $("picA").value; gridMeshChanged();
 $("picD").oninput = () => { $("gmD").value = $("picD").value; gridMeshChanged(); picPageKey = ""; picNote(); };
 $("gmA").addEventListener("input", picMeshSync); $("gmD").addEventListener("input", picMeshSync);
 $("picGauge").onclick = () => { $("gmBase").value = $("picBase").value; meshGaugePdf(); };
+S.editBg = store.get("ccp-editbg") || null; $("editBg").value = S.editBg || ""; if (S.editBg && S.design) { meshDirty(); renderView(); }
+$("editBg").onchange = () => { S.editBg = $("editBg").value || null; store.set("ccp-editbg", S.editBg); meshDirty(); picPageKey = ""; if (S.pic) drawPicPreview(); renderView(); };
 $("picSnap").checked = store.get("ccp-picsnap") !== false; $("picSnap").onchange = () => { store.set("ccp-picsnap", $("picSnap").checked); picPageKey = ""; picNote(); };
 document.querySelectorAll("[data-pictool]").forEach(b => b.onclick = () => setPicTool(b.dataset.pictool));
 const picBrushOut = () => $("picBrushOut").textContent = $("picBrush").value + " stitch" + ($("picBrush").value === "1" ? "" : "es"); picBrushOut(); $("picBrush").oninput = picBrushOut;
