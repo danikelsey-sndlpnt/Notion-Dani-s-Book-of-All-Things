@@ -563,6 +563,7 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
             </div>
             <button class="btn small" id="trim">Trim empty edges</button>
             <button class="btn small" id="removeBg">Remove background</button>
+            <button class="btn small" id="removeOutline" title="Takes away thin black outline stitches and fills them with the colors beside them">Remove black outline</button>
           </div>
           <div class="status ok" id="bgChip" hidden>Background removed. It stays removed when you change colors or size. <button class="btn small" id="bgBack" style="margin-top:6px">Bring the background back</button></div>
           <div class="row" style="align-items:center">
@@ -849,6 +850,7 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
           <label class="f">Hole squares on the line-up sheet
             <select id="picHoles"><option value="0.72">Light gray (picture stays bright)</option><option value="0.45">Medium gray</option><option value="0">Black (easiest to line up, darkens the picture)</option></select>
           </label>
+          <label class="tog"><input type="checkbox" id="picNoLine"> Remove black outlines (thin black lines are filled with the colors beside them; solid black areas stay)</label>
           <label class="tog"><input type="checkbox" id="picTrim" checked> Trim white edges off the picture (so the size is just your design, not the blank page around it)</label>
           <label class="tog"><input type="checkbox" id="picFaint" checked> Show the picture faintly on the line-up sheet</label>
           <div class="row">
@@ -1055,7 +1057,7 @@ function adjustColor(c) {
 }
 
 /* ---------------- files ---------------- */
-const APP_VERSION = "2026.11.23-f";
+const APP_VERSION = "2026.11.24-a";
 { const v = document.getElementById("appVer2"); if (v) v.textContent = "v" + APP_VERSION; }
 let downloadsCap = null;
 (window.claude && window.claude.use ? window.claude.use("downloads") : Promise.resolve(null)).then(d => { downloadsCap = d; }).catch(() => {});
@@ -4190,10 +4192,47 @@ function usePic(img, name, keepSize) {
 }
 // The picture at a given size, lightened for canvas: canvas soaks up ink and prints darker than paper, so the
 // midtones and shadows are lifted (a curve, so whites stay white and nothing washes out flat).
+// The picture with thin black outlines painted over by the colors beside them (made once, then reused).
+function picNoLineImg() {
+  const P = S.pic; if (P.noLine) return P.noLine;
+  const k = Math.min(1, 2000 / Math.max(P.img.width, P.img.height)), W = Math.max(1, Math.round(P.img.width * k)), H = Math.max(1, Math.round(P.img.height * k));
+  const c = document.createElement("canvas"); c.width = W; c.height = H; const x = c.getContext("2d", { willReadFrequently: true });
+  x.fillStyle = "#fff"; x.fillRect(0, 0, W, H); x.drawImage(P.img, 0, 0, W, H);
+  const id = x.getImageData(0, 0, W, H), d = id.data, N = W * H, dark = new Uint8Array(N);
+  for (let i = 0; i < N; i++) { const r = d[i * 4], g = d[i * 4 + 1], b = d[i * 4 + 2], mx = Math.max(r, g, b), mn = Math.min(r, g, b); if (mx < 95 && mx - mn < 45) dark[i] = 1; }
+  // Thick = inside a fully dark square of side 2R+1; outlines are the dark pixels not near such a core.
+  const R = Math.max(2, Math.round(Math.max(W, H) * 0.007)), I = new Int32Array((W + 1) * (H + 1));
+  for (let y = 0; y < H; y++) { let row = 0; for (let xx = 0; xx < W; xx++) { row += dark[y * W + xx]; I[(y + 1) * (W + 1) + xx + 1] = I[y * (W + 1) + xx + 1] + row; } }
+  const box = (A, x0, y0, x1, y1) => A[y1 * (W + 1) + x1] - A[y0 * (W + 1) + x1] - A[y1 * (W + 1) + x0] + A[y0 * (W + 1) + x0];
+  const core = new Uint8Array(N), side = 2 * R + 1;
+  for (let y = R; y < H - R; y++) for (let xx = R; xx < W - R; xx++) if (dark[y * W + xx] && box(I, xx - R, y - R, xx + R + 1, y + R + 1) === side * side) core[y * W + xx] = 1;
+  const C = new Int32Array((W + 1) * (H + 1));
+  for (let y = 0; y < H; y++) { let row = 0; for (let xx = 0; xx < W; xx++) { row += core[y * W + xx]; C[(y + 1) * (W + 1) + xx + 1] = C[y * (W + 1) + xx + 1] + row; } }
+  const todo = new Uint8Array(N); let left = 0;
+  for (let y = 0; y < H; y++) for (let xx = 0; xx < W; xx++) { const i = y * W + xx; if (!dark[i]) continue; const x0 = Math.max(0, xx - R), y0 = Math.max(0, y - R), x1 = Math.min(W, xx + R + 1), y1 = Math.min(H, y + R + 1); if (box(C, x0, y0, x1, y1) === 0) { todo[i] = 1; left++; } }
+  // Widen each line a little: its soft gray edges (anti-aliasing) would otherwise stay behind as a faint ghost line.
+  { const E = Math.max(2, Math.round(R * 0.6)), T = new Int32Array((W + 1) * (H + 1));
+    for (let y = 0; y < H; y++) { let row = 0; for (let xx = 0; xx < W; xx++) { row += todo[y * W + xx]; T[(y + 1) * (W + 1) + xx + 1] = T[y * (W + 1) + xx + 1] + row; } }
+    for (let y = 0; y < H; y++) for (let xx = 0; xx < W; xx++) { const i = y * W + xx; if (todo[i]) continue; const mx = Math.max(d[i * 4], d[i * 4 + 1], d[i * 4 + 2]); if (mx > 250 && Math.min(d[i * 4], d[i * 4 + 1], d[i * 4 + 2]) > 250) continue;
+      if (box(T, Math.max(0, xx - E), Math.max(0, y - E), Math.min(W, xx + E + 1), Math.min(H, y + E + 1)) > 0 && box(C, Math.max(0, xx - R), Math.max(0, y - R), Math.min(W, xx + R + 1), Math.min(H, y + R + 1)) === 0) { todo[i] = 2; left++; } } }
+  // Fill from the edges of each line inward with the average of the finished neighbors.
+  for (let pass = 0; left > 0 && pass < 4 * R + 20; pass++) {
+    const set = [];
+    for (let i = 0; i < N; i++) {
+      if (!todo[i]) continue; const xx = i % W, y = (i / W) | 0; let r = 0, g = 0, b = 0, n = 0;
+      for (const [a, bb] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const X = xx + a, Y = y + bb; if (X < 0 || Y < 0 || X >= W || Y >= H) continue; const q = Y * W + X; if (todo[q]) continue; r += d[q * 4]; g += d[q * 4 + 1]; b += d[q * 4 + 2]; n++; }
+      if (n) set.push([i, r / n, g / n, b / n]);
+    }
+    if (!set.length) break;
+    for (const [i, r, g, b] of set) { d[i * 4] = r; d[i * 4 + 1] = g; d[i * 4 + 2] = b; todo[i] = 0; left--; }
+  }
+  x.putImageData(id, 0, 0); P.noLine = c; return c;
+}
 function picCanvas(maxW, faint) {
-  const k = Math.min(1, maxW / S.pic.img.width), c = document.createElement("canvas");
-  c.width = Math.max(1, Math.round(S.pic.img.width * k)); c.height = Math.max(1, Math.round(S.pic.img.height * k));
-  const x = c.getContext("2d"); x.fillStyle = "#fff"; x.fillRect(0, 0, c.width, c.height); x.imageSmoothingQuality = "high"; x.drawImage(S.pic.img, 0, 0, c.width, c.height);
+  const src = $("picNoLine").checked ? picNoLineImg() : S.pic.img;
+  const k = Math.min(1, maxW / src.width), c = document.createElement("canvas");
+  c.width = Math.max(1, Math.round(src.width * k)); c.height = Math.max(1, Math.round(src.height * k));
+  const x = c.getContext("2d"); x.fillStyle = "#fff"; x.fillRect(0, 0, c.width, c.height); x.imageSmoothingQuality = "high"; x.drawImage(src, 0, 0, c.width, c.height);
   const lt = +$("picLight").value / 100;
   if (lt > 0) {
     const g = 1 / (1 + lt * 1.6), lut = new Uint8ClampedArray(256); for (let v = 0; v < 256; v++) lut[v] = 255 * Math.pow(v / 255, g);
@@ -4208,7 +4247,7 @@ async function picImage(b, faint) { return canvasToPdfImage(picCanvas(300 * b.w,
 const PICK = 110; let picPage = null, picPageKey = "";
 function picPageCanvas() {
   const b = picBox(), bd = Math.max(0, +$("picBorder").value || 0), m = gridMesh(), hv = +$("picHoles").value, lt = $("picLight").value;
-  const key = [S.pic.name, S.pic.img.width, b.x, b.y, b.w, bd, m.a, m.d, hv, lt].join("|");
+  const key = [S.pic.name, S.pic.img.width, b.x, b.y, b.w, bd, m.a, m.d, hv, lt, $("picNoLine").checked].join("|");
   if (picPage && key === picPageKey) return picPage;
   const W = Math.round(PAGE.w * PICK), H = Math.round(PAGE.h * PICK), c = picPage || document.createElement("canvas"); c.width = W; c.height = H;
   const x = c.getContext("2d"); x.setTransform(PICK, 0, 0, PICK, 0, 0);
@@ -5273,6 +5312,33 @@ function smartStitches() {
   return quantize(out, W, H, S.nColors, S.dither);
 }
 function setBgChip() { $("bgChip").hidden = !S.bgSmart; }
+// Thin dark outlines: stitches of the darkest colors that aren't part of a solid dark area (a 3 x 3 block of dark).
+// Each is refilled with the most common neighbor that isn't outline (bare canvas counts), working inward.
+function removeOutlineStitches() {
+  const d = S.design; if (!d) return;
+  const darkCol = d.pal.map(c => { const L = rgb2lab(c[0], c[1], c[2]); return L[0] < 28 && Math.hypot(L[1], L[2]) < 25; });
+  if (!darkCol.some(Boolean)) { toast("This design has no black or near-black color."); return; }
+  const W = d.w, H = d.h, dark = new Uint8Array(W * H);
+  for (let i = 0; i < W * H; i++) if (d.px[i] >= 0 && darkCol[d.px[i]]) dark[i] = 1;
+  const core = new Uint8Array(W * H);
+  for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) { let all = 1; for (let b = -1; b <= 1 && all; b++) for (let a = -1; a <= 1; a++) if (!dark[(y + b) * W + x + a]) { all = 0; break; } core[y * W + x] = all; }
+  const line = new Uint8Array(W * H); let n = 0;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const i = y * W + x; if (!dark[i]) continue; let thick = 0; for (let b = -1; b <= 1 && !thick; b++) for (let a = -1; a <= 1; a++) { const xx = x + a, yy = y + b; if (xx >= 0 && yy >= 0 && xx < W && yy < H && core[yy * W + xx]) { thick = 1; break; } } if (!thick) { line[i] = 1; n++; } }
+  if (!n) { toast("No thin black outline found (only solid black areas, which were kept)."); return; }
+  pushUndo(); S.edited = true; const px = d.px;
+  for (let pass = 0, left = n; left > 0 && pass < 60; pass++) {
+    const set = [];
+    for (let i = 0; i < W * H; i++) {
+      if (!line[i]) continue; const x = i % W, y = (i / W) | 0, votes = new Map();
+      for (const [a, b] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]]) { const xx = x + a, yy = y + b; if (xx < 0 || yy < 0 || xx >= W || yy >= H) continue; const q = yy * W + xx; if (line[q]) continue; const v = px[q]; votes.set(v, (votes.get(v) || 0) + (a && b ? 1 : 2)); }
+      if (votes.size) { let best = null, bn = -1; for (const [v, c] of votes) if (c > bn) { bn = c; best = v; } set.push([i, best]); }
+    }
+    if (!set.length) break;
+    for (const [i, v] of set) { px[i] = v; line[i] = 0; left--; }
+  }
+  const cp = compactPalette(d); d.pal = cp.pal; d.px = cp.px; if (S.sel >= cp.pal.length) S.sel = 0;
+  designDirty(); renderAll(); toast(`Removed ${n} outline stitches and filled them with the colors beside them. Undo brings them back.`, 5000);
+}
 function removeBackground() {
   const d = S.design, tol = +$("bgTol").value, gaps = $("bgGaps").checked;
   if (S.layers.length && !S.edited) {
@@ -5908,6 +5974,7 @@ const setLook = l => { S.look = l; $("lookMesh").setAttribute("aria-pressed", l 
 $("lookMesh").onclick = () => setLook("mesh"); $("lookBox").onclick = () => setLook("box");
 $("trim").onclick = () => S.design && trimDesign();
 $("removeBg").onclick = () => S.design && removeBackground();
+$("removeOutline").onclick = removeOutlineStitches;
 $("bgBack").onclick = () => { S.bgSmart = false; setBgChip(); if (S.layers.length) convert(); };
 $("bgTol").oninput = e => $("bgTolOut").textContent = e.target.value;
 $("origAlpha").oninput = e => { S.origAlpha = +e.target.value; $("origOut").textContent = S.origAlpha + "%"; if (S.view !== "design") setView("design"); else renderView(); }; $("vSnap").onclick = () => setView("snap"); $("vMap").onclick = () => setView("map"); $("vPrev").onclick = () => setView("prev");
@@ -6224,6 +6291,7 @@ $("picA").oninput = () => { $("gmA").value = $("picA").value; gridMeshChanged();
 $("picD").oninput = () => { $("gmD").value = $("picD").value; gridMeshChanged(); picPageKey = ""; picNote(); };
 $("gmA").addEventListener("input", picMeshSync); $("gmD").addEventListener("input", picMeshSync);
 $("picGauge").onclick = () => { $("gmBase").value = $("picBase").value; meshGaugePdf(); };
+$("picNoLine").onchange = () => { if (S.pic) { busy(true, "Removing outlines…", 0.5); setTimeout(() => { try { picPageKey = ""; picNote(); } finally { busy(false); } }, 30); } };
 $("picTrim").onchange = () => { if (S.pic) usePic(S.pic.raw, S.pic.name); };
 $("picBorder").value = store.get("ccp-picborder") ?? 2; $("picBorder").oninput = () => { store.set("ccp-picborder", +$("picBorder").value); picNote(); };
 $("picW").oninput = () => setPicSize("w"); $("picH").oninput = () => setPicSize("h"); $("picOX").oninput = $("picOY").oninput = picNote;
