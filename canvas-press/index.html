@@ -850,6 +850,7 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
           <label class="f">Hole squares on the line-up sheet
             <select id="picHoles"><option value="0.72">Light gray (picture stays bright)</option><option value="0.45">Medium gray</option><option value="0">Black (easiest to line up, darkens the picture)</option></select>
           </label>
+          <label class="tog"><input type="checkbox" id="picSnap" checked> Snap to the grid: a whole number of stitches, edges on the hole lines (resize and it re-snaps)</label>
           <label class="tog"><input type="checkbox" id="picNoLine"> Remove black outlines (thin black lines are filled with the colors beside them; solid black areas stay)</label>
           <label class="tog"><input type="checkbox" id="picTrim" checked> Trim white edges off the picture (so the size is just your design, not the blank page around it)</label>
           <label class="tog"><input type="checkbox" id="picFaint" checked> Show the picture faintly on the line-up sheet</label>
@@ -1057,7 +1058,7 @@ function adjustColor(c) {
 }
 
 /* ---------------- files ---------------- */
-const APP_VERSION = "2026.11.24-a";
+const APP_VERSION = "2026.11.24-b";
 { const v = document.getElementById("appVer2"); if (v) v.textContent = "v" + APP_VERSION; }
 let downloadsCap = null;
 (window.claude && window.claude.use ? window.claude.use("downloads") : Promise.resolve(null)).then(d => { downloadsCap = d; }).catch(() => {});
@@ -4154,7 +4155,13 @@ function picAspect() { return S.pic ? S.pic.img.height / S.pic.img.width : 1; }
 function picBox() {
   const w = Math.max(0.3, +$("picW").value || 4), h = w * picAspect(), ox = +$("picOX").value || 0, oy = +$("picOY").value || 0;
   const cx = WINDOW.x + WINDOW.w / 2 + ox, cy = WINDOW.y + WINDOW.h / 2 + oy;
-  return { x: cx - w / 2, y: cy - h / 2, w, h };
+  if (!$("picSnap").checked) return { x: cx - w / 2, y: cy - h / 2, w, h };
+  // Whole stitches each way, with the edges on hole lines of the same lattice the line-up sheet prints.
+  const L = gridLattice(), a = L.m.a, d = L.m.d, n = Math.max(1, Math.round(w * a)), m = Math.max(1, Math.round(h * d));
+  const hx = k => L.sx(k) - 0.5 / a, hy = k => L.sy(k) - 0.5 / d;
+  const i0 = Math.round((cx - n / (2 * a) - hx(0)) * a), j0 = Math.round((cy - m / (2 * d) - hy(0)) * d);
+  const W2 = n / a, H2 = m / d;
+  return { x: hx(i0), y: hy(j0), w: W2, h: H2, n, m, stretch: Math.abs((H2 / W2) / picAspect() - 1) };
 }
 function picNote() {
   const el = $("picNote"); if (!S.pic) { el.textContent = "No picture yet."; $("picSizes").hidden = true; drawPicPreview(); return; }
@@ -4164,6 +4171,7 @@ function picNote() {
   const bd = Math.max(0, +$("picBorder").value || 0), cw = b.w + 2 * bd, ch = b.h + 2 * bd, ps = $("picSizes");
   ps.hidden = false; ps.className = "status ok";
   ps.innerHTML = `<b>Paper:</b> letter, 8.5 × 11 in<br><b>Design size</b> (what prints${S.pic.trimmed ? ", white edges trimmed off" : ""}): ${b.w.toFixed(2)} × ${b.h.toFixed(2)} in (${Math.round(b.w * m.a)} × ${Math.round(b.h * m.d)} holes)<br><b>Canvas to cut:</b> ${cw.toFixed(2)} × ${ch.toFixed(2)} in, with a ${bd} in border on every side (${Math.round(cw * m.a)} × ${Math.round(ch * m.d)} holes)` + (cw > PAGE.w || ch > PAGE.h ? `<br>That canvas is bigger than the letter page, so its edges hang past the paper. Tape it so the picture area sits on the page.` : "");
+  if (b.n) ps.innerHTML += `<br><b>Snapped to the grid:</b> exactly ${b.n} × ${b.m} stitches, edges on the hole lines` + (b.stretch > 0.002 ? ` (rounding to whole stitches changes the shape by ${(b.stretch * 100).toFixed(1)}%; untick Snap to keep it exact)` : "");
   el.textContent = `${S.pic.name}: ${b.w.toFixed(2)} × ${b.h.toFixed(2)} in (about ${Math.round(b.w * m.a)} × ${Math.round(b.h * m.d)} holes on your canvas), centered on the red arrows` + (+$("picOX").value || +$("picOY").value ? ", moved as set" : "") + "." + (fits ? "" : " That runs past the printable area; make it smaller or move it back.");
 }
 function setPicSize(from) {
@@ -4247,7 +4255,7 @@ async function picImage(b, faint) { return canvasToPdfImage(picCanvas(300 * b.w,
 const PICK = 110; let picPage = null, picPageKey = "";
 function picPageCanvas() {
   const b = picBox(), bd = Math.max(0, +$("picBorder").value || 0), m = gridMesh(), hv = +$("picHoles").value, lt = $("picLight").value;
-  const key = [S.pic.name, S.pic.img.width, b.x, b.y, b.w, bd, m.a, m.d, hv, lt, $("picNoLine").checked].join("|");
+  const key = [S.pic.name, S.pic.img.width, b.x, b.y, b.w, b.h, bd, m.a, m.d, hv, lt, $("picNoLine").checked].join("|");
   if (picPage && key === picPageKey) return picPage;
   const W = Math.round(PAGE.w * PICK), H = Math.round(PAGE.h * PICK), c = picPage || document.createElement("canvas"); c.width = W; c.height = H;
   const x = c.getContext("2d"); x.setTransform(PICK, 0, 0, PICK, 0, 0);
@@ -6291,6 +6299,7 @@ $("picA").oninput = () => { $("gmA").value = $("picA").value; gridMeshChanged();
 $("picD").oninput = () => { $("gmD").value = $("picD").value; gridMeshChanged(); picPageKey = ""; picNote(); };
 $("gmA").addEventListener("input", picMeshSync); $("gmD").addEventListener("input", picMeshSync);
 $("picGauge").onclick = () => { $("gmBase").value = $("picBase").value; meshGaugePdf(); };
+$("picSnap").checked = store.get("ccp-picsnap") !== false; $("picSnap").onchange = () => { store.set("ccp-picsnap", $("picSnap").checked); picPageKey = ""; picNote(); };
 $("picNoLine").onchange = () => { if (S.pic) { busy(true, "Removing outlines…", 0.5); setTimeout(() => { try { picPageKey = ""; picNote(); } finally { busy(false); } }, 30); } };
 $("picTrim").onchange = () => { if (S.pic) usePic(S.pic.raw, S.pic.name); };
 $("picBorder").value = store.get("ccp-picborder") ?? 2; $("picBorder").oninput = () => { store.set("ccp-picborder", +$("picBorder").value); picNote(); };
