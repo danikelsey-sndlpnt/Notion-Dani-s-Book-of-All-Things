@@ -619,6 +619,7 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
             <button class="btn small" id="saveStitchPng">Stitch image (PNG)</button>
             <button class="btn small" id="saveChart">Chart (PNG)</button>
             <button class="btn small" id="saveKey">Color key (PDF)</button>
+            <button class="btn small thread" id="savePattern" title="A stitchable chart: cover with sizes and color key, then chart pages with colors, symbols and numbered lines">Pattern with symbols (PDF)</button>
           </div>
           <p class="hint">The <b>design file</b> is the best way to keep a design: open it with <b>Open a design file</b> (or Open stitch file) and you're right back in the stitch screen with everything as you left it. The stitch image has one pixel per stitch.</p>
         </div>
@@ -1071,7 +1072,7 @@ function adjustColor(c) {
 }
 
 /* ---------------- files ---------------- */
-const APP_VERSION = "2026.11.24-c";
+const APP_VERSION = "2026.11.24-d";
 { const v = document.getElementById("appVer2"); if (v) v.textContent = "v" + APP_VERSION; }
 let downloadsCap = null;
 (window.claude && window.claude.use ? window.claude.use("downloads") : Promise.resolve(null)).then(d => { downloadsCap = d; }).catch(() => {});
@@ -3959,7 +3960,7 @@ function toolIndex() {
   }
   return out;
 }
-const SYNONYMS = { cross: "chart", pattern: "chart", round: "circle", ornament: "circle", oval: "circle", dot: "dots", guide: "guide", ink: "ink", align: "nudge", offset: "nudge", shift: "nudge", save: "save", backup: "backup", background: "background", erase: "erase", ai: "claude", help: "claude", copy: "copy", paste: "paste", size: "size", inch: "size", mesh: "mesh", photo: "photo", key: "key", chart: "chart", initials: "initials", text: "text", shape: "shapes", heart: "shapes", star: "shapes", bow: "shapes" };
+const SYNONYMS = { symbol: "pattern", symbols: "pattern", stitchly: "pattern", cross: "chart", pattern: "chart", round: "circle", ornament: "circle", oval: "circle", dot: "dots", guide: "guide", ink: "ink", align: "nudge", offset: "nudge", shift: "nudge", save: "save", backup: "backup", background: "background", erase: "erase", ai: "claude", help: "claude", copy: "copy", paste: "paste", size: "size", inch: "size", mesh: "mesh", photo: "photo", key: "key", chart: "chart", initials: "initials", text: "text", shape: "shapes", heart: "shapes", star: "shapes", bow: "shapes" };
 function runToolSearch() {
   const q = $("toolSearch").value.trim().toLowerCase(), box = $("searchRes");
   if (!q) { box.hidden = true; return; }
@@ -4702,6 +4703,109 @@ async function colorKeyPdf() {
   c += "0.45 g\n" + pdfText(0.75, 10.55, 7, "Left swatch: your design color. Right swatch: the closest DMC floss. Screen and print colors are approximate; check against real floss.");
   c += pdfText(0.75, 10.7, 7, "DMC color data: craft-color-codes by MakeBead (makebead.com), CC BY 4.0. Made with Sookie's Canvas Press.");
   await saveFile(fileBase() + "-color-key.pdf", buildPdf(c, img));
+}
+/* ---------------- pattern PDF (chart with symbols) ---------------- */
+// Several pages in one PDF: each page is { content, imgs }.
+function buildPdfPages(pages) {
+  const chunks = [], offs = []; let len = 0;
+  const push = b => { const u = typeof b === "string" ? enc.encode(b) : b; chunks.push(u); len += u.length; };
+  const obj = (n, body, stream) => { offs[n] = len; push(n + " 0 obj\n" + body); if (stream) { push("\nstream\n"); push(stream); push("\nendstream"); } push("\nendobj\n"); };
+  push("%PDF-1.4\n%\xE2\xE3\xCF\xD3\n");
+  let n = 3; const plan = pages.map(pg => { const imgs = pg.imgs || []; const r = { page: n + 1, content: n + 2, imgs: imgs.map((_, i) => n + 3 + i) }; n += 2 + imgs.length; return r; });
+  obj(1, "<< /Type /Catalog /Pages 2 0 R >>");
+  obj(2, "<< /Type /Pages /Kids [" + plan.map(r => r.page + " 0 R").join(" ") + "] /Count " + pages.length + " >>");
+  obj(3, "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>");
+  pages.forEach((pg, k) => {
+    const r = plan[k], imgs = pg.imgs || [];
+    const res = "<< /Font << /F1 3 0 R >>" + (imgs.length ? " /XObject << " + imgs.map((m, i) => `/Im${i} ${r.imgs[i]} 0 R`).join(" ") + " >>" : "") + " >>";
+    obj(r.page, "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources " + res + " /Contents " + r.content + " 0 R >>");
+    const cs = enc.encode(pg.content); obj(r.content, "<< /Length " + cs.length + " >>", cs);
+    imgs.forEach((m, i) => obj(r.imgs[i], "<< /Type /XObject /Subtype /Image /Width " + m.w + " /Height " + m.h + " /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /" + m.filter + " /Length " + m.data.length + " >>", m.data));
+  });
+  const xref = len; let x = "xref\n0 " + (n + 1) + "\n0000000000 65535 f \n";
+  for (let i = 1; i <= n; i++) x += String(offs[i]).padStart(10, "0") + " 00000 n \n";
+  push(x + "trailer\n<< /Size " + (n + 1) + " /Root 1 0 R /Info << /Producer (Sookie's Canvas Press " + APP_VERSION + ") >> >>\nstartxref\n" + xref + "\n%%EOF\n");
+  return new Blob(chunks, { type: "application/pdf" });
+}
+const PATTERN_SYMBOLS = "XO+#*@%&=$/\\^<>?!~SZABCDEHKMNPRTUVWY23456789abdefghkmnpqrtuwyz".split("");
+const pdfRgb = c => c.map(v => (v / 255).toFixed(3)).join(" ");
+const textW = (t, size) => t.length * size * 0.58 / 72;
+async function patternPdf() {
+  const d = S.design; if (!d) { toast("Make a design first."); return; }
+  busy(true, "Building the pattern…", 0.2); await tick();
+  try {
+    const counts = new Int32Array(d.pal.length); let total = 0; for (const v of d.px) if (v >= 0) { counts[v]++; total++; }
+    const rows = d.pal.map((c, i) => ({ i, c, dm: nearestDmc(c), n: counts[i] })).filter(r => r.n).sort((a, b) => b.n - a.n);
+    rows.forEach((r, k) => { r.sym = PATTERN_SYMBOLS[k % PATTERN_SYMBOLS.length] + (k >= PATTERN_SYMBOLS.length ? "'" : ""); r.lum = 0.3 * r.c[0] + 0.59 * r.c[1] + 0.11 * r.c[2]; });
+    const byIdx = new Map(rows.map(r => [r.i, r]));
+    const mesh = S.mesh, bd = S.canvasBorder || 2, name = ascii((S.designName || "My design").replace(/\.[a-z0-9]+$/i, ""));
+    const pages = [];
+    // Chart tiling: cells about 0.13 in, inside half-inch margins with room for the numbers.
+    // One page when the squares can stay at least 0.105 in; otherwise 0.13 in squares split into even pieces.
+    const gx0 = 0.75, gy0 = 1.05, maxW = PAGE.w - gx0 - 0.5, maxH = PAGE.h - gy0 - 0.75, fit = Math.min(maxW / d.w, maxH / d.h);
+    const cell = fit >= 0.105 ? Math.min(0.16, fit) : 0.13;
+    const tilesX = Math.ceil(d.w / Math.floor(maxW / cell)), tilesY = Math.ceil(d.h / Math.floor(maxH / cell)), nTiles = tilesX * tilesY;
+    const perW = Math.ceil(d.w / tilesX), perH = Math.ceil(d.h / tilesY);
+    // ---- Cover page
+    {
+      const k = Math.max(4, Math.floor(1400 / Math.max(d.w, d.h))), pic = document.createElement("canvas"); pic.width = d.w * k; pic.height = d.h * k;
+      pic.getContext("2d").drawImage(meshCanvas, 0, 0, pic.width, pic.height);
+      const img = await canvasToPdfImage(pic);
+      const maxW = 4.2, maxH = 3.6, sc = Math.min(maxW / d.w, maxH / d.h), iw = d.w * sc, ih = d.h * sc, ix = 0.75, iy = 1.35;
+      let c = `q ${pt(iw)} 0 0 ${pt(ih)} ${pt(ix)} ${ptY(iy + ih)} cm /Im0 Do Q\n0.6 G 0.5 w ${pt(ix)} ${ptY(iy + ih)} ${pt(iw)} ${pt(ih)} re S\n`;
+      c += "0.1 g\n" + pdfText(0.75, 0.85, 20, name);
+      c += "0.4 g\n" + pdfText(0.75, 1.1, 8, ascii(`Needlepoint pattern  -  ${new Date().toLocaleDateString()}  -  Sookie's Canvas Press`));
+      const info = [["Design size", `${d.w} x ${d.h} stitches`], ["Finished size", `${(d.w / mesh).toFixed(2)} x ${(d.h / mesh).toFixed(2)} in on ${mesh} mesh`], ["Canvas to cut", `${(d.w / mesh + 2 * bd).toFixed(2)} x ${(d.h / mesh + 2 * bd).toFixed(2)} in (${bd} in border)`], ["Colors", String(rows.length)], ["Stitches", total.toLocaleString("en-US")], ["Chart pages", String(nTiles)]];
+      info.forEach(([a, b], r) => { const y = iy + 0.15 + r * 0.32; c += "0.45 g\n" + pdfText(5.2, y, 7.5, a.toUpperCase()) + "0.1 g\n" + pdfText(5.2, y + 0.15, 9.5, ascii(b)); });
+      // Color key table.
+      let ty = Math.max(iy + ih, iy + 0.15 + info.length * 0.32) + 0.45;
+      c += "0.1 g\n" + pdfText(0.75, ty, 11, "Color key"); ty += 0.12;
+      const cols = rows.length > 22 ? 2 : 1, perCol = Math.ceil(rows.length / cols), rh = Math.min(0.27, (PAGE.h - 0.6 - ty) / Math.max(1, perCol)), colW = cols === 2 ? 3.55 : 7;
+      for (let cl = 0; cl < cols; cl++) { const x0 = 0.75 + cl * colW; c += "0.45 g\n" + pdfText(x0, ty + 0.12, 6.5, "SYMBOL") + pdfText(x0 + 0.55, ty + 0.12, 6.5, "DMC") + pdfText(x0 + 1.05, ty + 0.12, 6.5, "COLOR NAME") + pdfText(x0 + colW - 0.65, ty + 0.12, 6.5, "STITCHES"); }
+      rows.forEach((r, k2) => {
+        const cl = Math.floor(k2 / perCol), x0 = 0.75 + cl * colW, y = ty + 0.2 + (k2 % perCol) * rh, sw = Math.min(0.22, rh - 0.04);
+        c += `${pdfRgb(r.c)} rg ${pt(x0)} ${ptY(y + sw)} ${pt(sw)} ${pt(sw)} re f 0.5 G 0.4 w ${pt(x0)} ${ptY(y + sw)} ${pt(sw)} ${pt(sw)} re S\n`;
+        const fs = sw * 72 * 0.72; c += (r.lum < 120 ? "1 g\n" : "0 g\n") + pdfText(x0 + sw / 2 - textW(r.sym, fs) / 2, y + sw * 0.78, fs, r.sym);
+        c += "0.1 g\n" + pdfText(x0 + 0.55, y + sw * 0.75, 9, ascii(r.dm[0])) + "0.3 g\n" + pdfText(x0 + 1.05, y + sw * 0.75, 8, ascii(r.dm[1]).slice(0, cols === 2 ? 24 : 60));
+        c += "0.1 g\n" + pdfText(x0 + colW - 0.65, y + sw * 0.75, 8.5, r.n.toLocaleString("en-US"));
+      });
+      c += "0.5 g\n" + pdfText(0.75, PAGE.h - 0.35, 6.5, "DMC numbers are the closest match to each color; check them against real floss. Made with Sookie's Canvas Press.");
+      pages.push({ content: c, imgs: [img] });
+    }
+    // ---- Chart pages
+    for (let ty2 = 0; ty2 < tilesY; ty2++) for (let tx = 0; tx < tilesX; tx++) {
+      busy(true, null, 0.3 + 0.6 * (ty2 * tilesX + tx + 1) / nTiles); await tick();
+      const c0 = tx * perW, r0 = ty2 * perH, cw = Math.min(perW, d.w - c0), ch = Math.min(perH, d.h - r0);
+      let c = "0.1 g\n" + pdfText(0.75, 0.55, 12, name) + "0.4 g\n" + pdfText(0.75, 0.75, 8, `Chart page ${ty2 * tilesX + tx + 1} of ${nTiles}  -  columns ${c0 + 1} to ${c0 + cw}, rows ${r0 + 1} to ${r0 + ch}  -  ${d.w} x ${d.h} stitches`);
+      // Colored squares, grouped by color.
+      const fills = new Map();
+      for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) { const v = d.px[(r0 + y) * d.w + c0 + x]; if (v < 0) continue; fills.set(v, (fills.get(v) || "") + `${pt(gx0 + x * cell)} ${ptY(gy0 + (y + 1) * cell)} ${pt(cell)} ${pt(cell)} re\n`); }
+      for (const [v, rects] of fills) c += `${pdfRgb(d.pal[v])} rg\n${rects}f\n`;
+      // Symbols: white on dark squares, black on light ones.
+      const fs = cell * 72 * 0.72; let blk = "", wht = "";
+      for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) { const v = d.px[(r0 + y) * d.w + c0 + x]; if (v < 0) continue; const r = byIdx.get(v), t = pdfText(gx0 + x * cell + cell / 2 - textW(r.sym, fs) / 2, gy0 + y * cell + cell * 0.78, fs, r.sym); if (r.lum < 120) wht += t; else blk += t; }
+      c += "0 g\n" + blk + "1 g\n" + wht;
+      // Grid: thin lines every stitch, bold every 10 (counted from the whole design), border.
+      const X = i => gx0 + i * cell, Y = j => gy0 + j * cell;
+      let thin = "", bold = "";
+      for (let i = 0; i <= cw; i++) { const g = c0 + i, s2 = `${pt(X(i))} ${ptY(Y(0))} m ${pt(X(i))} ${ptY(Y(ch))} l\n`; if (g % 10 === 0 || i === 0 || i === cw) bold += s2; else thin += s2; }
+      for (let j = 0; j <= ch; j++) { const g = r0 + j, s2 = `${pt(X(0))} ${ptY(Y(j))} m ${pt(X(cw))} ${ptY(Y(j))} l\n`; if (g % 10 === 0 || j === 0 || j === ch) bold += s2; else thin += s2; }
+      c += "0.62 G 0.3 w\n" + thin + "S\n0 G 1 w\n" + bold + "S\n";
+      // Numbers every 10 along the top and left, and center arrows.
+      c += "0.2 g\n";
+      for (let g = Math.ceil((c0 + 1) / 10) * 10; g <= c0 + cw; g += 10) { const t = String(g); c += pdfText(X(g - c0) - textW(t, 6.5) / 2, Y(0) - 0.06, 6.5, t); }
+      for (let g = Math.ceil((r0 + 1) / 10) * 10; g <= r0 + ch; g += 10) { const t = String(g); c += pdfText(X(0) - 0.06 - textW(t, 6.5), Y(g - r0) + 0.03, 6.5, t); }
+      const mx = Math.floor(d.w / 2), my = Math.floor(d.h / 2);
+      c += "0.85 0.1 0.45 rg\n";
+      if (mx >= c0 && mx < c0 + cw) { const xm = X(mx - c0) + cell / 2; c += `${pt(xm)} ${ptY(Y(ch) + 0.03)} m ${pt(xm - 0.06)} ${ptY(Y(ch) + 0.14)} l ${pt(xm + 0.06)} ${ptY(Y(ch) + 0.14)} l f\n`; }
+      if (my >= r0 && my < r0 + ch) { const ym = Y(my - r0) + cell / 2; c += `${pt(X(cw) + 0.03)} ${ptY(ym)} m ${pt(X(cw) + 0.14)} ${ptY(ym - 0.06)} l ${pt(X(cw) + 0.14)} ${ptY(ym + 0.06)} l f\n`; }
+      c += "0.5 g\n" + pdfText(0.75, PAGE.h - 0.35, 6.5, "Bold lines every 10 stitches. Pink arrows mark the center column and row.");
+      pages.push({ content: c });
+    }
+    busy(false);
+    await saveFile(`${name.replace(/[^a-z0-9]+/gi, "-").toLowerCase() || "pattern"}-pattern-v${APP_VERSION}.pdf`, buildPdfPages(pages));
+    toast(`Pattern saved: a cover with the color key, plus ${nTiles} chart page${nTiles === 1 ? "" : "s"}.`, 5000);
+  } catch (e) { busy(false); toast("The pattern couldn't be made: " + e.message, 6000); }
 }
 // One page to paint from: the finished look beside the dots, a lettered close-up of a busy spot, and the color list.
 async function dotsCheatSheetPdf() {
@@ -6507,7 +6611,7 @@ $("bigMove").onclick = () => { if (S.tool === "pan") setTool(toolBeforeMove || "
 $("dmcSearch").oninput = renderDmc; $("dmcCancel").onclick = () => $("dmcDlg").close();
 $("addDmc").onclick = () => S.design && openDmc(null, dm => { pushUndo(); S.edited = true; S.design.pal.push(unhex("#" + dm[2])); S.sel = S.design.pal.length - 1; setTool("paint"); designDirty(); });
 $("snapDmc").onclick = snapAllToDmc;
-$("saveKey").onclick = colorKeyPdf; $("saveKey2").onclick = colorKeyPdf;
+$("saveKey").onclick = colorKeyPdf; $("saveKey2").onclick = colorKeyPdf; $("savePattern").onclick = patternPdf;
 $("iniOpen").onclick = openInitials;
 $("roomMore").onclick = () => changeRoom(2); $("roomLess").onclick = () => changeRoom(-2);
 $("chartKeep").onclick = () => { if (chartImport && S.design && (S.design.w !== chartImport.w || S.design.h !== chartImport.h)) { restore(S.undo, S.redo); } $("chartSizeRow").hidden = true; toast("Kept every stitch of the chart."); };
