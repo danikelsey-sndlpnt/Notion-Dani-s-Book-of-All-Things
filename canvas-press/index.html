@@ -1077,7 +1077,7 @@ function adjustColor(c) {
 }
 
 /* ---------------- files ---------------- */
-const APP_VERSION = "2026.11.24-e";
+const APP_VERSION = "2026.11.24-g";
 { const v = document.getElementById("appVer2"); if (v) v.textContent = "v" + APP_VERSION; }
 let downloadsCap = null;
 (window.claude && window.claude.use ? window.claude.use("downloads") : Promise.resolve(null)).then(d => { downloadsCap = d; }).catch(() => {});
@@ -4134,7 +4134,7 @@ function withGridLatticeSync(fn) {
   finally { Object.assign(S, keep); }
 }
 // Preview with no scan: the design (plus initials and legend) on a plain canvas at the grid sheet's mesh.
-const VPK = 150; let virtCanvas = null, virtBounds = null;
+const VPK = 240; let virtCanvas = null, virtBounds = null;
 function buildVirtualPreview() {
   const W = Math.round(PAGE.w * VPK), H = Math.round(PAGE.h * VPK), c = virtCanvas && virtCanvas.width === W ? virtCanvas : document.createElement("canvas");
   c.width = W; c.height = H; const x = c.getContext("2d");
@@ -4314,6 +4314,22 @@ function picCanvas(maxW, faint) {
 }
 // The picture at the print size, at most 300 pixels per inch.
 async function picImage(b, faint) { return canvasToPdfImage(picCanvas(300 * b.w, faint)); }
+// The picture for the screen previews. With an editing background, only its white (no-ink) parts take that color;
+// every other color stays true. Under the picture the threads are drawn plain, so nothing else gets tinted.
+function picScreen(maxW) {
+  const c = picCanvas(maxW, false); if (!S.editBg) return c;
+  const bg = unhex(S.editBg), x = c.getContext("2d"), id = x.getImageData(0, 0, c.width, c.height), d = id.data;
+  for (let i = 0; i < d.length; i += 4) { const mn = Math.min(d[i], d[i + 1], d[i + 2]); if (mn < 215) continue; const t = Math.min(1, (mn - 215) / 30); d[i] += (bg[0] - d[i]) * t; d[i + 1] += (bg[1] - d[i + 1]) * t; d[i + 2] += (bg[2] - d[i + 2]) * t; }
+  x.putImageData(id, 0, 0); return c;
+}
+function plainThreadsUnder(x, rx, ry, rw, rh, ox0, oy0, pw, ph) {
+  x.save(); x.beginPath(); x.rect(rx, ry, rw, rh); x.clip();
+  const hg = Math.round(255 * +$("picHoles").value); x.fillStyle = `rgb(${hg},${hg},${hg})`; x.fillRect(rx, ry, rw, rh);
+  x.fillStyle = "#f6f4ee";
+  for (let u = ox0; u <= rx + rw + pw; u += pw) x.fillRect(u - pw * 0.28, ry, pw * 0.56, rh);
+  for (let v = oy0; v <= ry + rh + ph; v += ph) x.fillRect(rx, v - ph * 0.28, rw, ph * 0.56);
+  x.restore();
+}
 // Big-screen picture view: the whole letter page with the canvas (cut to the border) and the picture on it.
 const PICK = 110; let picPage = null, picPageKey = "";
 function picPageCanvas() {
@@ -4330,7 +4346,9 @@ function picPageCanvas() {
   x.save(); x.beginPath(); x.rect(ex0, ey0, ex1 - ex0, ey1 - ey0); x.clip(); x.fillStyle = S.editBg || "#f6f4ee";
   for (let u = cx - Math.ceil((cx - ex0) / pw) * pw; u <= ex1 + pw; u += pw) x.fillRect(u - pw * 0.28, ey0, pw * 0.56, ey1 - ey0);
   for (let v = cy - Math.ceil((cy - ey0) / ph) * ph; v <= ey1 + ph; v += ph) x.fillRect(ex0, v - ph * 0.28, ex1 - ex0, ph * 0.56);
-  x.globalCompositeOperation = "multiply"; x.drawImage(picCanvas(Math.min(2400, b.w * PICK * 1.5), false), b.x, b.y, b.w, b.h); x.restore();
+  x.restore();
+  plainThreadsUnder(x, b.x, b.y, b.w, b.h, cx - Math.ceil((cx - b.x) / pw) * pw, cy - Math.ceil((cy - b.y) / ph) * ph, pw, ph);
+  x.save(); x.globalCompositeOperation = "multiply"; x.drawImage(picScreen(Math.min(2400, b.w * PICK * 1.5)), b.x, b.y, b.w, b.h); x.restore();
   // Canvas edge, picture box and the four Carrier dots, as on the line-up sheet.
   x.lineWidth = 1.5 / PICK; x.strokeStyle = "#555"; x.setLineDash([8 / PICK, 4 / PICK]); x.strokeRect(b.x - bd, b.y - bd, b.w + 2 * bd, b.h + 2 * bd);
   x.strokeStyle = "#d81b72"; x.setLineDash([6 / PICK, 4 / PICK]); x.strokeRect(b.x, b.y, b.w, b.h); x.setLineDash([]);
@@ -4357,7 +4375,8 @@ function drawPicPreview() {
   x.fillStyle = S.editBg || "#f6f4ee";
   for (let u = ox % pw - pw; u < Wi + pw; u += pw) x.fillRect(u - pw * 0.28, 0, pw * 0.56, Hi);
   for (let v = oy % ph - ph; v < Hi + ph; v += ph) x.fillRect(0, v - ph * 0.28, Wi, ph * 0.56);
-  x.globalCompositeOperation = "multiply"; x.drawImage(picCanvas(Math.min(1600, cssW * dpr * 1.5), false), pad, pad, b.w, b.h); x.globalCompositeOperation = "source-over";
+  plainThreadsUnder(x, pad, pad, b.w, b.h, ox % pw - pw, oy % ph - ph, pw, ph);
+  x.globalCompositeOperation = "multiply"; x.drawImage(picScreen(Math.min(1600, cssW * dpr * 1.5)), pad, pad, b.w, b.h); x.globalCompositeOperation = "source-over";
   x.strokeStyle = "#d81b72"; x.lineWidth = 1.5 / k; x.setLineDash([6 / k, 4 / k]); x.strokeRect(pad, pad, b.w, b.h); x.setLineDash([]);
 }
 async function picLineupPdf() {
@@ -5789,7 +5808,7 @@ function drawMain() {
     }
     if (!S.scan && S.view === "prev" && S.design) {
       const src = previewStale || !virtCanvas ? buildVirtualPreview() : virtCanvas;
-      vctx.save(); vctx.translate(V.tx, V.ty); vctx.scale(V.s, V.s); vctx.imageSmoothingEnabled = true; vctx.drawImage(src, 0, 0); vctx.restore();
+      vctx.save(); vctx.translate(V.tx, V.ty); vctx.scale(V.s, V.s); vctx.imageSmoothingEnabled = V.s < 1; vctx.imageSmoothingQuality = "high"; vctx.drawImage(src, 0, 0); vctx.restore();
       const m = gridMesh(); stat.push(`No scan: plain ${m.a} × ${m.d} mesh canvas`, `${Math.round(V.s * 100)}%`);
       $("vstat").innerHTML = stat.map(s => `<span>${String(s).replace(/[<>&]/g, "")}</span>`).join(""); return;
     }
