@@ -852,6 +852,19 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
           </label>
           <label class="tog"><input type="checkbox" id="picSnap" checked> Snap to the grid: a whole number of stitches, edges on the hole lines (resize and it re-snaps)</label>
           <label class="tog"><input type="checkbox" id="picNoLine"> Remove black outlines (thin black lines are filled with the colors beside them; solid black areas stay)</label>
+          <div class="group" style="gap:8px;margin:6px 0;padding:10px;border:1px solid var(--line);border-radius:12px">
+            <span style="font-size:13px;font-weight:700;color:var(--ink-2)">Touch up (brush on the big Picture view)</span>
+            <div class="row" role="group" aria-label="Touch-up tool">
+              <button class="btn small" data-pictool="heal" aria-pressed="false" title="Paints over a spot with the colors around it">Heal</button>
+              <button class="btn small" data-pictool="white" aria-pressed="false">Erase to white</button>
+              <button class="btn small" data-pictool="paint" aria-pressed="false">Paint</button>
+              <input type="color" id="picPaintColor" value="#ffffff" aria-label="Paint color">
+              <button class="btn small" data-pictool="" aria-pressed="true" title="Drag to move the view">Move view</button>
+            </div>
+            <label class="f">Brush size <small id="picBrushOut"></small><input type="range" id="picBrush" min="1" max="30" value="3"></label>
+            <div class="row"><button class="btn small" id="picUndo">Undo touch-up</button><button class="btn small" id="picReset">Start over (undo all)</button></div>
+            <p class="hint" style="margin:0">Pick a tool, then brush over the spot on the big screen. Zoom in (+ or pinch) for small spots. The brush size is in stitches.</p>
+          </div>
           <label class="tog"><input type="checkbox" id="picTrim" checked> Trim white edges off the picture (so the size is just your design, not the blank page around it)</label>
           <label class="tog"><input type="checkbox" id="picFaint" checked> Show the picture faintly on the line-up sheet</label>
           <div class="row">
@@ -1058,7 +1071,7 @@ function adjustColor(c) {
 }
 
 /* ---------------- files ---------------- */
-const APP_VERSION = "2026.11.24-b";
+const APP_VERSION = "2026.11.24-c";
 { const v = document.getElementById("appVer2"); if (v) v.textContent = "v" + APP_VERSION; }
 let downloadsCap = null;
 (window.claude && window.claude.use ? window.claude.use("downloads") : Promise.resolve(null)).then(d => { downloadsCap = d; }).catch(() => {});
@@ -4236,8 +4249,45 @@ function picNoLineImg() {
   }
   x.putImageData(id, 0, 0); P.noLine = c; return c;
 }
+// Touch-ups are painted on a working copy of the picture (outlines already removed if that's on).
+function picWork() {
+  const P = S.pic; if (P.work) return P.work;
+  const base = $("picNoLine").checked ? picNoLineImg() : P.img, k = Math.min(1, 2000 / Math.max(base.width, base.height));
+  const c = document.createElement("canvas"); c.width = Math.max(1, Math.round(base.width * k)); c.height = Math.max(1, Math.round(base.height * k));
+  const x = c.getContext("2d", { willReadFrequently: true }); x.fillStyle = "#fff"; x.fillRect(0, 0, c.width, c.height); x.drawImage(base, 0, 0, c.width, c.height);
+  P.work = c; P.undo = []; return c;
+}
+// One brush dab at picture pixel (px, py), radius r pixels.
+function picDab(px, py, r) {
+  const c = S.pic.work, W = c.width, H = c.height, x = c.getContext("2d", { willReadFrequently: true }), tool = S.picTool;
+  if (tool === "white" || tool === "paint") { x.fillStyle = tool === "white" ? "#ffffff" : $("picPaintColor").value; x.beginPath(); x.arc(px, py, r, 0, 7); x.fill(); return; }
+  // Heal: fill the disk from its edge inward with the average of the finished neighbors (dark specks around it don't count).
+  const pad = Math.ceil(r) + 5, x0 = Math.max(0, Math.floor(px - pad)), y0 = Math.max(0, Math.floor(py - pad)), x1 = Math.min(W, Math.ceil(px + pad)), y1 = Math.min(H, Math.ceil(py + pad)), bw = x1 - x0, bh = y1 - y0;
+  if (bw < 1 || bh < 1) return;
+  const id = x.getImageData(x0, y0, bw, bh), d = id.data, todo = new Uint8Array(bw * bh); let left = 0;
+  for (let yy = 0; yy < bh; yy++) for (let xx = 0; xx < bw; xx++) { const dx = xx + x0 - px, dy = yy + y0 - py, i = yy * bw + xx; const dk = Math.max(d[i * 4], d[i * 4 + 1], d[i * 4 + 2]) < 95;
+    if (dx * dx + dy * dy <= (r + 1.5) * (r + 1.5) || (dk && dx * dx + dy * dy <= (r + 3) * (r + 3))) { todo[i] = 1; left++; } }
+  for (let pass = 0; left > 0 && pass < 2 * pad + 4; pass++) {
+    const set = [];
+    for (let i = 0; i < bw * bh; i++) { if (!todo[i]) continue; const xx = i % bw, yy = (i / bw) | 0; let R = 0, G = 0, B = 0, n = 0;
+      for (const [a, b] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const X = xx + a, Y = yy + b; if (X < 0 || Y < 0 || X >= bw || Y >= bh) continue; const q = Y * bw + X; if (todo[q]) continue; R += d[q * 4]; G += d[q * 4 + 1]; B += d[q * 4 + 2]; n++; }
+      if (n) set.push([i, R / n, G / n, B / n]); }
+    if (!set.length) break;
+    for (const [i, R, G, B] of set) { d[i * 4] = R; d[i * 4 + 1] = G; d[i * 4 + 2] = B; todo[i] = 0; left--; }
+  }
+  x.putImageData(id, x0, y0);
+}
+// World point on the Picture view → picture pixel, and the brush radius in picture pixels.
+function picHit(wx, wy) {
+  const b = picBox(), c = picWork(), ix = (wx / PICK - b.x) / b.w * c.width, iy = (wy / PICK - b.y) / b.h * c.height;
+  const r = Math.max(1, (+$("picBrush").value / gridMesh().a) / 2 / b.w * c.width);
+  return [ix, iy, r];
+}
+function picStrokeStart() { const c = picWork(), P = S.pic; P.undo.push(c.getContext("2d").getImageData(0, 0, c.width, c.height)); if (P.undo.length > 12) P.undo.shift(); }
+function picTouched() { S.pic.ver = (S.pic.ver || 0) + 1; picPageKey = ""; renderView(); }
+function setPicTool(t) { S.picTool = t || null; document.querySelectorAll("[data-pictool]").forEach(b => b.setAttribute("aria-pressed", (b.dataset.pictool || "") === (t || ""))); if (t && S.view !== "pic" && S.pic) setView("pic"); view.style.cursor = t ? "crosshair" : ""; }
 function picCanvas(maxW, faint) {
-  const src = $("picNoLine").checked ? picNoLineImg() : S.pic.img;
+  const src = S.pic.work || ($("picNoLine").checked ? picNoLineImg() : S.pic.img);
   const k = Math.min(1, maxW / src.width), c = document.createElement("canvas");
   c.width = Math.max(1, Math.round(src.width * k)); c.height = Math.max(1, Math.round(src.height * k));
   const x = c.getContext("2d"); x.fillStyle = "#fff"; x.fillRect(0, 0, c.width, c.height); x.imageSmoothingQuality = "high"; x.drawImage(src, 0, 0, c.width, c.height);
@@ -4255,7 +4305,7 @@ async function picImage(b, faint) { return canvasToPdfImage(picCanvas(300 * b.w,
 const PICK = 110; let picPage = null, picPageKey = "";
 function picPageCanvas() {
   const b = picBox(), bd = Math.max(0, +$("picBorder").value || 0), m = gridMesh(), hv = +$("picHoles").value, lt = $("picLight").value;
-  const key = [S.pic.name, S.pic.img.width, b.x, b.y, b.w, b.h, bd, m.a, m.d, hv, lt, $("picNoLine").checked].join("|");
+  const key = [S.pic.name, S.pic.img.width, S.pic.ver || 0, b.x, b.y, b.w, b.h, bd, m.a, m.d, hv, lt, $("picNoLine").checked].join("|");
   if (picPage && key === picPageKey) return picPage;
   const W = Math.round(PAGE.w * PICK), H = Math.round(PAGE.h * PICK), c = picPage || document.createElement("canvas"); c.width = W; c.height = H;
   const x = c.getContext("2d"); x.setTransform(PICK, 0, 0, PICK, 0, 0);
@@ -5793,6 +5843,9 @@ view.addEventListener("pointerdown", e => {
     drag = { type: "paint", v: tool === "erase" ? -1 : S.sel, last: cell };
     paintLine(cell, cell, drag.v); return;
   }
+  if (S.view === "pic" && S.pic && S.picTool && !panReq) {
+    picStrokeStart(); const [ix, iy, r] = picHit(wx, wy); picDab(ix, iy, r); drag = { type: "pic", last: [ix, iy] }; picTouched(); return;
+  }
   if (S.view === "prev" && !panReq && S.initials && S.initials.on && S.iniCells) {
     const h = iniHit(wx, wy);
     if (h && h.inside) { drag = { type: "ini", start: [h.i, h.j], d0: [S.initials.dx || 0, S.initials.dy || 0] }; view.style.cursor = "grabbing"; return; }
@@ -5839,6 +5892,11 @@ view.addEventListener("pointermove", e => {
   else if (drag.type === "paint") { const c = [Math.floor(wx), Math.floor(wy)]; paintLine(drag.last, c, drag.v); drag.last = c; }
   else if (drag.type === "node") { if (!drag.moved && Math.hypot(sx - drag.s0[0], sy - drag.s0[1]) < 6) return; const G = S.grid; G.X[drag.k] = wx + drag.off[0]; G.Y[drag.k] = wy + drag.off[1]; G.ST[drag.k] = 4; drag.moved = true; renderView(); }
   else if (drag.type === "mark") { S.marks[drag.k] = [wx, wy]; updateH(); renderView(); }
+  else if (drag.type === "pic") {
+    const [ix, iy, r] = picHit(wx, wy), [lx, ly] = drag.last, dist = Math.hypot(ix - lx, iy - ly), steps = Math.max(1, Math.ceil(dist / Math.max(1, r * 0.5)));
+    for (let k = 1; k <= steps; k++) picDab(lx + (ix - lx) * k / steps, ly + (iy - ly) * k / steps, r);
+    drag.last = [ix, iy]; picTouched();
+  }
   else if (drag.type === "ini") {
     const h = iniHit(wx, wy); if (!h) return;
     const nx = drag.d0[0] + h.i - drag.start[0], ny = drag.d0[1] + h.j - drag.start[1];
@@ -5852,6 +5910,7 @@ const endPtr = e => {
   if (drag && drag.type === "pan" && drag.tapNode != null && !drag.moved) { S.selNode = drag.tapNode; drag = null; renderView(); return; }
   if (drag && drag.type === "mark") { setStatus("scanStatus", "Corner dot moved by hand.", "ok"); previewDirty(); }
   if (drag && drag.type === "paint") designDirty();
+  if (drag && drag.type === "pic") { drawPicPreview(); }
   if (drag && drag.type === "ini") { view.style.cursor = ""; store.set("ccp-initials", S.initials); iniSummary(); previewDirty(); }
   if (drag && drag.type === "move") { const dl = drag.delta; drag = null; shiftDesign(dl[0], dl[1]); return; }
   if (drag && drag.type === "crop") { const a = drag.a, b = drag.b; drag = null; cropDesign(a, b); return; }
@@ -6300,7 +6359,11 @@ $("picD").oninput = () => { $("gmD").value = $("picD").value; gridMeshChanged();
 $("gmA").addEventListener("input", picMeshSync); $("gmD").addEventListener("input", picMeshSync);
 $("picGauge").onclick = () => { $("gmBase").value = $("picBase").value; meshGaugePdf(); };
 $("picSnap").checked = store.get("ccp-picsnap") !== false; $("picSnap").onchange = () => { store.set("ccp-picsnap", $("picSnap").checked); picPageKey = ""; picNote(); };
-$("picNoLine").onchange = () => { if (S.pic) { busy(true, "Removing outlines…", 0.5); setTimeout(() => { try { picPageKey = ""; picNote(); } finally { busy(false); } }, 30); } };
+document.querySelectorAll("[data-pictool]").forEach(b => b.onclick = () => setPicTool(b.dataset.pictool));
+const picBrushOut = () => $("picBrushOut").textContent = $("picBrush").value + " stitch" + ($("picBrush").value === "1" ? "" : "es"); picBrushOut(); $("picBrush").oninput = picBrushOut;
+$("picUndo").onclick = () => { const P = S.pic; if (!P || !P.work || !P.undo.length) { toast("Nothing to undo."); return; } P.work.getContext("2d").putImageData(P.undo.pop(), 0, 0); picTouched(); drawPicPreview(); };
+$("picReset").onclick = () => { const P = S.pic; if (!P || !P.work) return; P.work = null; P.undo = []; picTouched(); drawPicPreview(); toast("Touch-ups cleared."); };
+$("picNoLine").onchange = () => { if (S.pic && S.pic.work) { S.pic.work = null; toast("Touch-ups were cleared because outline removal changed. Touch up again if needed."); } if (S.pic) { busy(true, "Removing outlines…", 0.5); setTimeout(() => { try { picPageKey = ""; picNote(); } finally { busy(false); } }, 30); } };
 $("picTrim").onchange = () => { if (S.pic) usePic(S.pic.raw, S.pic.name); };
 $("picBorder").value = store.get("ccp-picborder") ?? 2; $("picBorder").oninput = () => { store.set("ccp-picborder", +$("picBorder").value); picNote(); };
 $("picW").oninput = () => setPicSize("w"); $("picH").oninput = () => setPicSize("h"); $("picOX").oninput = $("picOY").oninput = picNote;
