@@ -992,7 +992,7 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
     </div>
     <div class="row" id="iniPlaceRow">
       <label class="f">Where<select id="iniPos"><option value="br">Bottom right</option><option value="bc">Bottom center</option><option value="bl">Bottom left</option></select></label>
-      <label class="f">Below the design <small>inches</small><input type="number" id="iniBelow" step="0.25" min="0" max="6" value="2"></label>
+      <label class="f">Below the design <small>inches</small><input type="number" id="iniBelow" step="0.25" min="0" max="6" value="0.5"></label>
     </div>
     <canvas id="iniPrev"></canvas>
     <p class="hint" id="iniNote"></p>
@@ -1084,7 +1084,7 @@ function adjustColor(c) {
 }
 
 /* ---------------- files ---------------- */
-const APP_VERSION = "2026.11.25-b";
+const APP_VERSION = "2026.11.25-c";
 { const v = document.getElementById("appVer2"); if (v) v.textContent = "v" + APP_VERSION; }
 let downloadsCap = null;
 (window.claude && window.claude.use ? window.claude.use("downloads") : Promise.resolve(null)).then(d => { downloadsCap = d; }).catch(() => {});
@@ -4363,6 +4363,22 @@ function picCanvas(maxW, faint) {
 }
 // The picture at the print size, at most 300 pixels per inch.
 async function picImage(b, faint) { return canvasToPdfImage(picCanvas(300 * b.w, faint)); }
+// Initials on a picture print: the same letters, color, spot and nudges as for stitch designs, placed under the
+// picture in stitches of the canvas grid (each stitch drawn as a "+" on its crossing). Returns page-inch shapes.
+function picInitials() {
+  const ini = S.initials, C = S.iniCells; if (!S.pic || !ini || !ini.on || !C) return null;
+  const b = picBox(), m = gridMesh(), a = m.a, dd = m.d, n = Math.round(b.w * a), rows = Math.round(b.h * dd);
+  const below = Math.round((ini.below || 0) * dd), x0 = ini.pos === "bl" ? 0 : ini.pos === "bc" ? Math.floor((n - C.w) / 2) : n - C.w;
+  const ox = x0 + (ini.dx || 0), oy = rows + below + (ini.dy || 0), on = (x, y) => x >= 0 && y >= 0 && x < C.w && y < C.h && C.cells[y * C.w + x];
+  const polys = [], W = 0.19 / a, Wv = 0.19 / dd;
+  for (let y = 0; y < C.h; y++) for (let x = 0; x < C.w; x++) {
+    if (!on(x, y)) continue;
+    const cx = b.x + (ox + x + 0.5) / a, cy = b.y + (oy + y + 0.5) / dd;
+    const L = (on(x - 1, y) ? 0.5 : 0.42) / a, R = (on(x + 1, y) ? 0.5 : 0.42) / a, T = (on(x, y - 1) ? 0.5 : 0.42) / dd, B = (on(x, y + 1) ? 0.5 : 0.42) / dd, c2 = 0.24;
+    polys.push([cx - c2 / a, cy - c2 / dd, 2 * c2 / a, 2 * c2 / dd], [cx - L, cy - Wv, L + R, 2 * Wv], [cx - W, cy - T, 2 * W, T + B]);
+  }
+  return { polys, color: ini.color };
+}
 // The picture for the screen previews. With an editing background, only its white (no-ink) parts take that color;
 // every other color stays true. Under the picture the threads are drawn plain, so nothing else gets tinted.
 function picScreen(maxW) {
@@ -4383,7 +4399,7 @@ function plainThreadsUnder(x, rx, ry, rw, rh, ox0, oy0, pw, ph) {
 const PICK = 110; let picPage = null, picPageKey = "";
 function picPageCanvas() {
   const b = picBox(), bd = Math.max(0, +$("picBorder").value || 0), m = gridMesh(), hv = +$("picHoles").value, lt = $("picLight").value;
-  const key = [S.pic.name, S.pic.img.width, S.pic.ver || 0, S.editBg, b.x, b.y, b.w, b.h, bd, m.a, m.d, hv, lt, $("picNoLine").checked].join("|");
+  const key = [S.pic.name, S.pic.img.width, S.pic.ver || 0, S.editBg, JSON.stringify(S.initials && S.initials.on ? [S.initials.text, S.initials.dx, S.initials.dy, S.initials.pos, S.initials.below, S.initials.color, S.iniCells && S.iniCells.w] : 0), b.x, b.y, b.w, b.h, bd, m.a, m.d, hv, lt, $("picNoLine").checked].join("|");
   if (picPage && key === picPageKey) return picPage;
   const W = Math.round(PAGE.w * PICK), H = Math.round(PAGE.h * PICK), c = picPage || document.createElement("canvas"); c.width = W; c.height = H;
   const x = c.getContext("2d"); x.setTransform(PICK, 0, 0, PICK, 0, 0);
@@ -4397,7 +4413,9 @@ function picPageCanvas() {
   for (let v = cy - Math.ceil((cy - ey0) / ph) * ph; v <= ey1 + ph; v += ph) x.fillRect(ex0, v - ph * 0.28, ex1 - ex0, ph * 0.56);
   x.restore();
   plainThreadsUnder(x, b.x, b.y, b.w, b.h, cx - Math.ceil((cx - b.x) / pw) * pw, cy - Math.ceil((cy - b.y) / ph) * ph, pw, ph);
-  x.save(); x.globalCompositeOperation = "multiply"; x.drawImage(picScreen(Math.min(2400, b.w * PICK * 1.5)), b.x, b.y, b.w, b.h); x.restore();
+  x.save(); x.globalCompositeOperation = "multiply"; x.drawImage(picScreen(Math.min(2400, b.w * PICK * 1.5)), b.x, b.y, b.w, b.h);
+  const pi = picInitials(); if (pi) { x.fillStyle = hex(pi.color); for (const r of pi.polys) x.fillRect(r[0], r[1], r[2], r[3]); }
+  x.restore();
   // Canvas edge, picture box and the four Carrier dots, as on the line-up sheet.
   x.lineWidth = 1.5 / PICK; x.strokeStyle = "#555"; x.setLineDash([8 / PICK, 4 / PICK]); x.strokeRect(b.x - bd, b.y - bd, b.w + 2 * bd, b.h + 2 * bd);
   x.strokeStyle = "#d81b72"; x.setLineDash([6 / PICK, 4 / PICK]); x.strokeRect(b.x, b.y, b.w, b.h); x.setLineDash([]);
@@ -4414,7 +4432,7 @@ function picPageCanvas() {
 function drawPicPreview() {
   const cv = $("picPrev"); if (!S.pic) { cv.style.display = "none"; return; }
   cv.style.display = "block";
-  const b = picBox(), m = gridMesh(), pad = 0.45, Wi = b.w + pad * 2, Hi = b.h + pad * 2, cssW = cv.clientWidth || 360, dpr = window.devicePixelRatio || 1;
+  const b = picBox(), m = gridMesh(), piX = picInitials(), extra = piX && piX.polys.length ? Math.max(0, Math.max(...piX.polys.map(r => r[1] + r[3])) - (b.y + b.h)) : 0, pad = 0.45, Wi = b.w + pad * 2, Hi = b.h + pad * 2 + extra, cssW = cv.clientWidth || 360, dpr = window.devicePixelRatio || 1;
   const k = cssW / Wi; cv.width = Math.round(cssW * dpr); cv.height = Math.round(Hi * k * dpr); cv.style.height = Math.round(Hi * k) + "px";
   const x = cv.getContext("2d"); x.setTransform(k * dpr, 0, 0, k * dpr, 0, 0);
   const hg = Math.round(255 * +$("picHoles").value);
@@ -4425,7 +4443,9 @@ function drawPicPreview() {
   for (let u = ox % pw - pw; u < Wi + pw; u += pw) x.fillRect(u - pw * 0.28, 0, pw * 0.56, Hi);
   for (let v = oy % ph - ph; v < Hi + ph; v += ph) x.fillRect(0, v - ph * 0.28, Wi, ph * 0.56);
   plainThreadsUnder(x, pad, pad, b.w, b.h, ox % pw - pw, oy % ph - ph, pw, ph);
-  x.globalCompositeOperation = "multiply"; x.drawImage(picScreen(Math.min(1600, cssW * dpr * 1.5)), pad, pad, b.w, b.h); x.globalCompositeOperation = "source-over";
+  x.globalCompositeOperation = "multiply"; x.drawImage(picScreen(Math.min(1600, cssW * dpr * 1.5)), pad, pad, b.w, b.h);
+  { const pi = picInitials(); if (pi) { x.fillStyle = hex(pi.color); for (const r of pi.polys) x.fillRect(r[0] - b.x + pad, r[1] - b.y + pad, r[2], r[3]); } }
+  x.globalCompositeOperation = "source-over";
   x.strokeStyle = "#d81b72"; x.lineWidth = 1.5 / k; x.setLineDash([6 / k, 4 / k]); x.strokeRect(pad, pad, b.w, b.h); x.setLineDash([]);
 }
 async function picLineupPdf() {
@@ -4455,6 +4475,7 @@ async function picLineupPdf() {
     if (ey1 <= PAGE.h - 0.15) over += `${pt(X0)} ${ptY(ey1)} m ${pt(X1)} ${ptY(ey1)} l S\n`;
     over += "[] 0 d\n0.25 g\n" + pdfText(Math.max(0.3, ex0 + 0.05), Math.max(0.3, ey0 - 0.05) + (ey0 < 0.3 ? 0.2 : 0), 6.5, `Canvas edge: ${(b.w + 2 * bd).toFixed(2)} x ${(b.h + 2 * bd).toFixed(2)} in (${bd} in border)`);
   }
+  { const pi = picInitials(); if (pi) { over += "0.85 0.1 0.45 rg\n"; for (const r of pi.polys) over += `${pt(r[0])} ${ptY(r[1] + r[3])} ${pt(r[2])} ${pt(r[3])} re\n`; over += "f\n"; } }
   let under = "", imgs = null;
   if ($("picFaint").checked) { imgs = [await picImage(b, true)]; under = `q ${pt(b.w)} 0 0 ${pt(b.h)} ${pt(b.x)} ${ptY(b.y + b.h)} cm /Im0 Do Q\n`; }
   await gridSheetPdf({ under, over, imgs, holeGray: +$("picHoles").value, name: `picture-lineup-${b.w.toFixed(2)}x${b.h.toFixed(2)}in-v${APP_VERSION}.pdf` });
@@ -4465,7 +4486,9 @@ async function picPrintPdf() {
   busy(true, "Building the picture print…", 0.4); await tick();
   try {
     const img = await picImage(b, false);
-    const c = `q ${pt(b.w)} 0 0 ${pt(b.h)} ${pt(b.x + nx)} ${ptY(b.y + ny + b.h)} cm /Im0 Do Q\n`;
+    let c = `q ${pt(b.w)} 0 0 ${pt(b.h)} ${pt(b.x + nx)} ${ptY(b.y + ny + b.h)} cm /Im0 Do Q\n`;
+    const pi = picInitials();
+    if (pi) { c += pdfRgb(adjustColor(pi.color)) + " rg\n"; for (const r of pi.polys) c += `${pt(r[0] + nx)} ${ptY(r[1] + ny + r[3])} ${pt(r[2])} ${pt(r[3])} re\n`; c += "f\n"; }
     busy(false);
     await saveFile(`picture-print-${b.w.toFixed(2)}x${b.h.toFixed(2)}in-v${APP_VERSION}.pdf`, buildPdf(c, [img]));
   } catch (e) { busy(false); toast("The picture print couldn't be made: " + e.message, 6000); }
@@ -4708,7 +4731,7 @@ function renderShapeGrid() {
 }
 function openInitials() {
   setDlgMode("initials");
-  const cur = S.initials || { text: "", font: "block", h: 7, color: S.design && S.design.pal[0] ? nearestDmc(S.design.pal[0]) && unhex("#" + nearestDmc(S.design.pal[0])[2]) : [199, 43, 59], pos: "br", below: 2 };
+  const cur = S.initials || { text: "", font: "block", h: 7, color: S.design && S.design.pal[0] ? nearestDmc(S.design.pal[0]) && unhex("#" + nearestDmc(S.design.pal[0])[2]) : [199, 43, 59], pos: "br", below: 0.5 };
   iniDraft = { color: cur.color.slice() };
   $("iniText").value = cur.text; $("iniFont").value = cur.font; $("iniH").value = cur.h; $("iniPos").value = cur.pos; $("iniBelow").value = cur.below; $("iniColor").value = hex(cur.color);
   $("iniRemove").hidden = !S.initials;
@@ -4717,7 +4740,15 @@ function openInitials() {
 async function applyInitials(ini) {
   S.initials = ini; store.set("ccp-initials", ini);
   S.iniCells = ini && ini.on ? await initialsCells(ini) : null;
-  iniSummary(); previewDirty(); updateFit(); renderView();
+  iniSummary(); previewDirty(); updateFit(); renderView(); iniOffWarn();
+  if (S.pic) { picPageKey = ""; picNote(); }
+}
+// On a scanned canvas, initials past the mapped area don't show (or print). Say so and how to bring them back.
+function iniOffWarn() {
+  if (!S.initials || !S.initials.on || !S.iniCells || !S.grid || S.grid.synthetic || !S.design) return;
+  const C = S.iniCells, o = initialsOrigin(C), pl = placement(), G = S.grid; if (!pl) return; let off = 0, n = 0;
+  for (let y = 0; y < C.h; y++) for (let x = 0; x < C.w; x++) { if (!C.cells[y * C.w + x]) continue; n++; const i = pl.i0 + o.x + x, j = pl.j0 + o.y + y; if (i < 0 || j < 0 || i >= G.gx || j >= G.gy || !G.ST[j * G.gx + i]) off++; }
+  if (off) toast(`${off === n ? "Your initials are" : "Part of your initials is"} past the scanned canvas, so ${off === n ? "they don't" : "that part doesn't"} show in Preview or print. Use the ↑ button (or a smaller "Below the design") to bring them onto the canvas.`, 8000);
 }
 async function iniResize(dir) {
   const o = S.initials; if (!o) return; const ini = { ...o };
@@ -4730,7 +4761,7 @@ async function iniResize(dir) {
 function iniMove(dx, dy) {
   const ini = S.initials; if (!ini) return;
   ini.dx = (ini.dx || 0) + dx; ini.dy = (ini.dy || 0) + dy; store.set("ccp-initials", ini);
-  iniSummary(); previewDirty(); updateFit(); renderView();
+  iniSummary(); previewDirty(); updateFit(); renderView(); if (S.pic) { picPageKey = ""; picNote(); }
 }
 function iniSummary() {
   const ini = S.initials, el = $("iniSummary");
