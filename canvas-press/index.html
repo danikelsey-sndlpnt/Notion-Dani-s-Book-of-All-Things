@@ -1084,7 +1084,7 @@ function adjustColor(c) {
 }
 
 /* ---------------- files ---------------- */
-const APP_VERSION = "2026.11.25-c";
+const APP_VERSION = "2026.11.25-d";
 { const v = document.getElementById("appVer2"); if (v) v.textContent = "v" + APP_VERSION; }
 let downloadsCap = null;
 (window.claude && window.claude.use ? window.claude.use("downloads") : Promise.resolve(null)).then(d => { downloadsCap = d; }).catch(() => {});
@@ -2883,9 +2883,10 @@ function stitchArms(q, i, j, painted, landed) {
 function crossShapes(q, i, j, painted, landed) {
   const at = (u, v) => { const s2 = u + 0.5, t = v + 0.5; return [0, 1].map(k => (1 - s2) * (1 - t) * q[0][k] + s2 * (1 - t) * q[1][k] + s2 * t * q[2][k] + (1 - s2) * t * q[3][k]); };
   const has = (di, dj) => painted.color ? painted.color(i + di, j + dj) >= 0 : painted(i + di, j + dj);
-  const sp = S.adj.spread, W = 0.19;
+  // Arms as wide as a canvas thread (and the center as big as the crossing), so no white thread shows inside the paint.
+  const sp = S.adj.spread, W = 0.31;
   const len = (di, dj, side) => { if (has(di, dj)) return 0.5; const base = 0.45; return landed || !sp || sp[side] == null ? base : clamp(base - sp[side], 0.38, base); };
-  const L = len(-1, 0, "left"), R = len(1, 0, "right"), T = len(0, -1, "up"), B = len(0, 1, "down"), C = 0.24;
+  const L = len(-1, 0, "left"), R = len(1, 0, "right"), T = len(0, -1, "up"), B = len(0, 1, "down"), C = 0.33;
   return [[at(-C, -C), at(C, -C), at(C, C), at(-C, C)], [at(-L, -W), at(R, -W), at(R, W), at(-L, W)], [at(-W, -T), at(W, -T), at(W, B), at(-W, B)]];
 }
 function fillStitch(x, q, i, j, f, painted, landed, mp) {
@@ -4370,11 +4371,11 @@ function picInitials() {
   const b = picBox(), m = gridMesh(), a = m.a, dd = m.d, n = Math.round(b.w * a), rows = Math.round(b.h * dd);
   const below = Math.round((ini.below || 0) * dd), x0 = ini.pos === "bl" ? 0 : ini.pos === "bc" ? Math.floor((n - C.w) / 2) : n - C.w;
   const ox = x0 + (ini.dx || 0), oy = rows + below + (ini.dy || 0), on = (x, y) => x >= 0 && y >= 0 && x < C.w && y < C.h && C.cells[y * C.w + x];
-  const polys = [], W = 0.19 / a, Wv = 0.19 / dd;
+  const polys = [], W = 0.31 / a, Wv = 0.31 / dd;
   for (let y = 0; y < C.h; y++) for (let x = 0; x < C.w; x++) {
     if (!on(x, y)) continue;
     const cx = b.x + (ox + x + 0.5) / a, cy = b.y + (oy + y + 0.5) / dd;
-    const L = (on(x - 1, y) ? 0.5 : 0.42) / a, R = (on(x + 1, y) ? 0.5 : 0.42) / a, T = (on(x, y - 1) ? 0.5 : 0.42) / dd, B = (on(x, y + 1) ? 0.5 : 0.42) / dd, c2 = 0.24;
+    const L = (on(x - 1, y) ? 0.5 : 0.42) / a, R = (on(x + 1, y) ? 0.5 : 0.42) / a, T = (on(x, y - 1) ? 0.5 : 0.42) / dd, B = (on(x, y + 1) ? 0.5 : 0.42) / dd, c2 = 0.33;
     polys.push([cx - c2 / a, cy - c2 / dd, 2 * c2 / a, 2 * c2 / dd], [cx - L, cy - Wv, L + R, 2 * Wv], [cx - W, cy - T, 2 * W, T + B]);
   }
   return { polys, color: ini.color };
