@@ -756,6 +756,10 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
             </label>
             <p class="hint" style="flex:1 1 200px">Prints a little block of each color with its DMC number in the canvas margin, like designers do, so the stitcher knows which floss goes where. Leave about an inch of canvas beside the design for it.</p>
           </div>
+          <div class="row" style="align-items:center">
+            <button class="btn small thread" id="marginTest">Test marks in the border first (PDF)</button>
+            <p class="hint" style="flex:1 1 200px"><b>Check before you print the design.</b> Prints small light-blue grid marks in the canvas border, about half an inch outside the design, where they'll be hidden when it's finished. Scan it, load the scan under <b>Check my print</b>, tap <b>Use this nudge</b>, then print the design. No canvas wasted.</p>
+          </div>
           <button class="btn primary wide" id="makePdf">Save print file (PDF)</button>
           <button class="btn small" id="saveKey2">Save the color key to print (PDF)</button>
           <div class="status" id="fitStatus"></div>
@@ -905,6 +909,8 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
           <button class="btn small" id="gmSheet">Grid sheet (PDF)</button>
           <p class="hint"><b>3. Line up the canvas.</b> Lay it over the grid, centered on the red arrows. The numbers around the edge count holes out from the arrows in 5s, so you can check the same hole number lines up on both sides. Slide and turn it until every hole looks solid black, with no white slivers along the thread edges, near the arrows and out at the corners. Tape all four sides flat.</p>
           <p class="hint"><b>4. Print the design</b> onto the sheet with the canvas on it, loaded exactly like you loaded the sheet in step 2. Your nudge and edge settings still apply.</p>
+          <button class="btn small" id="gmMarginTest">Test marks in the border first (PDF)</button>
+          <p class="hint">Before the design: print just these small marks in the canvas border, scan it on the grid sheet, and use step 5 below to set the nudge. Then print the design.</p>
           <button class="btn thread wide" id="gmPrint">Design for the grid sheet (PDF)</button>
           <div class="status" id="gmStatus" hidden></div>
           <p class="hint"><b>5. Still off? Let the app measure it.</b> Scan the printed canvas the same way, still taped to the grid sheet, and pick the scan here. The app finds the holes and your paint, measures how far the paint sits from the thread crossings, and sets the nudge for you.</p>
@@ -1077,7 +1083,7 @@ function adjustColor(c) {
 }
 
 /* ---------------- files ---------------- */
-const APP_VERSION = "2026.11.24-g";
+const APP_VERSION = "2026.11.25-a";
 { const v = document.getElementById("appVer2"); if (v) v.textContent = "v" + APP_VERSION; }
 let downloadsCap = null;
 (window.claude && window.claude.use ? window.claude.use("downloads") : Promise.resolve(null)).then(d => { downloadsCap = d; }).catch(() => {});
@@ -3113,6 +3119,37 @@ async function renderPrint(dpi, y0 = 0, hStrip = null) {
   const pl = placement();
   if (pl) drawLegendText(x, legendCells(), (cc, rr) => { const q = corner(pl.i0 + cc - 1, pl.j0 + rr - 1); if (!q) return null; const pg = scanToPage(q[0], q[1]); return [(pg[0] + nx) * dpi, (pg[1] + ny) * dpi]; });
   return { canvas: c, ...r };
+}
+// Test marks for the canvas border: a small "#" of thin lines (every other row and column, 7 stitches) half an inch
+// outside each side of the design, in light blue. Same placement, nudge and printer settings as the design itself,
+// so a scan of them tells the nudge before the real print. Marks that would fall off the canvas are left out.
+function marginTestDesign() {
+  const d = S.design; if (!d) return null;
+  const m = 7, g = Math.max(4, Math.round(0.5 * (S.canvasMesh || S.mesh))), k = g + m, W = d.w + 2 * k, H = d.h + 2 * k, px = new Int16Array(W * H).fill(-1);
+  const mark = (x0, y0) => { for (let y = 0; y < m; y++) for (let x = 0; x < m; x++) if (x % 2 === 0 || y % 2 === 0) px[(y0 + y) * W + x0 + x] = 0; };
+  const cx = Math.floor((W - m) / 2), cy = Math.floor((H - m) / 2);
+  mark(0, cy); mark(W - m, cy); mark(cx, 0); mark(cx, H - m);
+  return { w: W, h: H, pal: [[110, 190, 235]], px, sx: 0, sy: 0 };
+}
+async function makeMarginTest(grid) {
+  if (!S.design) { toast("Make a design first."); return; }
+  if (!grid && !canPrint()) return;
+  const keep = { design: S.design, initials: S.initials, iniCells: S.iniCells, legendPos: S.legendPos, printAll: S.printAll, edgeFor: S.edgeFor, printMode: S.printMode };
+  try {
+    S.design = marginTestDesign(); S.initials = null; S.iniCells = null; S.legendPos = "off"; S.edgeFor = null; S.printMode = "stitch";
+    if (grid) { await makeGridPrintPdf(); return; }
+    // Drop any mark stitch that isn't on the mapped canvas, then print like the design.
+    const d = S.design, pl = placement(), G = S.grid; let kept = 0;
+    for (let y = 0; y < d.h; y++) for (let x = 0; x < d.w; x++) { const v = d.px[y * d.w + x]; if (v < 0) continue; const i = pl.i0 + x, j = pl.j0 + y; if (i < 0 || j < 0 || i >= G.gx || j >= G.gy || !G.ST[j * G.gx + i]) d.px[y * d.w + x] = -1; else kept++; }
+    if (kept < 30) throw new Error("there isn't enough mapped canvas around the design for the marks. Leave about an inch of canvas around the design.");
+    S.printAll = false; busy(true, "Building the test marks…", 0.3); await tick();
+    const dpi = S.printDpi, Hh = Math.round(PAGE.h * dpi), n = dpi > 330 ? 4 : 1, sh = Math.ceil(Hh / n), imgs = []; let content = "";
+    for (let q = 0; q < n; q++) { const y0 = q * sh, h = Math.min(sh, Hh - y0), part = await renderPrint(dpi, y0, h); imgs.push(await canvasToPdfImage(part.canvas)); part.canvas.width = 1; content += `q 612 0 0 ${(h / dpi * 72).toFixed(3)} 0 ${(792 - (y0 + h) / dpi * 72).toFixed(3)} cm /Im${q} Do Q\n`; }
+    busy(false);
+    await saveFile(fileBase() + "-border-test-marks-v" + APP_VERSION + ".pdf", buildPdf(content, imgs));
+    toast("Print these marks on the canvas (same Carrier, same way), scan it, then load the scan under Check my print.", 7000);
+  } catch (e) { busy(false); toast("The test marks couldn't be made: " + e.message, 7000); }
+  finally { Object.assign(S, keep); previewDirty(); }
 }
 // Three test blocks with different edge settings, printed where the design goes.
 async function makeEdgeTest() {
@@ -6485,6 +6522,7 @@ $("legendPos").onchange = () => { S.legendPos = $("legendPos").value; store.set(
 { const gs = store.get("ccp-gridshow"); if (gs && [...$("gmShowDesign").options].some(o => o.value === gs)) $("gmShowDesign").value = gs; }
 $("gmFromScan").onclick = () => { const rm = realMesh(); if (!rm) return; $("gmA").value = rm.across.toFixed(2); $("gmD").value = rm.down.toFixed(2); gridMeshChanged(); };
 $("gmGauge").onclick = meshGaugePdf;
+$("marginTest").onclick = () => makeMarginTest(false); $("gmMarginTest").onclick = () => makeMarginTest(true);
 $("picFile").onchange = async e => { const f = e.target.files[0]; e.target.value = ""; if (!f) return; busy(true, "Opening the picture…", 0.3); try { const c = await fileToCanvas(f, 300); usePic(c.canvas || c, f.name); } catch (err) { toast(err.message, 5000); } finally { busy(false); } };
 $("picUseArt").onclick = () => { const L = S.layers.find(l => l.visible); const img = L ? L.img : S.original && S.original.canvas && !S.original.example ? S.original.canvas : null; if (!img) { toast("Add artwork on the Design step first, or choose a picture here."); return; } usePic(img, L ? L.name : "My artwork"); };
 const picMeshSync = () => { $("picA").value = $("gmA").value; $("picD").value = $("gmD").value; const gb = Math.round(+$("gmA").value || 13); if ([...$("picBase").options].some(o => +o.value === gb)) $("picBase").value = gb; };
