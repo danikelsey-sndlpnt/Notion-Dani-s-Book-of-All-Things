@@ -787,6 +787,7 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
               <p class="hint" style="margin:0">After a scrap test, scan the printed scrap flat on your scanner and load it here. The app measures how far the paint is from the thread crossings and says how many millimeters to move the design in xTool Studio. It also measures the canvas's holes per inch.</p>
               <label class="btn small" style="cursor:pointer">Load a scan of the printed scrap<input type="file" id="xScrap" accept="image/*,application/pdf" hidden></label>
               <div class="status" id="xScrapStatus" hidden></div>
+              <div class="status" id="xNudgeMemo" hidden></div>
             </div>
             <div style="border-top:1px solid var(--line);padding-top:8px;display:grid;gap:6px">
               <span style="font-size:13px;font-weight:700;color:var(--ink-2)">Check the placement from a Studio screenshot</span>
@@ -1122,7 +1123,7 @@ function adjustColor(c) {
 }
 
 /* ---------------- files ---------------- */
-const APP_VERSION = "2026.11.26-f";
+const APP_VERSION = "2026.11.26-g";
 { const v = document.getElementById("appVer2"); if (v) v.textContent = "v" + APP_VERSION; }
 let downloadsCap = null;
 (window.claude && window.claude.use ? window.claude.use("downloads") : Promise.resolve(null)).then(d => { downloadsCap = d; }).catch(() => {});
@@ -4587,6 +4588,13 @@ async function gridDesignPng() {
     toast(`PNG saved: ${wIn.toFixed(2)} × ${hIn.toFixed(2)} in at 600 dpi (${c.width} × ${c.height} pixels). Print it at 100% / its own size.` + (sh.off ? ` ${sh.off} stitches didn't fit and were left out.` : ""), 8000);
   } catch (e) { busy(false); toast("The PNG couldn't be made: " + e.message, 6000); }
 }
+// The M2's "nudge": the move the last scrap test asked for, kept so it can be added in xTool Studio every time.
+function m2Memo() {
+  const el = $("xNudgeMemo"), f = store.get("ccp-m2fix"); if (!el) return;
+  if (!f || (Math.abs(f.x) < 0.1 && Math.abs(f.y) < 0.1)) { el.hidden = !f; if (f) { el.className = "status ok"; el.textContent = "Your M2 correction: none needed (last scrap test was centered)."; } return; }
+  el.hidden = false; el.className = "status";
+  el.textContent = `Your M2 correction (the "nudge" for the M2), from your last scrap test on ${new Date(f.at).toLocaleDateString()}: after you line the design up with the camera, move it ${Math.abs(f.x).toFixed(2)} mm ${f.x >= 0 ? "right" : "left"} and ${Math.abs(f.y).toFixed(2)} mm ${f.y >= 0 ? "down" : "up"} in xTool Studio (add to X and Y). If every print needs about the same move, recalibrate the inkjet module and camera in xTool Studio so you don't have to.`;
+}
 // A screenshot of xTool Studio's camera view with the design placed over the canvas: find the canvas's hole pattern
 // (locally darker spots repeating every stitch) and the design's paint, compare their positions around the stitch
 // repeat, and say how far to move the design. The scale comes from the canvas itself (one stitch = one repeat).
@@ -4738,6 +4746,7 @@ async function checkGridPrint(f, statusId = "gmCheckStatus", applyId = "gmApply"
     }
     // For the xTool M2 (positioned in millimeters in xTool Studio, not with the nudge).
     const mmX = -r.inX * 25.4, mmY = -r.inY * 25.4;
+    if (m2) { store.set("ccp-m2fix", { x: +mmX.toFixed(2), y: +mmY.toFixed(2), at: Date.now() }); m2Memo(); }
     if (Math.abs(r.dx) >= 0.06 || Math.abs(r.dy) >= 0.06) msg += ` On the xTool M2: in xTool Studio move the design ${Math.abs(mmX).toFixed(2)} mm ${mmX >= 0 ? "right" : "left"} and ${Math.abs(mmY).toFixed(2)} mm ${mmY >= 0 ? "down" : "up"} from where you placed it.`;
     msg += ` (Holes measured on this scan: ${r.meshX.toFixed(2)} across, ${r.meshY.toFixed(2)} down` + (Math.abs(r.meshX - gridMesh().a) > 0.08 || Math.abs(r.meshY - gridMesh().d) > 0.08 ? `; your setting is ${gridMesh().a} × ${gridMesh().d}, so check it with the gauge` : "") + ".)";
     setStatus(statusId, msg, Math.abs(r.dx) < 0.06 && Math.abs(r.dy) < 0.06 ? "ok" : "");
@@ -6745,6 +6754,7 @@ $("legendPos").onchange = () => { S.legendPos = $("legendPos").value; store.set(
 $("gmFromScan").onclick = () => { const rm = realMesh(); if (!rm) return; $("gmA").value = rm.across.toFixed(2); $("gmD").value = rm.down.toFixed(2); gridMeshChanged(); };
 $("gmGauge").onclick = meshGaugePdf;
 $("xtoolSvg").onclick = xtoolSvg; $("xPng").onclick = gridDesignPng;
+m2Memo();
 $("xScrap").onchange = e => { const f = e.target.files[0]; e.target.value = ""; if (f) checkGridPrint(f, "xScrapStatus", null, true); }; $("xShot").onchange = e => { const f = e.target.files[0]; e.target.value = ""; if (f) checkShot(f); }; $("gmPng").onclick = gridDesignPng; $("picXtool").onclick = picXtoolSvg;
 $("marginTest").onclick = () => makeMarginTest(false); $("gmMarginTest").onclick = () => makeMarginTest(true);
 $("picFile").onchange = async e => { const f = e.target.files[0]; e.target.value = ""; if (!f) return; busy(true, "Opening the picture…", 0.3); try { const c = await fileToCanvas(f, 300); usePic(c.canvas || c, f.name); } catch (err) { toast(err.message, 5000); } finally { busy(false); } };
