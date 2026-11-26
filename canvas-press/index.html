@@ -771,7 +771,7 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
               <li><b>Export the SVG</b> and import it into xTool Studio. Don't change its size: the file name shows it (e.g. 4.68x4.68in).</li>
               <li><b>Line it up at the center of the design</b> with the camera, so any small error splits to both sides.</li>
               <li><b>Check the far edges with the camera</b> before printing: the outer stitches should sit on crossings. Drifting outward means your canvas has more holes per inch than you entered; inward means fewer.</li>
-              <li><b>Test a small corner on a scrap</b> before a real canvas. Scan the printed scrap and load it in <b>Print without a scan → Check a grid sheet print (scan)</b>: it measures how far the paint is from the crossings and says how many millimeters to move the design in xTool Studio.</li>
+              <li><b>Test a small corner on a scrap</b> before a real canvas. Scan the printed scrap and load it under <b>Check a printed scrap</b> below: it measures how far the paint is from the crossings and says how many millimeters to move the design in xTool Studio.</li>
             </ol>
             <div class="row" style="align-items:end">
               <label class="f">Holes per inch across<input type="number" id="xA" value="13" min="5" max="30" step="0.05"></label>
@@ -781,7 +781,13 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
               <label class="f">Gauge for<select id="xBase"><option value="10">10 mesh</option><option value="12">12 mesh</option><option value="13" selected>13 mesh</option><option value="14">14 mesh</option><option value="16">16 mesh</option><option value="18">18 mesh</option></select></label>
               <button class="btn small" id="xGauge">Mesh gauge (PDF)</button>
             </div>
-            <button class="btn thread" id="xtoolSvg">Export for xTool M2 (SVG)</button>
+            <div class="row"><button class="btn thread" id="xtoolSvg">Export for xTool M2 (SVG)</button><button class="btn small" id="xPng">Or as a PNG (exact size)</button></div>
+            <div style="border-top:1px solid var(--line);padding-top:8px;display:grid;gap:6px">
+              <span style="font-size:13px;font-weight:700;color:var(--ink-2)">Check a printed scrap</span>
+              <p class="hint" style="margin:0">After a scrap test, scan the printed scrap flat on your scanner and load it here. The app measures how far the paint is from the thread crossings and says how many millimeters to move the design in xTool Studio. It also measures the canvas's holes per inch.</p>
+              <label class="btn small" style="cursor:pointer">Load a scan of the printed scrap<input type="file" id="xScrap" accept="image/*,application/pdf" hidden></label>
+              <div class="status" id="xScrapStatus" hidden></div>
+            </div>
             <div style="border-top:1px solid var(--line);padding-top:8px;display:grid;gap:6px">
               <span style="font-size:13px;font-weight:700;color:var(--ink-2)">Check the placement from a Studio screenshot</span>
               <p class="hint" style="margin:0">In xTool Studio, place the design over the canvas in the camera view, zoom in close (threads and holes clearly visible, with part of the design), and take a screenshot (Mac: Command + Shift + 4, drag a box). Load it here: the app finds the canvas threads and your design and says how many millimeters to move it so the stitches sit on the crossings.</p>
@@ -1116,7 +1122,7 @@ function adjustColor(c) {
 }
 
 /* ---------------- files ---------------- */
-const APP_VERSION = "2026.11.26-e";
+const APP_VERSION = "2026.11.26-f";
 { const v = document.getElementById("appVer2"); if (v) v.textContent = "v" + APP_VERSION; }
 let downloadsCap = null;
 (window.claude && window.claude.use ? window.claude.use("downloads") : Promise.resolve(null)).then(d => { downloadsCap = d; }).catch(() => {});
@@ -4714,18 +4720,18 @@ function measurePaintOffset(c, dpi) {
   const side = halves.map(hh => hh[2] > 200 ? wrap(phase(hh) - phase(hx) - 0.5) : null);
   return { dx, dy, inX: dx * px / dpi, inY: dy * py / dpi, meshX: dpi / px, meshY: dpi / py, side, widthIn: (X1 - X0) / dpi };
 }
-async function checkGridPrint(f) {
+async function checkGridPrint(f, statusId = "gmCheckStatus", applyId = "gmApply", m2 = false) {
   busy(true, "Reading the scan…", 0.2); await tick();
   try {
     const { canvas, dpi } = await fileToScanCanvas(f);
     busy(true, "Measuring the paint against the threads…", 0.5); await tick();
     const r = measurePaintOffset(canvas, dpi); busy(false);
-    if (r.error) { setStatus("gmCheckStatus", r.error + " Scan the printed canvas on the grid sheet, the same way as the grid sheet.", "err"); return; }
+    if (r.error) { setStatus(statusId, r.error + " Scan the printed canvas on the grid sheet, the same way as the grid sheet.", "err"); return; }
     const words = (v, a, b) => `${Math.abs(v).toFixed(2)} stitch ${v > 0 ? a : b}`;
     const sx = Math.round(-r.inX * NUDGE), sy = Math.round(-r.inY * NUDGE), sug = { x: S.nudge.x + sx, y: S.nudge.y + sy };
     let msg = `The paint sits ${words(r.dx, "right", "left")} and ${words(r.dy, "low", "high")} of the thread crossings.`;
     if (Math.abs(r.dx) < 0.06 && Math.abs(r.dy) < 0.06) msg += " That's centered: no change needed.";
-    else msg += ` Suggested nudge: ${sug.x}, ${sug.y} (now ${S.nudge.x}, ${S.nudge.y}).`;
+    else if (!m2) msg += ` Suggested nudge: ${sug.x}, ${sug.y} (now ${S.nudge.x}, ${S.nudge.y}).`;
     if (r.side[0] != null && r.side[1] != null && Math.abs(r.side[0] - r.side[1]) > 0.1) {
       const drift = r.side[1] - r.side[0], m = gridMesh().a, better = m * (1 - drift / Math.max(1, r.widthIn * m / 2));
       msg += ` The left and right parts differ (${r.side[0].toFixed(2)} vs ${r.side[1].toFixed(2)} stitch), so the paint drifts across the design: the holes-per-inch across is probably closer to ${better.toFixed(2)} than ${m}. Check it with the mesh gauge.`;
@@ -4734,10 +4740,10 @@ async function checkGridPrint(f) {
     const mmX = -r.inX * 25.4, mmY = -r.inY * 25.4;
     if (Math.abs(r.dx) >= 0.06 || Math.abs(r.dy) >= 0.06) msg += ` On the xTool M2: in xTool Studio move the design ${Math.abs(mmX).toFixed(2)} mm ${mmX >= 0 ? "right" : "left"} and ${Math.abs(mmY).toFixed(2)} mm ${mmY >= 0 ? "down" : "up"} from where you placed it.`;
     msg += ` (Holes measured on this scan: ${r.meshX.toFixed(2)} across, ${r.meshY.toFixed(2)} down` + (Math.abs(r.meshX - gridMesh().a) > 0.08 || Math.abs(r.meshY - gridMesh().d) > 0.08 ? `; your setting is ${gridMesh().a} × ${gridMesh().d}, so check it with the gauge` : "") + ".)";
-    setStatus("gmCheckStatus", msg, Math.abs(r.dx) < 0.06 && Math.abs(r.dy) < 0.06 ? "ok" : "");
-    $("gmApply").hidden = sx === 0 && sy === 0;
-    $("gmApply").onclick = () => { S.nudge = sug; nudgeOut(); previewDirty(); $("gmApply").hidden = true; toast(`Nudge set to ${sug.x}, ${sug.y}. Make "Design for the grid sheet" again and print it.`, 6000); };
-  } catch (e) { busy(false); setStatus("gmCheckStatus", "That scan couldn't be read: " + e.message, "err"); }
+    setStatus(statusId, msg, Math.abs(r.dx) < 0.06 && Math.abs(r.dy) < 0.06 ? "ok" : "");
+    (applyId ? $(applyId) : { set hidden(v) {}, set onclick(v) {} }).hidden = sx === 0 && sy === 0;
+    (applyId ? $(applyId) : { set hidden(v) {}, set onclick(v) {} }).onclick = () => { S.nudge = sug; nudgeOut(); previewDirty(); (applyId ? $(applyId) : { set hidden(v) {}, set onclick(v) {} }).hidden = true; toast(`Nudge set to ${sug.x}, ${sug.y}. Make "Design for the grid sheet" again and print it.`, 6000); };
+  } catch (e) { busy(false); setStatus(statusId, "That scan couldn't be read: " + e.message, "err"); }
 }
 async function makeGridPrintPdf() {
   if (!S.design) { toast("Make a design first."); return; }
@@ -6738,7 +6744,8 @@ $("legendPos").onchange = () => { S.legendPos = $("legendPos").value; store.set(
 { const gs = store.get("ccp-gridshow"); if (gs && [...$("gmShowDesign").options].some(o => o.value === gs)) $("gmShowDesign").value = gs; }
 $("gmFromScan").onclick = () => { const rm = realMesh(); if (!rm) return; $("gmA").value = rm.across.toFixed(2); $("gmD").value = rm.down.toFixed(2); gridMeshChanged(); };
 $("gmGauge").onclick = meshGaugePdf;
-$("xtoolSvg").onclick = xtoolSvg; $("xShot").onchange = e => { const f = e.target.files[0]; e.target.value = ""; if (f) checkShot(f); }; $("gmPng").onclick = gridDesignPng; $("picXtool").onclick = picXtoolSvg;
+$("xtoolSvg").onclick = xtoolSvg; $("xPng").onclick = gridDesignPng;
+$("xScrap").onchange = e => { const f = e.target.files[0]; e.target.value = ""; if (f) checkGridPrint(f, "xScrapStatus", null, true); }; $("xShot").onchange = e => { const f = e.target.files[0]; e.target.value = ""; if (f) checkShot(f); }; $("gmPng").onclick = gridDesignPng; $("picXtool").onclick = picXtoolSvg;
 $("marginTest").onclick = () => makeMarginTest(false); $("gmMarginTest").onclick = () => makeMarginTest(true);
 $("picFile").onchange = async e => { const f = e.target.files[0]; e.target.value = ""; if (!f) return; busy(true, "Opening the picture…", 0.3); try { const c = await fileToCanvas(f, 300); usePic(c.canvas || c, f.name); } catch (err) { toast(err.message, 5000); } finally { busy(false); } };
 $("picUseArt").onclick = () => { const L = S.layers.find(l => l.visible); const img = L ? L.img : S.original && S.original.canvas && !S.original.example ? S.original.canvas : null; if (!img) { toast("Add artwork on the Design step first, or choose a picture here."); return; } usePic(img, L ? L.name : "My artwork"); };
