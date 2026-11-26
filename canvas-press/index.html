@@ -762,8 +762,28 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
             <p class="hint" style="flex:1 1 200px"><b>Check before you print the design.</b> Prints small light-blue grid marks in the canvas border, about half an inch outside the design, where they'll be hidden when it's finished. Scan it, load the scan under <b>Check my print</b>, tap <b>Use this nudge</b>, then print the design. No canvas wasted.</p>
           </div>
           <button class="btn primary wide" id="makePdf">Save print file (PDF)</button>
-          <button class="btn thread small" id="xtoolSvg">Export for xTool M2 (SVG)</button>
-          <p class="hint">For the xTool M2 inkjet module: just the design, at its exact size (in mm), on a clear background, drawn on your canvas's holes per inch (from the grid sheet section) with your print style and initials. Import it into xTool Studio, check the size is unchanged, lay it over the canvas with the camera, and print.</p>
+          <div class="group" style="gap:8px;margin:8px 0;padding:12px;border:1px solid var(--line);border-radius:12px">
+            <span style="font-size:13px;font-weight:700;color:var(--ink-2)">Printing on the xTool M2 (inkjet module)</span>
+            <ol class="hint" style="margin:0;padding-left:18px;display:grid;gap:4px">
+              <li><b>Measure the canvas once per roll or brand</b> with the mesh gauge (print it on plain paper at 100%). The camera places the design, but only these numbers make the stitch spacing match your canvas.</li>
+              <li><b>Enter both numbers</b> below: across, and down (turn the canvas a quarter turn on the gauge for down).</li>
+              <li><b>Keep the canvas turned the same way</b> on the M2 as when you measured (across and down swap if you turn it).</li>
+              <li><b>Export the SVG</b> and import it into xTool Studio. Don't change its size: the file name shows it (e.g. 4.68x4.68in).</li>
+              <li><b>Line it up at the center of the design</b> with the camera, so any small error splits to both sides.</li>
+              <li><b>Check the far edges with the camera</b> before printing: the outer stitches should sit on crossings. Drifting outward means your canvas has more holes per inch than you entered; inward means fewer.</li>
+              <li><b>Test a small corner on a scrap</b> before a real canvas.</li>
+            </ol>
+            <div class="row" style="align-items:end">
+              <label class="f">Holes per inch across<input type="number" id="xA" value="13" min="5" max="30" step="0.05"></label>
+              <label class="f">Holes per inch down<input type="number" id="xD" value="13" min="5" max="30" step="0.05"></label>
+            </div>
+            <div class="row" style="align-items:end">
+              <label class="f">Gauge for<select id="xBase"><option value="10">10 mesh</option><option value="12">12 mesh</option><option value="13" selected>13 mesh</option><option value="14">14 mesh</option><option value="16">16 mesh</option><option value="18">18 mesh</option></select></label>
+              <button class="btn small" id="xGauge">Mesh gauge (PDF)</button>
+            </div>
+            <button class="btn thread" id="xtoolSvg">Export for xTool M2 (SVG)</button>
+            <p class="hint" style="margin:0">Just the design at its exact size (in mm) on a clear background, with your print style (crosses) and initials.</p>
+          </div>
           <button class="btn small" id="saveKey2">Save the color key to print (PDF)</button>
           <div class="status" id="fitStatus"></div>
           <div class="row"><button class="btn small" id="fitExact">Fit to exact size on this canvas</button><span class="hint" style="flex:1 1 200px">Changes the stitch count to this canvas's measured threads so the design prints at exactly its planned size (or your finish's size). Undo puts it back.</span></div>
@@ -1087,7 +1107,7 @@ function adjustColor(c) {
 }
 
 /* ---------------- files ---------------- */
-const APP_VERSION = "2026.11.26-a";
+const APP_VERSION = "2026.11.26-b";
 { const v = document.getElementById("appVer2"); if (v) v.textContent = "v" + APP_VERSION; }
 let downloadsCap = null;
 (window.claude && window.claude.use ? window.claude.use("downloads") : Promise.resolve(null)).then(d => { downloadsCap = d; }).catch(() => {});
@@ -6619,10 +6639,15 @@ $("xtoolSvg").onclick = xtoolSvg; $("picXtool").onclick = picXtoolSvg;
 $("marginTest").onclick = () => makeMarginTest(false); $("gmMarginTest").onclick = () => makeMarginTest(true);
 $("picFile").onchange = async e => { const f = e.target.files[0]; e.target.value = ""; if (!f) return; busy(true, "Opening the picture…", 0.3); try { const c = await fileToCanvas(f, 300); usePic(c.canvas || c, f.name); } catch (err) { toast(err.message, 5000); } finally { busy(false); } };
 $("picUseArt").onclick = () => { const L = S.layers.find(l => l.visible); const img = L ? L.img : S.original && S.original.canvas && !S.original.example ? S.original.canvas : null; if (!img) { toast("Add artwork on the Design step first, or choose a picture here."); return; } usePic(img, L ? L.name : "My artwork"); };
+const xMeshSync = () => { $("xA").value = $("gmA").value; $("xD").value = $("gmD").value; const gb = Math.round(+$("gmA").value || 13); if ([...$("xBase").options].some(o => +o.value === gb)) $("xBase").value = gb; };
+xMeshSync(); $("gmA").addEventListener("input", xMeshSync); $("gmD").addEventListener("input", xMeshSync);
+$("xA").oninput = () => { $("gmA").value = $("xA").value; gridMeshChanged(); if (typeof picMeshSync === "function") picMeshSync(); };
+$("xD").oninput = () => { $("gmD").value = $("xD").value; gridMeshChanged(); if (typeof picMeshSync === "function") picMeshSync(); };
+$("xGauge").onclick = () => { $("gmBase").value = $("xBase").value; meshGaugePdf(); };
 const picMeshSync = () => { $("picA").value = $("gmA").value; $("picD").value = $("gmD").value; const gb = Math.round(+$("gmA").value || 13); if ([...$("picBase").options].some(o => +o.value === gb)) $("picBase").value = gb; };
 picMeshSync();
-$("picA").oninput = () => { $("gmA").value = $("picA").value; gridMeshChanged(); picPageKey = ""; picNote(); };
-$("picD").oninput = () => { $("gmD").value = $("picD").value; gridMeshChanged(); picPageKey = ""; picNote(); };
+$("picA").oninput = () => { $("gmA").value = $("picA").value; gridMeshChanged(); xMeshSync(); picPageKey = ""; picNote(); };
+$("picD").oninput = () => { $("gmD").value = $("picD").value; gridMeshChanged(); xMeshSync(); picPageKey = ""; picNote(); };
 $("gmA").addEventListener("input", picMeshSync); $("gmD").addEventListener("input", picMeshSync);
 $("picGauge").onclick = () => { $("gmBase").value = $("picBase").value; meshGaugePdf(); };
 S.editBg = store.get("ccp-editbg") || null; $("editBg").value = S.editBg || ""; if (S.editBg && S.design) { meshDirty(); renderView(); }

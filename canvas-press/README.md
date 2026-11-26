@@ -124,3 +124,4 @@ Design step → **Pattern with symbols (PDF)**: a multi-page pattern. Cover: nam
 
 ## xTool M2 (inkjet module) export (2026.11.26-a)
 **Export for xTool M2 (SVG)** on the Print step: the design only, at exact size in millimeters on a clear background, drawn on the canvas holes per inch from the grid sheet section, with the current print style (crosses), initials and legend. **Picture for xTool M2 (SVG)** in Print a picture: the picture at its exact (snapped) size with initials. Import into xTool Studio, keep the size, position over the canvas with the camera, print.
+- 2026.11.26-b: xTool M2 box on the Print step: the steps (measure once per roll, enter across/down, keep the canvas the same way round, keep the SVG size, line up at the center, check the far edges, test on a scrap), holes-per-inch boxes (kept in step with the grid sheet and picture sections) and the mesh gauge, right above Export for xTool M2.
