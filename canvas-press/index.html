@@ -782,6 +782,13 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
               <button class="btn small" id="xGauge">Mesh gauge (PDF)</button>
             </div>
             <button class="btn thread" id="xtoolSvg">Export for xTool M2 (SVG)</button>
+            <div style="border-top:1px solid var(--line);padding-top:8px;display:grid;gap:6px">
+              <span style="font-size:13px;font-weight:700;color:var(--ink-2)">Check the placement from a Studio screenshot</span>
+              <p class="hint" style="margin:0">In xTool Studio, place the design over the canvas in the camera view, zoom in close (threads and holes clearly visible, with part of the design), and take a screenshot (Mac: Command + Shift + 4, drag a box). Load it here: the app finds the canvas threads and your design and says how many millimeters to move it so the stitches sit on the crossings.</p>
+              <label class="btn small" style="cursor:pointer">Load a Studio screenshot<input type="file" id="xShot" accept="image/*" hidden></label>
+              <div class="status" id="xShotStatus" hidden></div>
+              <canvas id="xShotView" style="width:100%;border-radius:10px;border:1px solid var(--line);display:none"></canvas>
+            </div>
             <p class="hint" style="margin:0">Just the design at its exact size (in mm) on a clear background, with your print style (crosses) and initials.</p>
           </div>
           <button class="btn small" id="saveKey2">Save the color key to print (PDF)</button>
@@ -1109,7 +1116,7 @@ function adjustColor(c) {
 }
 
 /* ---------------- files ---------------- */
-const APP_VERSION = "2026.11.26-d";
+const APP_VERSION = "2026.11.26-e";
 { const v = document.getElementById("appVer2"); if (v) v.textContent = "v" + APP_VERSION; }
 let downloadsCap = null;
 (window.claude && window.claude.use ? window.claude.use("downloads") : Promise.resolve(null)).then(d => { downloadsCap = d; }).catch(() => {});
@@ -4574,6 +4581,58 @@ async function gridDesignPng() {
     toast(`PNG saved: ${wIn.toFixed(2)} × ${hIn.toFixed(2)} in at 600 dpi (${c.width} × ${c.height} pixels). Print it at 100% / its own size.` + (sh.off ? ` ${sh.off} stitches didn't fit and were left out.` : ""), 8000);
   } catch (e) { busy(false); toast("The PNG couldn't be made: " + e.message, 6000); }
 }
+// A screenshot of xTool Studio's camera view with the design placed over the canvas: find the canvas's hole pattern
+// (locally darker spots repeating every stitch) and the design's paint, compare their positions around the stitch
+// repeat, and say how far to move the design. The scale comes from the canvas itself (one stitch = one repeat).
+function measureShot(c0) {
+  let c = c0; const big = Math.max(c0.width, c0.height); if (big > 2400) { const k = 2400 / big; c = document.createElement("canvas"); c.width = Math.round(c0.width * k); c.height = Math.round(c0.height * k); c.getContext("2d").drawImage(c0, 0, 0, c.width, c.height); }
+  const w = c.width, h = c.height, d = c.getContext("2d", { willReadFrequently: true }).getImageData(0, 0, w, h).data, N = w * h;
+  const g = new Float32Array(N), paint = new Uint8Array(N);
+  for (let i = 0; i < N; i++) { const r = d[i * 4], gg = d[i * 4 + 1], b = d[i * 4 + 2], L = 0.3 * r + 0.59 * gg + 0.11 * b; g[i] = L; const mx = Math.max(r, gg, b), mn = Math.min(r, gg, b); if (mx - mn > 45 && L > 35 && L < 235) paint[i] = 1; }
+  const p0 = estimatePitch(g, w, h, 4, 90); if (!p0) return { error: "I couldn't find the canvas threads. Zoom in closer in the camera view so the holes are clearly visible, and screenshot again." };
+  const mean = filter2d(g, w, h, Math.max(2, Math.round(p0)), 0), hole = new Uint8Array(N); let nh = 0, np = 0;
+  for (let i = 0; i < N; i++) { if (paint[i]) { np++; continue; } if (g[i] < mean[i] - 12) { hole[i] = 1; nh++; } }
+  if (nh < 200) return { error: "The canvas holes aren't clear enough. Zoom in closer and screenshot again." };
+  if (np < 300) return { error: "I don't see your design in the screenshot. Place the design over the canvas in xTool Studio first, then screenshot the camera view with part of the design in it." };
+  const prof = (mask, axis) => { const n = axis ? h : w, a = new Float64Array(n); for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (mask[y * w + x]) a[axis ? y : x]++; return a; };
+  const pitch = (pr, lo, hi) => { const n = pr.length; let mu = 0; for (const v of pr) mu += v; mu /= n; let best = null; for (let P = lo; P <= hi; P += 0.02) { let re = 0, im = 0; for (let i = 0; i < n; i++) { const a = 2 * Math.PI * i / P, v = pr[i] - mu; re += v * Math.cos(a); im += v * Math.sin(a); } const m = re * re + im * im; if (!best || m > best[1]) best = [P, m]; } return best[0]; };
+  const px = pitch(prof(hole, 0), p0 * 0.85, p0 * 1.18), py = pitch(prof(hole, 1), p0 * 0.85, p0 * 1.18);
+  const acc = (mask, P, axis) => { let re = 0, im = 0; for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (mask[y * w + x]) { const a = 2 * Math.PI * (axis ? y : x) / P; re += Math.cos(a); im += Math.sin(a); } return Math.atan2(im, re) / (2 * Math.PI); };
+  const wrap = f => ((f + 0.5) % 1 + 1) % 1 - 0.5;
+  const hx = acc(hole, px, 0), hy = acc(hole, py, 1), dx = wrap(acc(paint, px, 0) - hx - 0.5), dy = wrap(acc(paint, py, 1) - hy - 0.5);
+  // Drift: the offset at the start and the end of the design (thirds along each direction). If it changes, the design's
+  // stitch spacing differs from the canvas's: spacing ratio = 1 + change per stitch.
+  const drift = (axis) => {
+    let lo = 1e9, hi = -1e9; for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (paint[y * w + x]) { const t = axis ? y : x; if (t < lo) lo = t; if (t > hi) hi = t; }
+    const span = hi - lo, P = axis ? py : px, H0 = axis ? hy : hx; if (span < P * 4) return null;
+    const part = (a, b) => { let re = 0, im = 0, n = 0; for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { if (!paint[y * w + x]) continue; const t = axis ? y : x; if (t < a || t > b) continue; const an = 2 * Math.PI * t / P; re += Math.cos(an); im += Math.sin(an); n++; } return n > 50 ? wrap(Math.atan2(im, re) / (2 * Math.PI) - H0 - 0.5) : null; };
+    const a = part(lo, lo + span / 3), b = part(hi - span / 3, hi); if (a == null || b == null) return null;
+    return wrap(b - a) / ((span * 2 / 3) / P);
+  };
+  return { c, w, h, px, py, hx, hy, dx, dy, sx: drift(0), sy: drift(1) };
+}
+async function checkShot(f) {
+  busy(true, "Reading the screenshot…", 0.3); await tick();
+  try {
+    const img = await loadImageFile(f); const r = measureShot(img); busy(false);
+    if (r.error) { setStatus("xShotStatus", r.error, "err"); $("xShotView").style.display = "none"; return; }
+    const m = gridMesh(), mmX = -r.dx * 25.4 / m.a, mmY = -r.dy * 25.4 / m.d;
+    const dir = (v, a, b) => `${Math.abs(v).toFixed(2)} stitch ${v > 0 ? a : b}`;
+    let msg = `Your design sits ${dir(r.dx, "right", "left")} and ${dir(r.dy, "low", "high")} of the canvas crossings.`;
+    if (Math.abs(r.dx) < 0.06 && Math.abs(r.dy) < 0.06) msg += " That's centered on the crossings: ready to print.";
+    else msg += ` In xTool Studio move the design ${Math.abs(mmX).toFixed(2)} mm ${mmX >= 0 ? "right" : "left"} and ${Math.abs(mmY).toFixed(2)} mm ${mmY >= 0 ? "down" : "up"} (add that to its X and Y), then check again.`;
+    // Spacing: if the design's stitches repeat at a different spacing than the canvas, the mesh number is off.
+    msg += " Screenshot the middle of the design for the placement; to check the holes per inch, print a scrap and use Check a grid sheet print (scan).";
+    setStatus("xShotStatus", msg, Math.abs(r.dx) < 0.06 && Math.abs(r.dy) < 0.06 ? "ok" : "");
+    // Show what was found: the canvas crossings as small green rings over the screenshot.
+    const v = $("xShotView"), cssW = v.clientWidth || 360, k = Math.min(1, 1400 / r.w); v.style.display = "block";
+    v.width = Math.round(r.w * k); v.height = Math.round(r.h * k); v.style.height = Math.round((cssW / v.width) * v.height) + "px";
+    const x = v.getContext("2d"); x.drawImage(r.c, 0, 0, v.width, v.height);
+    x.strokeStyle = "rgba(0,200,90,0.9)"; x.lineWidth = Math.max(1, 1.2 * k);
+    const ox = (r.hx + 0.5) * r.px, oy = (r.hy + 0.5) * r.py;
+    for (let yy = ((oy % r.py) + r.py) % r.py; yy < r.h; yy += r.py) for (let xx = ((ox % r.px) + r.px) % r.px; xx < r.w; xx += r.px) { x.beginPath(); x.arc(xx * k, yy * k, Math.max(2, r.px * 0.14 * k), 0, 7); x.stroke(); }
+  } catch (e) { busy(false); setStatus("xShotStatus", "That screenshot couldn't be read: " + e.message, "err"); }
+}
 async function xtoolSvg() {
   if (!S.design) { toast("Make a design first."); return; }
   const rec = shapeRecorder(); let r;
@@ -6679,7 +6738,7 @@ $("legendPos").onchange = () => { S.legendPos = $("legendPos").value; store.set(
 { const gs = store.get("ccp-gridshow"); if (gs && [...$("gmShowDesign").options].some(o => o.value === gs)) $("gmShowDesign").value = gs; }
 $("gmFromScan").onclick = () => { const rm = realMesh(); if (!rm) return; $("gmA").value = rm.across.toFixed(2); $("gmD").value = rm.down.toFixed(2); gridMeshChanged(); };
 $("gmGauge").onclick = meshGaugePdf;
-$("xtoolSvg").onclick = xtoolSvg; $("gmPng").onclick = gridDesignPng; $("picXtool").onclick = picXtoolSvg;
+$("xtoolSvg").onclick = xtoolSvg; $("xShot").onchange = e => { const f = e.target.files[0]; e.target.value = ""; if (f) checkShot(f); }; $("gmPng").onclick = gridDesignPng; $("picXtool").onclick = picXtoolSvg;
 $("marginTest").onclick = () => makeMarginTest(false); $("gmMarginTest").onclick = () => makeMarginTest(true);
 $("picFile").onchange = async e => { const f = e.target.files[0]; e.target.value = ""; if (!f) return; busy(true, "Opening the picture…", 0.3); try { const c = await fileToCanvas(f, 300); usePic(c.canvas || c, f.name); } catch (err) { toast(err.message, 5000); } finally { busy(false); } };
 $("picUseArt").onclick = () => { const L = S.layers.find(l => l.visible); const img = L ? L.img : S.original && S.original.canvas && !S.original.example ? S.original.canvas : null; if (!img) { toast("Add artwork on the Design step first, or choose a picture here."); return; } usePic(img, L ? L.name : "My artwork"); };
