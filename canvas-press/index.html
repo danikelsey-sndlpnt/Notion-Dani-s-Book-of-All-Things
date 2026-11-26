@@ -790,6 +790,22 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
               <div class="status" id="xNudgeMemo" hidden></div>
             </div>
             <div style="border-top:1px solid var(--line);padding-top:8px;display:grid;gap:6px">
+              <span style="font-size:13px;font-weight:700;color:var(--ink-2)">Exact numbers for xTool Studio</span>
+              <div class="status ok" id="xSizeOut">Export the design to see its exact width and height here.</div>
+              <p class="hint" style="margin:0">After lining up with the camera, type the X and Y that xTool Studio shows for the design now. The app adds your correction (from the last scrap test or screenshot check) and any whole-stitch moves, and gives the exact X and Y to type in.</p>
+              <div class="row">
+                <label class="f">X in Studio now <small>mm</small><input type="number" id="xCurX" step="0.01" placeholder="e.g. 120.50"></label>
+                <label class="f">Y in Studio now <small>mm</small><input type="number" id="xCurY" step="0.01" placeholder="e.g. 85.25"></label>
+              </div>
+              <div class="row" style="align-items:center;gap:6px">
+                <span class="hint">Also move by whole stitches:</span>
+                <button class="btn small" id="xStL" aria-label="One stitch left">←</button><button class="btn small" id="xStU" aria-label="One stitch up">↑</button><button class="btn small" id="xStD" aria-label="One stitch down">↓</button><button class="btn small" id="xStR" aria-label="One stitch right">→</button>
+                <span class="hint" id="xStOut"></span>
+              </div>
+              <label class="tog"><input type="checkbox" id="xUseFix" checked> Include my correction</label>
+              <div class="status" id="xTypeOut" hidden></div>
+            </div>
+            <div style="border-top:1px solid var(--line);padding-top:8px;display:grid;gap:6px">
               <span style="font-size:13px;font-weight:700;color:var(--ink-2)">Check the placement from a Studio screenshot</span>
               <p class="hint" style="margin:0">In xTool Studio, place the design over the canvas in the camera view, zoom in close (threads and holes clearly visible, with part of the design), and take a screenshot (Mac: Command + Shift + 4, drag a box). Load it here: the app finds the canvas threads and your design and says how many millimeters to move it so the stitches sit on the crossings.</p>
               <label class="btn small" style="cursor:pointer">Load a Studio screenshot<input type="file" id="xShot" accept="image/*" hidden></label>
@@ -1123,7 +1139,7 @@ function adjustColor(c) {
 }
 
 /* ---------------- files ---------------- */
-const APP_VERSION = "2026.11.26-g";
+const APP_VERSION = "2026.11.26-h";
 { const v = document.getElementById("appVer2"); if (v) v.textContent = "v" + APP_VERSION; }
 let downloadsCap = null;
 (window.claude && window.claude.use ? window.claude.use("downloads") : Promise.resolve(null)).then(d => { downloadsCap = d; }).catch(() => {});
@@ -4583,10 +4599,28 @@ async function gridDesignPng() {
     const x = c.getContext("2d");
     for (const [col, polys] of sh.byColor) { x.fillStyle = col; x.beginPath(); for (const p of polys) { x.moveTo((p[0][0] - sh.x0) * DPI, (p[0][1] - sh.y0) * DPI); for (let k = 1; k < p.length; k++) x.lineTo((p[k][0] - sh.x0) * DPI, (p[k][1] - sh.y0) * DPI); x.closePath(); } x.fill(); }
     const blob = await pngWithDpi(c, DPI); busy(false);
+    store.set("ccp-m2size", { w: wIn * 25.4, h: hIn * 25.4, at: Date.now() }); m2Calc();
     const name = (S.designName || "design").replace(/\.[a-z0-9]+$/i, "").replace(/[^a-z0-9]+/gi, "-").toLowerCase();
     await saveFile(`${name}-${wIn.toFixed(2)}x${hIn.toFixed(2)}in-${sh.m.a}x${sh.m.d}-600dpi-v${APP_VERSION}.png`, blob);
     toast(`PNG saved: ${wIn.toFixed(2)} × ${hIn.toFixed(2)} in at 600 dpi (${c.width} × ${c.height} pixels). Print it at 100% / its own size.` + (sh.off ? ` ${sh.off} stitches didn't fit and were left out.` : ""), 8000);
   } catch (e) { busy(false); toast("The PNG couldn't be made: " + e.message, 6000); }
+}
+// Exact numbers to type in xTool Studio: size from the last export, and the new X/Y = what Studio shows now + the
+// latest correction (scrap test or screenshot check, whichever is newer) + whole-stitch moves.
+const m2Steps = { x: 0, y: 0 };
+function m2Calc() {
+  const so = $("xSizeOut"); if (!so) return;
+  const sz = store.get("ccp-m2size");
+  so.textContent = sz ? `Size to check in xTool Studio: width ${sz.w.toFixed(2)} mm, height ${sz.h.toFixed(2)} mm (keep the lock on, don't change it).` : "Export the design to see its exact width and height here.";
+  const m = gridMesh(), stX = 25.4 / m.a, stY = 25.4 / m.d;
+  $("xStOut").textContent = m2Steps.x || m2Steps.y ? `${m2Steps.x} across, ${m2Steps.y} down (one stitch = ${stX.toFixed(2)} × ${stY.toFixed(2)} mm)` : `one stitch = ${stX.toFixed(2)} mm across, ${stY.toFixed(2)} mm down`;
+  const a = store.get("ccp-m2fix"), b = store.get("ccp-m2shot"), fix = [a, b].filter(Boolean).sort((p, q) => q.at - p.at)[0];
+  const cx = parseFloat($("xCurX").value), cy = parseFloat($("xCurY").value), out = $("xTypeOut");
+  if (isNaN(cx) || isNaN(cy)) { out.hidden = true; return; }
+  const use = $("xUseFix").checked && fix, fx = use ? fix.x : 0, fy = use ? fix.y : 0;
+  const nx = cx + fx + m2Steps.x * stX, ny = cy + fy + m2Steps.y * stY;
+  out.hidden = false; out.className = "status ok";
+  out.textContent = `Type in xTool Studio:  X = ${nx.toFixed(2)} mm,  Y = ${ny.toFixed(2)} mm.` + (use ? ` (Includes your correction of ${fx >= 0 ? "+" : ""}${fx.toFixed(2)} mm X, ${fy >= 0 ? "+" : ""}${fy.toFixed(2)} mm Y from your ${fix === b ? "screenshot check" : "scrap test"}.)` : "") + " This assumes Studio's X grows to the right and Y grows downward (the usual setup).";
 }
 // The M2's "nudge": the move the last scrap test asked for, kept so it can be added in xTool Studio every time.
 function m2Memo() {
@@ -4634,7 +4668,8 @@ async function checkShot(f) {
     const dir = (v, a, b) => `${Math.abs(v).toFixed(2)} stitch ${v > 0 ? a : b}`;
     let msg = `Your design sits ${dir(r.dx, "right", "left")} and ${dir(r.dy, "low", "high")} of the canvas crossings.`;
     if (Math.abs(r.dx) < 0.06 && Math.abs(r.dy) < 0.06) msg += " That's centered on the crossings: ready to print.";
-    else msg += ` In xTool Studio move the design ${Math.abs(mmX).toFixed(2)} mm ${mmX >= 0 ? "right" : "left"} and ${Math.abs(mmY).toFixed(2)} mm ${mmY >= 0 ? "down" : "up"} (add that to its X and Y), then check again.`;
+    else msg += ` In xTool Studio move the design ${Math.abs(mmX).toFixed(2)} mm ${mmX >= 0 ? "right" : "left"} and ${Math.abs(mmY).toFixed(2)} mm ${mmY >= 0 ? "down" : "up"} (add that to its X and Y), then check again. The exact X and Y are worked out below under Exact numbers.`;
+    store.set("ccp-m2shot", { x: +mmX.toFixed(2), y: +mmY.toFixed(2), at: Date.now() }); m2Calc();
     // Spacing: if the design's stitches repeat at a different spacing than the canvas, the mesh number is off.
     msg += " Screenshot the middle of the design for the placement; to check the holes per inch, print a scrap and use Check a grid sheet print (scan).";
     setStatus("xShotStatus", msg, Math.abs(r.dx) < 0.06 && Math.abs(r.dy) < 0.06 ? "ok" : "");
@@ -4662,6 +4697,7 @@ async function xtoolSvg() {
   const m = gridMesh(), pad = 0.5 / Math.min(m.a, m.d); x0 -= pad; y0 -= pad; x1 += pad; y1 += pad;
   const svg = svgFromPolys(rec.out, x0, y0, x1 - x0, y1 - y0);
   const name = (S.designName || "design").replace(/\.[a-z0-9]+$/i, "").replace(/[^a-z0-9]+/gi, "-").toLowerCase();
+  store.set("ccp-m2size", { w: (x1 - x0) * 25.4, h: (y1 - y0) * 25.4, at: Date.now() }); m2Calc();
   await saveFile(`${name}-xtool-${(x1 - x0).toFixed(2)}x${(y1 - y0).toFixed(2)}in-${m.a}x${m.d}-v${APP_VERSION}.svg`, new Blob([svg], { type: "image/svg+xml" }));
   toast(`Saved for xTool: ${((x1 - x0) * 25.4).toFixed(1)} × ${((y1 - y0) * 25.4).toFixed(1)} mm (${(x1 - x0).toFixed(2)} × ${(y1 - y0).toFixed(2)} in) on a ${m.a} × ${m.d} canvas. In xTool Studio keep that exact size.`, 8000);
 }
@@ -4746,7 +4782,7 @@ async function checkGridPrint(f, statusId = "gmCheckStatus", applyId = "gmApply"
     }
     // For the xTool M2 (positioned in millimeters in xTool Studio, not with the nudge).
     const mmX = -r.inX * 25.4, mmY = -r.inY * 25.4;
-    if (m2) { store.set("ccp-m2fix", { x: +mmX.toFixed(2), y: +mmY.toFixed(2), at: Date.now() }); m2Memo(); }
+    if (m2) { store.set("ccp-m2fix", { x: +mmX.toFixed(2), y: +mmY.toFixed(2), at: Date.now() }); m2Memo(); m2Calc(); }
     if (Math.abs(r.dx) >= 0.06 || Math.abs(r.dy) >= 0.06) msg += ` On the xTool M2: in xTool Studio move the design ${Math.abs(mmX).toFixed(2)} mm ${mmX >= 0 ? "right" : "left"} and ${Math.abs(mmY).toFixed(2)} mm ${mmY >= 0 ? "down" : "up"} from where you placed it.`;
     msg += ` (Holes measured on this scan: ${r.meshX.toFixed(2)} across, ${r.meshY.toFixed(2)} down` + (Math.abs(r.meshX - gridMesh().a) > 0.08 || Math.abs(r.meshY - gridMesh().d) > 0.08 ? `; your setting is ${gridMesh().a} × ${gridMesh().d}, so check it with the gauge` : "") + ".)";
     setStatus(statusId, msg, Math.abs(r.dx) < 0.06 && Math.abs(r.dy) < 0.06 ? "ok" : "");
@@ -6754,7 +6790,9 @@ $("legendPos").onchange = () => { S.legendPos = $("legendPos").value; store.set(
 $("gmFromScan").onclick = () => { const rm = realMesh(); if (!rm) return; $("gmA").value = rm.across.toFixed(2); $("gmD").value = rm.down.toFixed(2); gridMeshChanged(); };
 $("gmGauge").onclick = meshGaugePdf;
 $("xtoolSvg").onclick = xtoolSvg; $("xPng").onclick = gridDesignPng;
-m2Memo();
+m2Memo(); m2Calc();
+$("xCurX").oninput = $("xCurY").oninput = $("xUseFix").onchange = m2Calc;
+[["xStL", -1, 0], ["xStR", 1, 0], ["xStU", 0, -1], ["xStD", 0, 1]].forEach(([id, dx, dy]) => $(id).onclick = () => { m2Steps.x += dx; m2Steps.y += dy; m2Calc(); });
 $("xScrap").onchange = e => { const f = e.target.files[0]; e.target.value = ""; if (f) checkGridPrint(f, "xScrapStatus", null, true); }; $("xShot").onchange = e => { const f = e.target.files[0]; e.target.value = ""; if (f) checkShot(f); }; $("gmPng").onclick = gridDesignPng; $("picXtool").onclick = picXtoolSvg;
 $("marginTest").onclick = () => makeMarginTest(false); $("gmMarginTest").onclick = () => makeMarginTest(true);
 $("picFile").onchange = async e => { const f = e.target.files[0]; e.target.value = ""; if (!f) return; busy(true, "Opening the picture…", 0.3); try { const c = await fileToCanvas(f, 300); usePic(c.canvas || c, f.name); } catch (err) { toast(err.message, 5000); } finally { busy(false); } };
