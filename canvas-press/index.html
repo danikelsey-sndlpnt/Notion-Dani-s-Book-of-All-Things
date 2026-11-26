@@ -771,7 +771,7 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
               <li><b>Export the SVG</b> and import it into xTool Studio. Don't change its size: the file name shows it (e.g. 4.68x4.68in).</li>
               <li><b>Line it up at the center of the design</b> with the camera, so any small error splits to both sides.</li>
               <li><b>Check the far edges with the camera</b> before printing: the outer stitches should sit on crossings. Drifting outward means your canvas has more holes per inch than you entered; inward means fewer.</li>
-              <li><b>Test a small corner on a scrap</b> before a real canvas.</li>
+              <li><b>Test a small corner on a scrap</b> before a real canvas. Scan the printed scrap and load it in <b>Print without a scan → Check a grid sheet print (scan)</b>: it measures how far the paint is from the crossings and says how many millimeters to move the design in xTool Studio.</li>
             </ol>
             <div class="row" style="align-items:end">
               <label class="f">Holes per inch across<input type="number" id="xA" value="13" min="5" max="30" step="0.05"></label>
@@ -939,7 +939,7 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
           <button class="btn small" id="gmPng">Design for the grid sheet (PNG)</button>
           <p class="hint">The PNG is just the design (crosses, initials, legend) at its exact size on a clear background, 600 dots per inch, with the size saved in the file. Use it in other printing apps; set it to print at 100% / its own size.</p>
           <div class="status" id="gmStatus" hidden></div>
-          <p class="hint"><b>5. Still off? Let the app measure it.</b> Scan the printed canvas the same way, still taped to the grid sheet, and pick the scan here. The app finds the holes and your paint, measures how far the paint sits from the thread crossings, and sets the nudge for you.</p>
+          <p class="hint"><b>5. Still off? Let the app measure it.</b> Also works for xTool M2 scrap tests (it tells you how many millimeters to move the design in xTool Studio). Scan the printed canvas the same way, still taped to the grid sheet, and pick the scan here. The app finds the holes and your paint, measures how far the paint sits from the thread crossings, and sets the nudge for you.</p>
           <label class="btn small" style="cursor:pointer">Check a grid sheet print (scan)<input type="file" id="gmCheck" accept="image/*,application/pdf" hidden></label>
           <div class="status" id="gmCheckStatus" hidden></div>
           <button class="btn small thread" id="gmApply" hidden>Use this nudge</button>
@@ -1109,7 +1109,7 @@ function adjustColor(c) {
 }
 
 /* ---------------- files ---------------- */
-const APP_VERSION = "2026.11.26-c";
+const APP_VERSION = "2026.11.26-d";
 { const v = document.getElementById("appVer2"); if (v) v.textContent = "v" + APP_VERSION; }
 let downloadsCap = null;
 (window.claude && window.claude.use ? window.claude.use("downloads") : Promise.resolve(null)).then(d => { downloadsCap = d; }).catch(() => {});
@@ -4671,7 +4671,10 @@ async function checkGridPrint(f) {
       const drift = r.side[1] - r.side[0], m = gridMesh().a, better = m * (1 - drift / Math.max(1, r.widthIn * m / 2));
       msg += ` The left and right parts differ (${r.side[0].toFixed(2)} vs ${r.side[1].toFixed(2)} stitch), so the paint drifts across the design: the holes-per-inch across is probably closer to ${better.toFixed(2)} than ${m}. Check it with the mesh gauge.`;
     }
-    msg += ` (Holes measured on this scan: ${r.meshX.toFixed(2)} across, ${r.meshY.toFixed(2)} down.)`;
+    // For the xTool M2 (positioned in millimeters in xTool Studio, not with the nudge).
+    const mmX = -r.inX * 25.4, mmY = -r.inY * 25.4;
+    if (Math.abs(r.dx) >= 0.06 || Math.abs(r.dy) >= 0.06) msg += ` On the xTool M2: in xTool Studio move the design ${Math.abs(mmX).toFixed(2)} mm ${mmX >= 0 ? "right" : "left"} and ${Math.abs(mmY).toFixed(2)} mm ${mmY >= 0 ? "down" : "up"} from where you placed it.`;
+    msg += ` (Holes measured on this scan: ${r.meshX.toFixed(2)} across, ${r.meshY.toFixed(2)} down` + (Math.abs(r.meshX - gridMesh().a) > 0.08 || Math.abs(r.meshY - gridMesh().d) > 0.08 ? `; your setting is ${gridMesh().a} × ${gridMesh().d}, so check it with the gauge` : "") + ".)";
     setStatus("gmCheckStatus", msg, Math.abs(r.dx) < 0.06 && Math.abs(r.dy) < 0.06 ? "ok" : "");
     $("gmApply").hidden = sx === 0 && sy === 0;
     $("gmApply").onclick = () => { S.nudge = sug; nudgeOut(); previewDirty(); $("gmApply").hidden = true; toast(`Nudge set to ${sug.x}, ${sug.y}. Make "Design for the grid sheet" again and print it.`, 6000); };
