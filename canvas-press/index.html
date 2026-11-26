@@ -936,6 +936,8 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
           <button class="btn small" id="gmMarginTest">Test marks in the border first (PDF)</button>
           <p class="hint">Before the design: print just these small marks in the canvas border, scan it on the grid sheet, and use step 5 below to set the nudge. Then print the design.</p>
           <button class="btn thread wide" id="gmPrint">Design for the grid sheet (PDF)</button>
+          <button class="btn small" id="gmPng">Design for the grid sheet (PNG)</button>
+          <p class="hint">The PNG is just the design (crosses, initials, legend) at its exact size on a clear background, 600 dots per inch, with the size saved in the file. Use it in other printing apps; set it to print at 100% / its own size.</p>
           <div class="status" id="gmStatus" hidden></div>
           <p class="hint"><b>5. Still off? Let the app measure it.</b> Scan the printed canvas the same way, still taped to the grid sheet, and pick the scan here. The app finds the holes and your paint, measures how far the paint sits from the thread crossings, and sets the nudge for you.</p>
           <label class="btn small" style="cursor:pointer">Check a grid sheet print (scan)<input type="file" id="gmCheck" accept="image/*,application/pdf" hidden></label>
@@ -1107,7 +1109,7 @@ function adjustColor(c) {
 }
 
 /* ---------------- files ---------------- */
-const APP_VERSION = "2026.11.26-b";
+const APP_VERSION = "2026.11.26-c";
 { const v = document.getElementById("appVer2"); if (v) v.textContent = "v" + APP_VERSION; }
 let downloadsCap = null;
 (window.claude && window.claude.use ? window.claude.use("downloads") : Promise.resolve(null)).then(d => { downloadsCap = d; }).catch(() => {});
@@ -4533,6 +4535,45 @@ function svgFromPolys(byColor, x0, y0, wIn, hIn, extra) {
   for (const [col, polys] of byColor) body += `<path fill="${col}" d="${polys.map(p => "M" + p.map(q => mm(q[0] - x0) + " " + mm(q[1] - y0)).join("L") + "Z").join("")}"/>\n`;
   return `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${mm(wIn)}mm" height="${mm(hIn)}mm" viewBox="0 0 ${mm(wIn)} ${mm(hIn)}">\n${extra || ""}${body}</svg>\n`;
 }
+// The design's stitch shapes in page inches on the grid sheet lattice, with the box around them (half a stitch margin).
+function designShapes() {
+  const rec = shapeRecorder(); let r;
+  withGridLatticeSync(L => {
+    const pal = printPalette(), f = 1 + S.adj.bleed / 100, painted = paintedAt(), dots = S.printMode === "dots";
+    r = forEachStitch((q, v, i, j) => { rec.fillStyle = pal[v]; if (dots) { rec.beginPath(); dotPath(rec, q, (a, b) => [a, b], S.dotSize / 100); } else fillStitch(rec, q, i, j, f, painted, true, (a, b) => [a, b]); });
+  });
+  let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+  for (const polys of rec.out.values()) for (const p of polys) for (const [x, y] of p) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
+  if (x1 < 0) return null;
+  const m = gridMesh(), pad = 0.5 / Math.min(m.a, m.d);
+  return { byColor: rec.out, x0: x0 - pad, y0: y0 - pad, x1: x1 + pad, y1: y1 + pad, off: r ? r.off : 0, m };
+}
+// PNG with its print size inside (pHYs chunk), so apps that read it place it at the right size.
+const crcTable = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+const crc32 = u => { let c = 0xFFFFFFFF; for (let i = 0; i < u.length; i++) c = crcTable[(c ^ u[i]) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; };
+async function pngWithDpi(canvas, dpi) {
+  const u = new Uint8Array(await (await canvasBlob(canvas, "image/png")).arrayBuffer()), ppm = Math.round(dpi / 0.0254);
+  const chunk = new Uint8Array(21), dv = new DataView(chunk.buffer); dv.setUint32(0, 9); chunk.set([112, 72, 89, 115], 4); dv.setUint32(8, ppm); dv.setUint32(12, ppm); chunk[16] = 1; dv.setUint32(17, crc32(chunk.subarray(4, 17)));
+  const at = 8 + 25; // after the signature and the IHDR chunk
+  const out = new Uint8Array(u.length + 21); out.set(u.subarray(0, at)); out.set(chunk, at); out.set(u.subarray(at), at + 21);
+  return new Blob([out], { type: "image/png" });
+}
+async function gridDesignPng() {
+  if (!S.design) { toast("Make a design first."); return; }
+  busy(true, "Building the PNG…", 0.3); await tick();
+  try {
+    const sh = designShapes(); if (!sh) throw new Error("there's nothing to print in this design.");
+    const DPI = 600, wIn = sh.x1 - sh.x0, hIn = sh.y1 - sh.y0, c = document.createElement("canvas");
+    c.width = Math.round(wIn * DPI); c.height = Math.round(hIn * DPI);
+    if (c.width * c.height > 60e6) throw new Error("that's too big for one PNG. Use the PDF or SVG.");
+    const x = c.getContext("2d");
+    for (const [col, polys] of sh.byColor) { x.fillStyle = col; x.beginPath(); for (const p of polys) { x.moveTo((p[0][0] - sh.x0) * DPI, (p[0][1] - sh.y0) * DPI); for (let k = 1; k < p.length; k++) x.lineTo((p[k][0] - sh.x0) * DPI, (p[k][1] - sh.y0) * DPI); x.closePath(); } x.fill(); }
+    const blob = await pngWithDpi(c, DPI); busy(false);
+    const name = (S.designName || "design").replace(/\.[a-z0-9]+$/i, "").replace(/[^a-z0-9]+/gi, "-").toLowerCase();
+    await saveFile(`${name}-${wIn.toFixed(2)}x${hIn.toFixed(2)}in-${sh.m.a}x${sh.m.d}-600dpi-v${APP_VERSION}.png`, blob);
+    toast(`PNG saved: ${wIn.toFixed(2)} × ${hIn.toFixed(2)} in at 600 dpi (${c.width} × ${c.height} pixels). Print it at 100% / its own size.` + (sh.off ? ` ${sh.off} stitches didn't fit and were left out.` : ""), 8000);
+  } catch (e) { busy(false); toast("The PNG couldn't be made: " + e.message, 6000); }
+}
 async function xtoolSvg() {
   if (!S.design) { toast("Make a design first."); return; }
   const rec = shapeRecorder(); let r;
@@ -6635,7 +6676,7 @@ $("legendPos").onchange = () => { S.legendPos = $("legendPos").value; store.set(
 { const gs = store.get("ccp-gridshow"); if (gs && [...$("gmShowDesign").options].some(o => o.value === gs)) $("gmShowDesign").value = gs; }
 $("gmFromScan").onclick = () => { const rm = realMesh(); if (!rm) return; $("gmA").value = rm.across.toFixed(2); $("gmD").value = rm.down.toFixed(2); gridMeshChanged(); };
 $("gmGauge").onclick = meshGaugePdf;
-$("xtoolSvg").onclick = xtoolSvg; $("picXtool").onclick = picXtoolSvg;
+$("xtoolSvg").onclick = xtoolSvg; $("gmPng").onclick = gridDesignPng; $("picXtool").onclick = picXtoolSvg;
 $("marginTest").onclick = () => makeMarginTest(false); $("gmMarginTest").onclick = () => makeMarginTest(true);
 $("picFile").onchange = async e => { const f = e.target.files[0]; e.target.value = ""; if (!f) return; busy(true, "Opening the picture…", 0.3); try { const c = await fileToCanvas(f, 300); usePic(c.canvas || c, f.name); } catch (err) { toast(err.message, 5000); } finally { busy(false); } };
 $("picUseArt").onclick = () => { const L = S.layers.find(l => l.visible); const img = L ? L.img : S.original && S.original.canvas && !S.original.example ? S.original.canvas : null; if (!img) { toast("Add artwork on the Design step first, or choose a picture here."); return; } usePic(img, L ? L.name : "My artwork"); };
