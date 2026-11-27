@@ -1141,7 +1141,7 @@ function adjustColor(c) {
 }
 
 /* ---------------- files ---------------- */
-const APP_VERSION = "2026.11.27-c";
+const APP_VERSION = "2026.11.27-d";
 { const v = document.getElementById("appVer2"); if (v) v.textContent = "v" + APP_VERSION; }
 let downloadsCap = null;
 (window.claude && window.claude.use ? window.claude.use("downloads") : Promise.resolve(null)).then(d => { downloadsCap = d; }).catch(() => {});
@@ -2785,6 +2785,15 @@ function printPalette() {
   const pal = S.design.pal.slice(); if (S.initials && S.initials.on) pal.push(S.initials.color);
   return pal.map(adjustColor).map(hex);
 }
+// White (or nearly white) puts no ink down, so file exports for the xTool leave it out: it's bare canvas, not a white box.
+// It's judged on the color you picked as well as the printed one: "Deepen" turns white into a light gray, which still
+// isn't meant to be paint.
+const nearWhite = c => c[0] >= 240 && c[1] >= 240 && c[2] >= 240;
+const isInk = c => !nearWhite(c) && !nearWhite(adjustColor(c));
+function inkedColors() {
+  const pal = S.design.pal.slice(); if (S.initials && S.initials.on) pal.push(S.initials.color);
+  return pal.map(isInk);
+}
 function initialsOrigin(cells) {
   const d = S.design, ini = S.initials, below = Math.round(ini.below * (S.canvasMesh || S.mesh));
   const x = ini.pos === "bl" ? 0 : ini.pos === "bc" ? Math.floor((d.w - cells.w) / 2) : d.w - cells.w;
@@ -2829,8 +2838,10 @@ function forEachStitch(fn, all = false) {
     const onCanvas = i >= 0 && j >= 0 && i < G.gx && j < G.gy && G.ST[j * G.gx + i];
     place(stitchQuad(i, j), onCanvas, v, i, j);
   }
+  // White stitches put no ink down: they're bare canvas for printing (never a white or light gray box).
+  const ink = d.pal.map(isInk);
   for (let r = 0; r < d.h; r++) for (let c = 0; c < d.w; c++) {
-    const v = d.px[r * d.w + c]; if (v < 0) continue; total++;
+    const v = d.px[r * d.w + c]; if (v < 0 || !ink[v]) continue; total++;
     const i = pl.i0 + c, j = pl.j0 + r, G = S.grid;
     const onCanvas = i >= 0 && j >= 0 && i < G.gx && j < G.gy && G.ST[j * G.gx + i];
     place(stitchQuad(i, j), onCanvas, v, i, j);
@@ -2843,7 +2854,7 @@ const LEG_SW = 3, LEG_GAP = 4;
 function legendCells() {
   const d = S.design, pos = S.legendPos; if (!d || !pos || pos === "off") return null;
   const used = new Uint8Array(d.pal.length); for (const v of d.px) if (v >= 0) used[v] = 1;
-  const items = []; d.pal.forEach((c, v) => { const a = adjustColor(c); if (used[v] && !(a[0] >= 240 && a[1] >= 240 && a[2] >= 240)) items.push(v); });
+  const items = []; d.pal.forEach((c, v) => { if (used[v] && isInk(c)) items.push(v); });
   if (!items.length) return null;
   const cells = new Map(), labels = [], step = LEG_SW + 1;
   let iniBelow = 0; if (S.initials && S.initials.on && S.iniCells) iniBelow = initialsOrigin(S.iniCells).y + S.iniCells.h - d.h;
@@ -2873,7 +2884,7 @@ function paintedAt() {
   const d = S.design, pl = placement(); if (!d || !pl) return () => false;
   const ini = S.initials && S.initials.on && S.iniCells ? { C: S.iniCells, o: initialsOrigin(S.iniCells) } : null, leg = legendCells();
   // White (or nearly white) stitches put no real ink down, so a background of white stitches counts as bare canvas.
-  const inked = d.pal.map(c => { const a = adjustColor(c); return !(a[0] >= 240 && a[1] >= 240 && a[2] >= 240); });
+  const inked = d.pal.map(isInk);
   // Palette index of the ink at a crossing (the initials use one past the palette), or -1 for bare canvas.
   const colorOf = (i, j) => {
     const c = i - pl.i0, r = j - pl.j0;
@@ -4621,8 +4632,8 @@ function svgFromPolys(byColor, x0, y0, wIn, hIn, extra) {
 function designShapes() {
   const rec = shapeRecorder(); let r;
   withGridLatticeSync(L => {
-    const pal = printPalette(), f = 1 + S.adj.bleed / 100, painted = paintedAt(), dots = S.printMode === "dots";
-    r = forEachStitch((q, v, i, j) => { rec.fillStyle = pal[v]; if (dots) { rec.beginPath(); dotPath(rec, q, (a, b) => [a, b], S.dotSize / 100); } else fillStitch(rec, q, i, j, f, painted, true, (a, b) => [a, b]); });
+    const pal = printPalette(), ink = inkedColors(), f = 1 + S.adj.bleed / 100, painted = paintedAt(), dots = S.printMode === "dots";
+    r = forEachStitch((q, v, i, j) => { if (!ink[v]) return; rec.fillStyle = pal[v]; if (dots) { rec.beginPath(); dotPath(rec, q, (a, b) => [a, b], S.dotSize / 100); } else fillStitch(rec, q, i, j, f, painted, true, (a, b) => [a, b]); });
   });
   let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
   for (const polys of rec.out.values()) for (const p of polys) for (const [x, y] of p) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
@@ -4740,8 +4751,8 @@ async function checkShot(f) {
 function designRects() {
   let out = null;
   withGridLatticeSync(L => {
-    const pal = printPalette(), cells = new Map(), key = (i, j) => i + "," + j;
-    forEachStitch((q, v, i, j) => cells.set(key(i, j), v));
+    const pal = printPalette(), ink = inkedColors(), cells = new Map(), key = (i, j) => i + "," + j;
+    forEachStitch((q, v, i, j) => { if (ink[v]) cells.set(key(i, j), v); });
     if (!cells.size) return;
     let i0 = 1e9, i1 = -1e9, j0 = 1e9, j1 = -1e9; for (const k of cells.keys()) { const [i, j] = k.split(",").map(Number); i0 = Math.min(i0, i); i1 = Math.max(i1, i); j0 = Math.min(j0, j); j1 = Math.max(j1, j); }
     const W = i1 - i0 + 1, H = j1 - j0 + 1, g = new Int16Array(W * H).fill(-1), used = new Uint8Array(W * H);
@@ -4780,8 +4791,8 @@ async function xtoolSvg() {
   }
   const rec = shapeRecorder(); let r;
   withGridLatticeSync(L => {
-    const pal = printPalette(), f = 1 + S.adj.bleed / 100, painted = paintedAt(), dots = S.printMode === "dots";
-    r = forEachStitch((q, v, i, j) => { rec.fillStyle = pal[v]; if (dots) { rec.beginPath(); dotPath(rec, q, (a, b) => [a, b], S.dotSize / 100); } else fillStitch(rec, q, i, j, f, painted, true, (a, b) => [a, b]); });
+    const pal = printPalette(), ink = inkedColors(), f = 1 + S.adj.bleed / 100, painted = paintedAt(), dots = S.printMode === "dots";
+    r = forEachStitch((q, v, i, j) => { if (!ink[v]) return; rec.fillStyle = pal[v]; if (dots) { rec.beginPath(); dotPath(rec, q, (a, b) => [a, b], S.dotSize / 100); } else fillStitch(rec, q, i, j, f, painted, true, (a, b) => [a, b]); });
   });
   if (r && r.off) toast(`${r.off} stitches didn't fit and were left out (the design is bigger than the work area I use). Make it smaller.`, 6000);
   // The file's box: the stitch area (plus initials and legend), so the size in xTool Studio is the real size.
@@ -4797,7 +4808,13 @@ async function xtoolSvg() {
 }
 async function picXtoolSvg() {
   if (!S.pic) { toast("Choose a picture first."); return; }
-  const b = picBox(), c = picCanvas(Math.round(300 * b.w), false), url = c.toDataURL("image/png"), mm = v => (v * 25.4).toFixed(3);
+  const b = picBox(), c = picCanvas(Math.round(300 * b.w), false), mm = v => (v * 25.4).toFixed(3);
+  // White (the paper, erased spots, a removed background) becomes see-through, so xTool Studio shows the canvas there
+  // and nothing white sits over it. Near-white fades out smoothly so edges stay soft.
+  { const x = c.getContext("2d"), id = x.getImageData(0, 0, c.width, c.height), d = id.data;
+    for (let i = 0; i < d.length; i += 4) { const mn = Math.min(d[i], d[i + 1], d[i + 2]); if (mn >= 236) d[i + 3] = mn >= 248 ? 0 : Math.round(255 * (248 - mn) / 12); }
+    x.putImageData(id, 0, 0); }
+  const url = c.toDataURL("image/png");
   const rec = new Map(), pi = picInitials();
   let iniPolys = "";
   if (pi) iniPolys = `<path fill="${hex(adjustColor(pi.color))}" d="${pi.polys.map(r => `M${mm(r[0] - b.x)} ${mm(r[1] - b.y)}h${mm(r[2])}v${mm(r[3])}h${mm(-r[2])}Z`).join("")}"/>\n`;

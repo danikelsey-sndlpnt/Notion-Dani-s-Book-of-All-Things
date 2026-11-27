@@ -134,3 +134,9 @@ Design step → **Pattern with symbols (PDF)**: a multi-page pattern. Cover: nam
 - 2026.11.27-a: the xTool SVG merges touching stitches of the same color into one shape (a line is one bar; a filled area is one piece with its holes cut out, even-odd fill). The strawberry went from 10,800 pieces to 127 shapes with the same printed result (21 of 1.44M pixels differ, edge smoothing only). Dots mode keeps one shape per dot.
 - 2026.11.27-b: xTool SVG shapes are solid by default (no little hole boxes inside); only openings bigger than about half a stitch, where another color sits inside, stay cut out, so no two colors overlap (checked: 0 overlapping pixels). Tick "Cut the canvas holes out" to get the hole cut-outs back.
 - 2026.11.27-c: **Plain rectangles** for the xTool SVG (on by default): each run of same-color stitches becomes one <rect>, extended down over matching rows; sides meet neighbors halfway and stop 0.45 stitch toward bare canvas. Strawberry: 313 rectangles, 0 overlapping pixels. Untick for the merged outlines.
+
+### 2026.11.27-d
+- xTool exports no longer include a white or light-gray background. White stitches count as bare canvas in every
+  print and export. Before, "Deepen" turned white into a light gray (#eaeaea) that exported as a box around the design.
+- Picture SVG for the xTool: white areas (paper, erased spots, removed background) are now see-through instead of a
+  solid white rectangle.
