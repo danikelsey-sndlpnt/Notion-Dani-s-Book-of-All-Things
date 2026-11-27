@@ -1139,7 +1139,7 @@ function adjustColor(c) {
 }
 
 /* ---------------- files ---------------- */
-const APP_VERSION = "2026.11.26-h";
+const APP_VERSION = "2026.11.27-a";
 { const v = document.getElementById("appVer2"); if (v) v.textContent = "v" + APP_VERSION; }
 let downloadsCap = null;
 (window.claude && window.claude.use ? window.claude.use("downloads") : Promise.resolve(null)).then(d => { downloadsCap = d; }).catch(() => {});
@@ -4559,10 +4559,54 @@ function shapeRecorder() {
     fill() { const k = this._f; if (!out.has(k)) out.set(k, []); out.get(k).push(...path.map(p => p.slice())); path = []; },
     arc(cx, cy, r) { const p = []; for (let a = 0; a < 16; a++) p.push([cx + r * Math.cos(a / 8 * Math.PI), cy + r * Math.sin(a / 8 * Math.PI)]); path.push(p); } };
 }
+// Merge one color's axis-aligned rectangles into outlines: one shape per touching group, holes cut out.
+// Edges are collected on a grid made from the rectangles' own sides, then the boundary is traced into closed loops.
+function mergeRects(polys) {
+  const R = 1e6, q = v => Math.round(v * R) / R, rects = [];
+  for (const p of polys) {
+    if (p.length !== 4) return null;
+    const xsP = [...new Set(p.map(v => q(v[0])))], ysP = [...new Set(p.map(v => q(v[1])))];
+    if (xsP.length !== 2 || ysP.length !== 2) return null; // not an axis-aligned rectangle
+    rects.push([Math.min(...xsP), Math.min(...ysP), Math.max(...xsP), Math.max(...ysP)]);
+  }
+  const xs = [...new Set(rects.flatMap(r => [r[0], r[2]]))].sort((a, b) => a - b), ys = [...new Set(rects.flatMap(r => [r[1], r[3]]))].sort((a, b) => a - b);
+  const xi = new Map(xs.map((v, i) => [v, i])), yi = new Map(ys.map((v, i) => [v, i])), W = xs.length - 1, H = ys.length - 1;
+  if (W * H > 30e6) return null;
+  const on = new Uint8Array(W * H);
+  for (const r of rects) { const a = xi.get(r[0]), b = xi.get(r[2]), c = yi.get(r[1]), d = yi.get(r[3]); for (let j = c; j < d; j++) on.fill(1, j * W + a, j * W + b); }
+  const at = (i, j) => i >= 0 && j >= 0 && i < W && j < H && on[j * W + i];
+  // Connected groups of filled cells (sides touching).
+  const comp = new Int32Array(W * H).fill(-1); let nc = 0;
+  for (let k = 0; k < W * H; k++) { if (!on[k] || comp[k] >= 0) continue; const st = [k]; comp[k] = nc; while (st.length) { const c = st.pop(), i = c % W, j = (c / W) | 0; for (const [a, b] of [[i + 1, j], [i - 1, j], [i, j + 1], [i, j - 1]]) if (at(a, b) && comp[b * W + a] < 0) { comp[b * W + a] = nc; st.push(b * W + a); } } nc++; }
+  // Boundary edges, each with the filled cell on its left, keyed by start corner.
+  const next = new Map(), key = (i, j) => i * 100003 + j, edges = [];
+  const add = (a, b, c, d, cell) => { const e = { a: [a, b], b: [c, d], cell, used: false }; edges.push(e); const k = key(a, b); if (!next.has(k)) next.set(k, []); next.get(k).push(e); };
+  for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) {
+    if (!on[j * W + i]) continue; const c = j * W + i;
+    if (!at(i, j - 1)) add(i + 1, j, i, j, c); if (!at(i, j + 1)) add(i, j + 1, i + 1, j + 1, c);
+    if (!at(i - 1, j)) add(i, j, i, j + 1, c); if (!at(i + 1, j)) add(i + 1, j + 1, i + 1, j, c);
+  }
+  const groups = Array.from({ length: nc }, () => []);
+  for (const e0 of edges) {
+    if (e0.used) continue; const loop = []; let e = e0;
+    while (e && !e.used) { e.used = true; loop.push(e.a); const cand = (next.get(key(e.b[0], e.b[1])) || []).filter(x => !x.used); if (!cand.length) break;
+      // At a corner touched by two groups diagonally, keep turning the same way so loops don't cross.
+      const dx = e.b[0] - e.a[0], dy = e.b[1] - e.a[1]; cand.sort((m, n) => { const t = x => { const ex = x.b[0] - x.a[0], ey = x.b[1] - x.a[1]; return -(dx * ey - dy * ex); }; return t(m) - t(n); }); e = cand[0]; }
+    // Drop corners in the middle of straight runs.
+    const pts = loop.filter((pt, k) => { const pr = loop[(k - 1 + loop.length) % loop.length], nx = loop[(k + 1) % loop.length]; return !((pr[0] === pt[0] && pt[0] === nx[0]) || (pr[1] === pt[1] && pt[1] === nx[1])); });
+    groups[comp[e0.cell]].push(pts.map(([i, j]) => [xs[i], ys[j]]));
+  }
+  return groups;
+}
 function svgFromPolys(byColor, x0, y0, wIn, hIn, extra) {
   const mm = v => (v * 25.4).toFixed(3);
   let body = "";
-  for (const [col, polys] of byColor) body += `<path fill="${col}" d="${polys.map(p => "M" + p.map(q => mm(q[0] - x0) + " " + mm(q[1] - y0)).join("L") + "Z").join("")}"/>\n`;
+  for (const [col, polys] of byColor) {
+    const groups = mergeRects(polys);
+    // One shape per touching group of stitches (a line is one bar); holes in a filled area are cut out of it.
+    if (groups) { for (const loops of groups) body += `<path fill="${col}" fill-rule="evenodd" d="${loops.map(p => "M" + p.map(q => mm(q[0] - x0) + " " + mm(q[1] - y0)).join("L") + "Z").join("")}"/>\n`; }
+    else body += `<path fill="${col}" d="${polys.map(p => "M" + p.map(q => mm(q[0] - x0) + " " + mm(q[1] - y0)).join("L") + "Z").join("")}"/>\n`;
+  }
   return `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${mm(wIn)}mm" height="${mm(hIn)}mm" viewBox="0 0 ${mm(wIn)} ${mm(hIn)}">\n${extra || ""}${body}</svg>\n`;
 }
 // The design's stitch shapes in page inches on the grid sheet lattice, with the box around them (half a stitch margin).
