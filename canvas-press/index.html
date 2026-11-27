@@ -781,6 +781,7 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
               <label class="f">Gauge for<select id="xBase"><option value="10">10 mesh</option><option value="12">12 mesh</option><option value="13" selected>13 mesh</option><option value="14">14 mesh</option><option value="16">16 mesh</option><option value="18">18 mesh</option></select></label>
               <button class="btn small" id="xGauge">Mesh gauge (PDF)</button>
             </div>
+            <label class="tog"><input type="checkbox" id="xRects" checked> <b>Plain rectangles</b>: every piece is a clean box (each run of same-color stitches, stretched down over the rows that match), no bumps or notches</label>
             <label class="tog"><input type="checkbox" id="xHoles"> Cut the canvas holes out of the SVG shapes (off = solid shapes with just one outline each, easier in xTool Studio)</label>
             <div class="row"><button class="btn thread" id="xtoolSvg">Export for xTool M2 (SVG)</button><button class="btn small" id="xPng">Or as a PNG (exact size)</button></div>
             <div style="border-top:1px solid var(--line);padding-top:8px;display:grid;gap:6px">
@@ -1140,7 +1141,7 @@ function adjustColor(c) {
 }
 
 /* ---------------- files ---------------- */
-const APP_VERSION = "2026.11.27-b";
+const APP_VERSION = "2026.11.27-c";
 { const v = document.getElementById("appVer2"); if (v) v.textContent = "v" + APP_VERSION; }
 let downloadsCap = null;
 (window.claude && window.claude.use ? window.claude.use("downloads") : Promise.resolve(null)).then(d => { downloadsCap = d; }).catch(() => {});
@@ -4733,8 +4734,50 @@ async function checkShot(f) {
     for (let yy = ((oy % r.py) + r.py) % r.py; yy < r.h; yy += r.py) for (let xx = ((ox % r.px) + r.px) % r.px; xx < r.w; xx += r.px) { x.beginPath(); x.arc(xx * k, yy * k, Math.max(2, r.px * 0.14 * k), 0, 7); x.stroke(); }
   } catch (e) { busy(false); setStatus("xShotStatus", "That screenshot couldn't be read: " + e.message, "err"); }
 }
+// The design as plain rectangles on the canvas lattice: runs of same-color stitches across, extended down while the
+// next rows have the same run. Sides meet the neighbor halfway; toward bare canvas they stop a little short (0.45 stitch)
+// so the ink doesn't reach the next crossing.
+function designRects() {
+  let out = null;
+  withGridLatticeSync(L => {
+    const pal = printPalette(), cells = new Map(), key = (i, j) => i + "," + j;
+    forEachStitch((q, v, i, j) => cells.set(key(i, j), v));
+    if (!cells.size) return;
+    let i0 = 1e9, i1 = -1e9, j0 = 1e9, j1 = -1e9; for (const k of cells.keys()) { const [i, j] = k.split(",").map(Number); i0 = Math.min(i0, i); i1 = Math.max(i1, i); j0 = Math.min(j0, j); j1 = Math.max(j1, j); }
+    const W = i1 - i0 + 1, H = j1 - j0 + 1, g = new Int16Array(W * H).fill(-1), used = new Uint8Array(W * H);
+    for (const [k, v] of cells) { const [i, j] = k.split(",").map(Number); g[(j - j0) * W + i - i0] = v; }
+    const at = (x, y) => x < 0 || y < 0 || x >= W || y >= H ? -1 : g[y * W + x];
+    const a = L.m.a, d = L.m.d, byColor = new Map();
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const v = g[y * W + x]; if (v < 0 || used[y * W + x]) continue;
+      let x2 = x; while (x2 + 1 < W && g[y * W + x2 + 1] === v && !used[y * W + x2 + 1]) x2++;
+      let y2 = y; grow: while (y2 + 1 < H) { for (let t = x; t <= x2; t++) if (g[(y2 + 1) * W + t] !== v || used[(y2 + 1) * W + t]) break grow; y2++; }
+      for (let yy = y; yy <= y2; yy++) for (let t = x; t <= x2; t++) used[yy * W + t] = 1;
+      const bare = (cells2) => cells2.every(c => c < 0), side = (cells2) => bare(cells2) ? 0.45 : 0.5;
+      const L0 = side(Array.from({ length: y2 - y + 1 }, (_, k) => at(x - 1, y + k))), R0 = side(Array.from({ length: y2 - y + 1 }, (_, k) => at(x2 + 1, y + k)));
+      const T0 = side(Array.from({ length: x2 - x + 1 }, (_, k) => at(x + k, y - 1))), B0 = side(Array.from({ length: x2 - x + 1 }, (_, k) => at(x + k, y2 + 1)));
+      const rx0 = L.sx(x + i0) - L0 / a, rx1 = L.sx(x2 + i0) + R0 / a, ry0 = L.sy(y + j0) - T0 / d, ry1 = L.sy(y2 + j0) + B0 / d;
+      const col = pal[v]; if (!byColor.has(col)) byColor.set(col, []); byColor.get(col).push([rx0, ry0, rx1, ry1]);
+    }
+    out = byColor;
+  });
+  return out;
+}
 async function xtoolSvg() {
   if (!S.design) { toast("Make a design first."); return; }
+  if ($("xRects").checked && S.printMode !== "dots") {
+    const rects = designRects(); if (!rects) { toast("Nothing to print in this design."); return; }
+    let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9; for (const rs of rects.values()) for (const r of rs) { x0 = Math.min(x0, r[0]); y0 = Math.min(y0, r[1]); x1 = Math.max(x1, r[2]); y1 = Math.max(y1, r[3]); }
+    const m = gridMesh(), pad = 0.5 / Math.min(m.a, m.d); x0 -= pad; y0 -= pad; x1 += pad; y1 += pad;
+    const mm = v => (v * 25.4).toFixed(3); let body = "", n = 0;
+    for (const [col, rs] of rects) for (const r of rs) { body += `<rect x="${mm(r[0] - x0)}" y="${mm(r[1] - y0)}" width="${mm(r[2] - r[0])}" height="${mm(r[3] - r[1])}" fill="${col}"/>\n`; n++; }
+    const svg = `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="${mm(x1 - x0)}mm" height="${mm(y1 - y0)}mm" viewBox="0 0 ${mm(x1 - x0)} ${mm(y1 - y0)}">\n${body}</svg>\n`;
+    const name = (S.designName || "design").replace(/\.[a-z0-9]+$/i, "").replace(/[^a-z0-9]+/gi, "-").toLowerCase();
+    store.set("ccp-m2size", { w: (x1 - x0) * 25.4, h: (y1 - y0) * 25.4, at: Date.now() }); m2Calc();
+    await saveFile(`${name}-xtool-${(x1 - x0).toFixed(2)}x${(y1 - y0).toFixed(2)}in-${m.a}x${m.d}-v${APP_VERSION}.svg`, new Blob([svg], { type: "image/svg+xml" }));
+    toast(`Saved for xTool: ${n} plain rectangles, ${((x1 - x0) * 25.4).toFixed(1)} × ${((y1 - y0) * 25.4).toFixed(1)} mm. In xTool Studio keep that exact size.`, 8000);
+    return;
+  }
   const rec = shapeRecorder(); let r;
   withGridLatticeSync(L => {
     const pal = printPalette(), f = 1 + S.adj.bleed / 100, painted = paintedAt(), dots = S.printMode === "dots";
