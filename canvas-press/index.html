@@ -781,6 +781,7 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
               <label class="f">Gauge for<select id="xBase"><option value="10">10 mesh</option><option value="12">12 mesh</option><option value="13" selected>13 mesh</option><option value="14">14 mesh</option><option value="16">16 mesh</option><option value="18">18 mesh</option></select></label>
               <button class="btn small" id="xGauge">Mesh gauge (PDF)</button>
             </div>
+            <label class="tog"><input type="checkbox" id="xHoles"> Cut the canvas holes out of the SVG shapes (off = solid shapes with just one outline each, easier in xTool Studio)</label>
             <div class="row"><button class="btn thread" id="xtoolSvg">Export for xTool M2 (SVG)</button><button class="btn small" id="xPng">Or as a PNG (exact size)</button></div>
             <div style="border-top:1px solid var(--line);padding-top:8px;display:grid;gap:6px">
               <span style="font-size:13px;font-weight:700;color:var(--ink-2)">Check a printed scrap</span>
@@ -1139,7 +1140,7 @@ function adjustColor(c) {
 }
 
 /* ---------------- files ---------------- */
-const APP_VERSION = "2026.11.27-a";
+const APP_VERSION = "2026.11.27-b";
 { const v = document.getElementById("appVer2"); if (v) v.textContent = "v" + APP_VERSION; }
 let downloadsCap = null;
 (window.claude && window.claude.use ? window.claude.use("downloads") : Promise.resolve(null)).then(d => { downloadsCap = d; }).catch(() => {});
@@ -4604,6 +4605,12 @@ function svgFromPolys(byColor, x0, y0, wIn, hIn, extra) {
   for (const [col, polys] of byColor) {
     const groups = mergeRects(polys);
     // One shape per touching group of stitches (a line is one bar); holes in a filled area are cut out of it.
+    // Solid (default): only each shape's outer outline, no hole boxes inside it.
+    const area = p => { let a = 0; for (let k = 0; k < p.length; k++) { const [x1, y1] = p[k], [x2, y2] = p[(k + 1) % p.length]; a += x1 * y2 - x2 * y1; } return Math.abs(a) / 2; };
+    // Only the little canvas-hole boxes are filled in; bigger openings (where another color sits inside) stay open,
+    // so two colors never print on top of each other.
+    const mm0 = gridMesh(), stitch2 = 1 / (mm0.a * mm0.d);
+    if (groups && !($("xHoles") && $("xHoles").checked)) for (let g = 0; g < groups.length; g++) { const loops = groups[g]; if (loops.length > 1) { let outer = loops[0]; for (const l of loops) if (area(l) > area(outer)) outer = l; groups[g] = loops.filter(l => l === outer || area(l) > 0.6 * stitch2); } }
     if (groups) { for (const loops of groups) body += `<path fill="${col}" fill-rule="evenodd" d="${loops.map(p => "M" + p.map(q => mm(q[0] - x0) + " " + mm(q[1] - y0)).join("L") + "Z").join("")}"/>\n`; }
     else body += `<path fill="${col}" d="${polys.map(p => "M" + p.map(q => mm(q[0] - x0) + " " + mm(q[1] - y0)).join("L") + "Z").join("")}"/>\n`;
   }
