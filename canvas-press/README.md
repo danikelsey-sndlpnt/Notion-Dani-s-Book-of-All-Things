@@ -144,3 +144,11 @@ Design step → **Pattern with symbols (PDF)**: a multi-page pattern. Cover: nam
 ### 2026.11.28-a
 - xTool SVG: every piece (box or outline shape) is its own group, so xTool Studio doesn't lump one color together.
   Ungroup once in Studio and each piece can be grabbed by itself. A hint under "Plain rectangles" explains it.
+
+### 2026.11.28-b
+- M2 box: "Design on my real canvas (M2 camera picture)". Load a screenshot of the canvas from xTool Studio's camera.
+  The app maps every crossing in it (small pictures are enlarged first) and shows the design on that picture in Preview.
+  Move right / Move down place the design.
+- While a camera picture is in use, the xTool SVG (plain rectangles or outlines) is built on the real mapped crossings,
+  so uneven threads are followed. It's scaled by the holes per inch typed in the M2 box, from the crossings' typical
+  spacing in the picture. "Stop using the camera picture" goes back to the straight grid.
