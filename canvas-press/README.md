@@ -152,3 +152,7 @@ Design step → **Pattern with symbols (PDF)**: a multi-page pattern. Cover: nam
 - While a camera picture is in use, the xTool SVG (plain rectangles or outlines) is built on the real mapped crossings,
   so uneven threads are followed. It's scaled by the holes per inch typed in the M2 box, from the crossings' typical
   spacing in the picture. "Stop using the camera picture" goes back to the straight grid.
+
+### 2026.11.28-c
+- M2 camera picture: crossings hidden by glare from the camera light are filled in from their neighbors (only inside the
+  canvas). Tested on a real M2 screenshot: before, 40 stitches were dropped at the glare spots; now none are.

@@ -1148,7 +1148,7 @@ function adjustColor(c) {
 }
 
 /* ---------------- files ---------------- */
-const APP_VERSION = "2026.11.28-b";
+const APP_VERSION = "2026.11.28-c";
 { const v = document.getElementById("appVer2"); if (v) v.textContent = "v" + APP_VERSION; }
 let downloadsCap = null;
 (window.claude && window.claude.use ? window.claude.use("downloads") : Promise.resolve(null)).then(d => { downloadsCap = d; }).catch(() => {});
@@ -4812,6 +4812,24 @@ function cameraRects() {
     kx * avg(y1 - y0 + 1, k => { const p = nodeP(x1, y0 + k), q = nodeP(x1 + 1, y0 + k); return p[0] + (q[0] - p[0]) * r; }),
     ky * avg(x1 - x0 + 1, k => { const p = nodeP(x0 + k, y1), q = nodeP(x0 + k, y1 + 1); return p[1] + (q[1] - p[1]) * b; })]);
 }
+// Glare from the M2's light hides some crossings. Any missing crossing with found ones on both sides (across or down)
+// is filled in from its neighbors, so the design isn't cut there. The canvas's outside edge is left alone.
+function fillGlare(G) {
+  const { gx, gy } = G, inside = new Uint8Array(gx * gy);
+  for (let j = 0; j < gy; j++) { let a = -1, b = -1; for (let i = 0; i < gx; i++) if (G.ST[j * gx + i] === 1) { if (a < 0) a = i; b = i; } for (let i = a + 1; i < b; i++) inside[j * gx + i] = 1; }
+  for (let i = 0; i < gx; i++) { let a = -1, b = -1; for (let j = 0; j < gy; j++) if (G.ST[j * gx + i] === 1) { if (a < 0) a = j; b = j; } for (let j = a + 1; j < b; j++) inside[j * gx + i] = 1; }
+  for (let it = 0; it < 60; it++) {
+    const set = [];
+    for (let j = 0; j < gy; j++) for (let i = 0; i < gx; i++) {
+      const k = j * gx + i; if (G.ST[k] || !inside[k]) continue;
+      let sx = 0, sy = 0, n = 0; const at = (a, b) => a >= 0 && b >= 0 && a < gx && b < gy && G.ST[b * gx + a] ? b * gx + a : -1;
+      for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const a = at(i + di, j + dj), b2 = at(i + 2 * di, j + 2 * dj); if (a >= 0 && b2 >= 0) { sx += 2 * G.X[a] - G.X[b2]; sy += 2 * G.Y[a] - G.Y[b2]; n++; } }
+      if (n) set.push([k, sx / n, sy / n]);
+    }
+    if (!set.length) break;
+    for (const [k, x, y] of set) { G.X[k] = x; G.Y[k] = y; G.ST[k] = 3; }
+  }
+}
 const cameraOn = () => !!(S.scan && S.scan.camera && S.grid && !S.grid.synthetic && S.design && S.center);
 async function xtoolSvg() {
   if (!S.design) { toast("Make a design first."); return; }
@@ -6956,11 +6974,11 @@ $("xCam").onchange = async e => {
     $("mesh2").value = opt ? opt.value : "auto";
     await loadScan(c, p * m.a, f.name || "M2 camera picture", false);
     if (!S.grid) throw new Error("I couldn't map the holes in that picture. Zoom in closer and make sure the picture is sharp, then try again.");
-    S.scan.camera = true; S.place = { ox: 0, oy: 0 }; $("ox").value = 0; $("oy").value = 0;
+    S.scan.camera = true; fillGlare(S.grid); computeCorners(); S.center = canvasMiddle(S.grid); S.place = { ox: 0, oy: 0 }; $("ox").value = 0; $("oy").value = 0;
     setTab(3); setView("prev"); fitView(); renderView();
     const chk = forEachStitch(() => {});
     st.className = chk.off ? "status err" : "status ok"; $("xCamOff").hidden = false;
-    st.textContent = `Using your camera picture as the canvas: ${S.grid.gx} × ${S.grid.gy} crossings found. Your design is in the middle of it in Preview. Move it with Move right / Move down, then Export for xTool M2: the SVG follows your canvas's real threads.` + (chk.off ? ` ${chk.off} stitches are past the edge of the picture: move the design or take a wider picture.` : "");
+    st.textContent = `Using your camera picture as the canvas: ${S.grid.gx} × ${S.grid.gy} crossings found. Your design is in the middle of it in Preview. Move it with Move right / Move down, then Export for xTool M2: the SVG follows your canvas's real threads.` + (chk.off ? ` ${chk.off} stitches are off the canvas in the picture (past its edge): move the design or take a picture that shows more canvas.` : "");
   } catch (err) { st.className = "status err"; st.textContent = err.message; }
 };
 $("xCamOff").onclick = () => { if (S.scan && S.scan.camera) { S.scan = null; S.grid = null; S.center = null; S.H = null; } $("xCamOff").hidden = true; $("xCamStatus").hidden = true; previewDirty(); updateUI(); setView("prev"); renderView(); toast("Back to the straight grid from the holes per inch above."); };
