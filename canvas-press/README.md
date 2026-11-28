@@ -140,3 +140,7 @@ Design step → **Pattern with symbols (PDF)**: a multi-page pattern. Cover: nam
   print and export. Before, "Deepen" turned white into a light gray (#eaeaea) that exported as a box around the design.
 - Picture SVG for the xTool: white areas (paper, erased spots, removed background) are now see-through instead of a
   solid white rectangle.
+
+### 2026.11.28-a
+- xTool SVG: every piece (box or outline shape) is its own group, so xTool Studio doesn't lump one color together.
+  Ungroup once in Studio and each piece can be grabbed by itself. A hint under "Plain rectangles" explains it.

@@ -782,6 +782,7 @@ dialog.dlg::backdrop { background: rgba(10,8,14,.45); }
               <button class="btn small" id="xGauge">Mesh gauge (PDF)</button>
             </div>
             <label class="tog"><input type="checkbox" id="xRects" checked> <b>Plain rectangles</b>: every piece is a clean box (each run of same-color stitches, stretched down over the rows that match), no bumps or notches</label>
+            <p class="hint">Every piece is saved as its own group. xTool Studio brings a whole file in as one group, so select it and <b>Ungroup</b> (right-click → Ungroup, or ⌘ Shift G on a Mac / Ctrl Shift G on Windows). If one color still moves together, ungroup once more. After that you can grab each box by itself.</p>
             <label class="tog"><input type="checkbox" id="xHoles"> Cut the canvas holes out of the SVG shapes (off = solid shapes with just one outline each, easier in xTool Studio)</label>
             <div class="row"><button class="btn thread" id="xtoolSvg">Export for xTool M2 (SVG)</button><button class="btn small" id="xPng">Or as a PNG (exact size)</button></div>
             <div style="border-top:1px solid var(--line);padding-top:8px;display:grid;gap:6px">
@@ -1141,7 +1142,7 @@ function adjustColor(c) {
 }
 
 /* ---------------- files ---------------- */
-const APP_VERSION = "2026.11.27-d";
+const APP_VERSION = "2026.11.28-a";
 { const v = document.getElementById("appVer2"); if (v) v.textContent = "v" + APP_VERSION; }
 let downloadsCap = null;
 (window.claude && window.claude.use ? window.claude.use("downloads") : Promise.resolve(null)).then(d => { downloadsCap = d; }).catch(() => {});
@@ -4613,7 +4614,9 @@ function mergeRects(polys) {
 }
 function svgFromPolys(byColor, x0, y0, wIn, hIn, extra) {
   const mm = v => (v * 25.4).toFixed(3);
-  let body = "";
+  // Each piece is its own group, so xTool Studio doesn't lump all of one color together: one Ungroup and every bar
+  // or box can be grabbed on its own.
+  let body = "", piece = 0;
   for (const [col, polys] of byColor) {
     const groups = mergeRects(polys);
     // One shape per touching group of stitches (a line is one bar); holes in a filled area are cut out of it.
@@ -4623,7 +4626,7 @@ function svgFromPolys(byColor, x0, y0, wIn, hIn, extra) {
     // so two colors never print on top of each other.
     const mm0 = gridMesh(), stitch2 = 1 / (mm0.a * mm0.d);
     if (groups && !($("xHoles") && $("xHoles").checked)) for (let g = 0; g < groups.length; g++) { const loops = groups[g]; if (loops.length > 1) { let outer = loops[0]; for (const l of loops) if (area(l) > area(outer)) outer = l; groups[g] = loops.filter(l => l === outer || area(l) > 0.6 * stitch2); } }
-    if (groups) { for (const loops of groups) body += `<path fill="${col}" fill-rule="evenodd" d="${loops.map(p => "M" + p.map(q => mm(q[0] - x0) + " " + mm(q[1] - y0)).join("L") + "Z").join("")}"/>\n`; }
+    if (groups) { for (const loops of groups) body += `<g id="piece-${++piece}"><path fill="${col}" fill-rule="evenodd" d="${loops.map(p => "M" + p.map(q => mm(q[0] - x0) + " " + mm(q[1] - y0)).join("L") + "Z").join("")}"/></g>\n`; }
     else body += `<path fill="${col}" d="${polys.map(p => "M" + p.map(q => mm(q[0] - x0) + " " + mm(q[1] - y0)).join("L") + "Z").join("")}"/>\n`;
   }
   return `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${mm(wIn)}mm" height="${mm(hIn)}mm" viewBox="0 0 ${mm(wIn)} ${mm(hIn)}">\n${extra || ""}${body}</svg>\n`;
@@ -4781,7 +4784,7 @@ async function xtoolSvg() {
     let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9; for (const rs of rects.values()) for (const r of rs) { x0 = Math.min(x0, r[0]); y0 = Math.min(y0, r[1]); x1 = Math.max(x1, r[2]); y1 = Math.max(y1, r[3]); }
     const m = gridMesh(), pad = 0.5 / Math.min(m.a, m.d); x0 -= pad; y0 -= pad; x1 += pad; y1 += pad;
     const mm = v => (v * 25.4).toFixed(3); let body = "", n = 0;
-    for (const [col, rs] of rects) for (const r of rs) { body += `<rect x="${mm(r[0] - x0)}" y="${mm(r[1] - y0)}" width="${mm(r[2] - r[0])}" height="${mm(r[3] - r[1])}" fill="${col}"/>\n`; n++; }
+    for (const [col, rs] of rects) for (const r of rs) { body += `<g id="piece-${n + 1}"><rect x="${mm(r[0] - x0)}" y="${mm(r[1] - y0)}" width="${mm(r[2] - r[0])}" height="${mm(r[3] - r[1])}" fill="${col}"/></g>\n`; n++; }
     const svg = `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="${mm(x1 - x0)}mm" height="${mm(y1 - y0)}mm" viewBox="0 0 ${mm(x1 - x0)} ${mm(y1 - y0)}">\n${body}</svg>\n`;
     const name = (S.designName || "design").replace(/\.[a-z0-9]+$/i, "").replace(/[^a-z0-9]+/gi, "-").toLowerCase();
     store.set("ccp-m2size", { w: (x1 - x0) * 25.4, h: (y1 - y0) * 25.4, at: Date.now() }); m2Calc();
